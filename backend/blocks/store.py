@@ -7,7 +7,6 @@ Output: ctx.events (store confirmation) or ctx.errors
 Security: ASVS V5.3.4 (parameterized queries), V5.3.5 (no SQL injection)
 """
 
-import os
 from .base import Block, PipelineContext
 
 SENSOR_TABLE_DDL = """
