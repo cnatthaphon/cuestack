@@ -1,24 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useUser } from "../../lib/user-context.js";
 
 export default function Dashboard() {
-  const [user, setUser] = useState(null);
-  const [org, setOrg] = useState(null);
+  const { user, org } = useUser();
   const [summary, setSummary] = useState(null);
   const [data, setData] = useState(null);
   const [ingestResult, setIngestResult] = useState(null);
 
   useEffect(() => {
     fetch("/api/init").catch(() => {});
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.user?.is_super_admin) { window.location.href = "/super"; return; }
-        setUser(d.user);
-        setOrg(d.org);
-      })
-      .catch(() => { window.location.href = "/login"; });
   }, []);
 
   useEffect(() => {
@@ -48,51 +40,27 @@ export default function Dashboard() {
     loadData();
   };
 
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  };
-
-  if (!user) return <p style={{ padding: 40 }}>Loading...</p>;
+  if (!user) return null;
 
   return (
-    <div style={{ padding: 40, maxWidth: 900 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h1 style={{ margin: 0 }}>IoT Stack Dashboard</h1>
-          {org && (
-            <p style={{ color: "#666", margin: "4px 0 0" }}>
-              {org.name} — {org.plan} plan
-            </p>
-          )}
-        </div>
-        <div>
-          <span style={{ marginRight: 16, color: "#666" }}>
-            {user.username} ({user.role})
-          </span>
-          {user.role === "admin" && (
-            <a href="/admin" style={{ marginRight: 16, color: "#0070f3" }}>Users</a>
-          )}
-          <button onClick={handleLogout} style={btnGray}>Logout</button>
-        </div>
-      </div>
+    <div style={{ maxWidth: 900 }}>
+      <h1 style={{ margin: "0 0 4px" }}>Dashboard</h1>
+      {org && <p style={{ color: "#666", margin: "0 0 24px" }}>{org.name} — {org.plan} plan</p>}
 
-      {/* Summary Cards */}
       {summary && summary.aggregated && (
-        <div style={{ display: "flex", gap: 16, marginTop: 24 }}>
+        <div style={{ display: "flex", gap: 16, marginBottom: 24 }}>
           {Object.entries(summary.aggregated).map(([key, val]) => (
             <div key={key} style={cardStyle}>
               <div style={{ fontSize: 13, color: "#666", textTransform: "uppercase" }}>{key}</div>
               <div style={{ fontSize: 28, fontWeight: 700 }}>
-                {val != null ? (typeof val === "number" ? val.toFixed(1) : val) : "—"}
+                {val != null ? (typeof val === "number" ? val.toFixed(1) : val) : "\u2014"}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Actions */}
-      <div style={{ marginTop: 24, display: "flex", gap: 12, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 24 }}>
         <button onClick={sendTestData} style={btnBlue}>Send Test Data</button>
         <button onClick={loadData} style={btnGray}>Refresh</button>
         {ingestResult && (
@@ -104,9 +72,8 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Data Table */}
-      {data && data.data && (
-        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 24 }}>
+      {data && data.data && data.data.length > 0 && (
+        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 24 }}>
           <thead>
             <tr>
               {["Timestamp", "Device", "Metric", "Value"].map((h) => (
@@ -127,13 +94,12 @@ export default function Dashboard() {
         </table>
       )}
 
-      {/* Pipeline Info */}
-      <div style={{ marginTop: 32, padding: 20, background: "#f7f7f7", borderRadius: 8 }}>
+      <div style={{ padding: 20, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
         <h3 style={{ margin: "0 0 8px" }}>Block Pipelines</h3>
         <code style={{ fontSize: 13, color: "#555" }}>
-          INGEST: Validate → Transform → Store<br />
-          QUERY: Query → Aggregate → Format(json)<br />
-          SUMMARY: Query → Aggregate → Format(summary)<br />
+          INGEST: Validate &rarr; Transform &rarr; Store<br />
+          QUERY: Query &rarr; Aggregate &rarr; Format(json)<br />
+          SUMMARY: Query &rarr; Aggregate &rarr; Format(summary)<br />
         </code>
       </div>
     </div>
@@ -142,6 +108,6 @@ export default function Dashboard() {
 
 const btnBlue = { padding: "10px 20px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 14 };
 const btnGray = { padding: "10px 20px", background: "#666", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 14 };
-const cardStyle = { flex: 1, padding: 20, background: "#fff", borderRadius: 8, boxShadow: "0 1px 4px rgba(0,0,0,0.1)" };
+const cardStyle = { flex: 1, padding: 20, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" };
 const thStyle = { border: "1px solid #ddd", padding: 10, background: "#f5f5f5", textAlign: "left" };
 const tdStyle = { border: "1px solid #ddd", padding: 10 };
