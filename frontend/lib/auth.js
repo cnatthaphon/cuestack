@@ -20,13 +20,15 @@ export async function verifyPassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
-// --- JWT ---
+// --- JWT (now includes org_id + is_super_admin) ---
 
 export async function createToken(user) {
   return new SignJWT({
     sub: String(user.id),
     username: user.username,
     role: user.role,
+    org_id: user.org_id || null,
+    is_super_admin: user.is_super_admin || false,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -75,17 +77,34 @@ export async function getCurrentUser() {
   const payload = await verifyToken(token);
   if (!payload) return null;
 
-  const result = await query("SELECT id, username, role FROM users WHERE id = $1", [
-    payload.sub,
-  ]);
+  const result = await query(
+    "SELECT id, username, role, org_id, is_super_admin FROM users WHERE id = $1",
+    [payload.sub]
+  );
   return result.rows[0] || null;
+}
+
+// --- Role Helpers ---
+
+export function isSuperAdmin(user) {
+  return user && user.is_super_admin === true;
+}
+
+export function isOrgAdmin(user) {
+  return user && user.role === "admin" && user.org_id;
+}
+
+export function requireOrg(user) {
+  // Ensures user belongs to an org (not super admin without org context)
+  if (!user || !user.org_id) return null;
+  return user.org_id;
 }
 
 // --- Rate Limiting (in-memory, resets on restart) ---
 
-const loginAttempts = new Map(); // IP → { count, resetAt }
+const loginAttempts = new Map();
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 60_000; // 1 minute
+const LOCKOUT_MS = 60_000;
 
 export function checkRateLimit(ip) {
   const now = Date.now();
@@ -97,7 +116,7 @@ export function checkRateLimit(ip) {
   }
 
   if (entry.count >= MAX_ATTEMPTS) {
-    return false; // Locked out (ASVS V2.2.1)
+    return false;
   }
 
   entry.count++;
@@ -108,20 +127,58 @@ export function resetRateLimit(ip) {
   loginAttempts.delete(ip);
 }
 
-// --- Seed Admin (dev only) ---
+// --- Seed Data (dev only) ---
 
-export async function seedAdmin() {
-  if (process.env.SEED_ADMIN === "false") return;
+export async function seedData() {
+  if (process.env.SEED_DATA === "false") return;
 
-  const existing = await query("SELECT id FROM users WHERE username = $1", [
-    "admin",
-  ]);
-  if (existing.rows.length > 0) return;
-
-  const hash = await hashPassword("admin");
-  await query(
-    "INSERT INTO users (username, hashed_password, role) VALUES ($1, $2, $3)",
-    ["admin", hash, "admin"]
+  // Seed Aimagin org
+  const orgResult = await query(
+    `INSERT INTO organizations (name, slug, plan)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id`,
+    ["Aimagin", "aimagin", "enterprise"]
   );
-  console.log("Seeded admin user (admin/admin)");
+  const aimaginOrgId = orgResult.rows[0].id;
+
+  // Seed Demo org
+  const demoResult = await query(
+    `INSERT INTO organizations (name, slug)
+     VALUES ($1, $2)
+     ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id`,
+    ["Demo", "demo"]
+  );
+  const demoOrgId = demoResult.rows[0].id;
+
+  // Seed super admin (no org_id — platform-wide)
+  const superExists = await query(
+    "SELECT id FROM users WHERE username = $1 AND is_super_admin = true",
+    ["admin"]
+  );
+  if (superExists.rows.length === 0) {
+    const hash = await hashPassword("admin");
+    await query(
+      `INSERT INTO users (username, hashed_password, role, is_super_admin)
+       VALUES ($1, $2, $3, $4)`,
+      ["admin", hash, "admin", true]
+    );
+    console.log("Seeded super admin (admin/admin)");
+  }
+
+  // Seed demo org admin
+  const demoUserExists = await query(
+    "SELECT id FROM users WHERE username = $1 AND org_id = $2",
+    ["demo", demoOrgId]
+  );
+  if (demoUserExists.rows.length === 0) {
+    const hash = await hashPassword("demo1234");
+    await query(
+      `INSERT INTO users (username, hashed_password, role, org_id)
+       VALUES ($1, $2, $3, $4)`,
+      ["demo", hash, "admin", demoOrgId]
+    );
+    console.log("Seeded demo org admin (demo/demo1234)");
+  }
 }

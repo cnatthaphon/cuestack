@@ -6,9 +6,7 @@ const SECRET = new TextEncoder().encode(
 );
 const COOKIE_NAME = "iot-session";
 
-// Pages that require auth
-const PROTECTED = ["/", "/admin"];
-// Pages that should redirect to / if already logged in
+const PROTECTED = ["/", "/admin", "/super"];
 const AUTH_PAGES = ["/login"];
 
 export async function middleware(request) {
@@ -32,11 +30,19 @@ export async function middleware(request) {
 
   // Login page — redirect to dashboard if already logged in
   if (AUTH_PAGES.includes(pathname) && user) {
+    if (user.is_super_admin) {
+      return NextResponse.redirect(new URL("/super", request.url));
+    }
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // Admin page — only admin role (ASVS V4.1.1)
+  // Admin page — only org admin role (ASVS V4.1.1)
   if (pathname === "/admin" && user && user.role !== "admin") {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  // Super admin page — only super_admin (ASVS V4.1.1)
+  if (pathname === "/super" && user && !user.is_super_admin) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
@@ -44,5 +50,5 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/admin"],
+  matcher: ["/", "/login", "/admin", "/super"],
 };
