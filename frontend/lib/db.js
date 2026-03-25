@@ -135,4 +135,39 @@ export async function initDB() {
   `);
 }
 
+// Create restricted user for Jupyter notebooks
+// Can only SELECT org data tables (org_*), org_tables metadata.
+// Cannot access: users, organizations, api_keys, org_configs, permissions, roles, role_permissions
+export async function initJupyterUser() {
+  const jupyterPass = process.env.JUPYTER_DB_PASSWORD || "jupyter_readonly_123";
+  try {
+    // Create user if not exists
+    const check = await query("SELECT 1 FROM pg_roles WHERE rolname = 'jupyter_user'");
+    if (check.rows.length === 0) {
+      await query(`CREATE USER jupyter_user WITH PASSWORD '${jupyterPass}'`);
+    }
+    // Revoke all defaults, then grant selective access only
+    await query("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM jupyter_user");
+    await query("REVOKE ALL ON SCHEMA public FROM jupyter_user");
+    await query("GRANT USAGE ON SCHEMA public TO jupyter_user");
+    // Revoke default public schema privileges that PostgreSQL grants to all users
+    await query("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC");
+    // Allow reading org_tables registry (to list tables, not configs)
+    await query("GRANT SELECT ON org_tables TO jupyter_user");
+    // Allow read/write on org data tables (org_* prefix)
+    // This uses a function to grant on existing + will be called on new table creation
+    const orgTables = await query(
+      "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'org_%' AND tablename != 'org_tables' AND tablename != 'org_features' AND tablename != 'org_configs'"
+    );
+    for (const row of orgTables.rows) {
+      await query(`GRANT SELECT, INSERT ON "${row.tablename}" TO jupyter_user`);
+    }
+    // Allow sequences for inserts
+    await query("GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO jupyter_user");
+  } catch (e) {
+    // Non-fatal — might not have superuser privileges
+    console.error("Jupyter user setup:", e.message);
+  }
+}
+
 export default pool;

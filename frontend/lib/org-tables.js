@@ -71,6 +71,11 @@ export async function createOrgTable(orgId, { name, db_type, columns, descriptio
   await query(`CREATE TABLE IF NOT EXISTS "${realName}" (${colDefs.join(", ")})`);
   await query(`CREATE INDEX IF NOT EXISTS "idx_${realName}_org" ON "${realName}" (org_id, created_at DESC)`);
 
+  // Grant jupyter_user access to new table
+  try {
+    await query(`GRANT SELECT, INSERT ON "${realName}" TO jupyter_user`);
+  } catch {}
+
   // Register in org_tables
   const result = await query(
     `INSERT INTO org_tables (org_id, name, db_type, columns, description) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
