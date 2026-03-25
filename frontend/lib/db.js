@@ -27,12 +27,16 @@ export async function initDB() {
     )
   `);
 
-  // Permissions (platform-wide)
+  // Permissions: system (Aimagin-defined) + app (org-defined)
   await query(`
     CREATE TABLE IF NOT EXISTS permissions (
-      id VARCHAR(50) PRIMARY KEY,
+      id VARCHAR(100) PRIMARY KEY,
       category VARCHAR(30) NOT NULL,
-      description VARCHAR(200)
+      label VARCHAR(100),
+      description VARCHAR(200),
+      type VARCHAR(10) NOT NULL DEFAULT 'system',
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
@@ -53,7 +57,7 @@ export async function initDB() {
   await query(`
     CREATE TABLE IF NOT EXISTS role_permissions (
       role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
-      permission_id VARCHAR(50) REFERENCES permissions(id) ON DELETE CASCADE,
+      permission_id VARCHAR(100) REFERENCES permissions(id) ON DELETE CASCADE,
       PRIMARY KEY (role_id, permission_id)
     )
   `);
