@@ -104,6 +104,19 @@ export async function initDB() {
     )
   `);
 
+  // Org config store (internal — not exposed to org users)
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_configs (
+      id SERIAL PRIMARY KEY,
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      category VARCHAR(50) NOT NULL,
+      key VARCHAR(100) NOT NULL,
+      value JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, category, key)
+    )
+  `);
+
   // API keys
   await query(`
     CREATE TABLE IF NOT EXISTS api_keys (

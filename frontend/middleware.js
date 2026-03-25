@@ -6,7 +6,15 @@ const SECRET = new TextEncoder().encode(
 );
 const COOKIE_NAME = "iot-session";
 
-const PROTECTED = ["/", "/admin", "/super"];
+// Reserved system pages — all org-scoped, need auth + org context
+// User-created apps will live under /apps/[slug] (caught by /apps prefix)
+const ORG_PAGES = [
+  "/",
+  "/users", "/roles", "/permissions",
+  "/databases", "/api-keys",
+  "/dashboards", "/notebooks", "/services", "/apps",
+];
+
 const AUTH_PAGES = ["/login"];
 
 export async function middleware(request) {
@@ -23,8 +31,10 @@ export async function middleware(request) {
     }
   }
 
+  const isOrgPage = ORG_PAGES.includes(pathname) || ORG_PAGES.some((p) => p !== "/" && pathname.startsWith(p + "/"));
+
   // Protected pages — redirect to login
-  if (PROTECTED.includes(pathname) && !user) {
+  if ((isOrgPage || pathname === "/super") && !user) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -41,14 +51,25 @@ export async function middleware(request) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // Admin page — needs org context (permission checked at API level)
-  if (pathname === "/admin" && user && !user.org_id && !user.is_super_admin) {
-    return NextResponse.redirect(new URL("/", request.url));
+  // Org pages — need org context, super admin goes to /super
+  if (isOrgPage && user) {
+    if (user.is_super_admin) {
+      return NextResponse.redirect(new URL("/super", request.url));
+    }
+    if (!user.org_id) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/", "/login", "/admin", "/super"],
+  matcher: [
+    "/", "/login", "/super",
+    "/users", "/roles", "/permissions",
+    "/databases", "/api-keys",
+    "/dashboards", "/notebooks", "/services",
+    "/apps/:path*",
+  ],
 };
