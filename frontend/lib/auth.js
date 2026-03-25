@@ -26,7 +26,7 @@ export async function createToken(user) {
   return new SignJWT({
     sub: String(user.id),
     username: user.username,
-    role: user.role,
+    role_id: user.role_id || null,
     org_id: user.org_id || null,
     is_super_admin: user.is_super_admin || false,
   })
@@ -78,7 +78,11 @@ export async function getCurrentUser() {
   if (!payload) return null;
 
   const result = await query(
-    "SELECT id, username, role, org_id, is_super_admin FROM users WHERE id = $1",
+    `SELECT u.id, u.username, u.role_id, u.org_id, u.is_super_admin,
+            r.name as role_name
+     FROM users u
+     LEFT JOIN roles r ON u.role_id = r.id
+     WHERE u.id = $1`,
     [payload.sub]
   );
   return result.rows[0] || null;
@@ -90,12 +94,7 @@ export function isSuperAdmin(user) {
   return user && user.is_super_admin === true;
 }
 
-export function isOrgAdmin(user) {
-  return user && user.role === "admin" && user.org_id;
-}
-
 export function requireOrg(user) {
-  // Ensures user belongs to an org (not super admin without org context)
   if (!user || !user.org_id) return null;
   return user.org_id;
 }
@@ -130,7 +129,12 @@ export function resetRateLimit(ip) {
 // --- Seed Data (dev only) ---
 
 export async function seedData() {
+  const { seedPermissions, createDefaultRoles, getAdminRoleId } = await import("./permissions.js");
+
   if (process.env.SEED_DATA === "false") return;
+
+  // Seed all permissions
+  await seedPermissions();
 
   // Seed Aimagin org
   const orgResult = await query(
@@ -141,6 +145,7 @@ export async function seedData() {
     ["Aimagin", "aimagin", "enterprise"]
   );
   const aimaginOrgId = orgResult.rows[0].id;
+  await createDefaultRoles(aimaginOrgId);
 
   // Seed Demo org
   const demoResult = await query(
@@ -151,6 +156,7 @@ export async function seedData() {
     ["Demo", "demo"]
   );
   const demoOrgId = demoResult.rows[0].id;
+  await createDefaultRoles(demoOrgId);
 
   // Seed super admin (no org_id — platform-wide)
   const superExists = await query(
@@ -160,14 +166,15 @@ export async function seedData() {
   if (superExists.rows.length === 0) {
     const hash = await hashPassword("admin");
     await query(
-      `INSERT INTO users (username, hashed_password, role, is_super_admin)
-       VALUES ($1, $2, $3, $4)`,
-      ["admin", hash, "admin", true]
+      `INSERT INTO users (username, hashed_password, is_super_admin)
+       VALUES ($1, $2, $3)`,
+      ["admin", hash, true]
     );
     console.log("Seeded super admin (admin/admin)");
   }
 
   // Seed demo org admin
+  const demoAdminRoleId = await getAdminRoleId(demoOrgId);
   const demoUserExists = await query(
     "SELECT id FROM users WHERE username = $1 AND org_id = $2",
     ["demo", demoOrgId]
@@ -175,9 +182,9 @@ export async function seedData() {
   if (demoUserExists.rows.length === 0) {
     const hash = await hashPassword("demo1234");
     await query(
-      `INSERT INTO users (username, hashed_password, role, org_id)
+      `INSERT INTO users (username, hashed_password, role_id, org_id)
        VALUES ($1, $2, $3, $4)`,
-      ["demo", hash, "admin", demoOrgId]
+      ["demo", hash, demoAdminRoleId, demoOrgId]
     );
     console.log("Seeded demo org admin (demo/demo1234)");
   }

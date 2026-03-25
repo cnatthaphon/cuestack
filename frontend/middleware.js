@@ -23,12 +23,12 @@ export async function middleware(request) {
     }
   }
 
-  // Protected pages — redirect to login if no valid session
+  // Protected pages — redirect to login
   if (PROTECTED.includes(pathname) && !user) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Login page — redirect to dashboard if already logged in
+  // Login page — redirect if already logged in
   if (AUTH_PAGES.includes(pathname) && user) {
     if (user.is_super_admin) {
       return NextResponse.redirect(new URL("/super", request.url));
@@ -36,13 +36,13 @@ export async function middleware(request) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // Admin page — only org admin role (ASVS V4.1.1)
-  if (pathname === "/admin" && user && user.role !== "admin") {
+  // Super admin page — only super_admin
+  if (pathname === "/super" && user && !user.is_super_admin) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // Super admin page — only super_admin (ASVS V4.1.1)
-  if (pathname === "/super" && user && !user.is_super_admin) {
+  // Admin page — needs org context (permission checked at API level)
+  if (pathname === "/admin" && user && !user.org_id && !user.is_super_admin) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

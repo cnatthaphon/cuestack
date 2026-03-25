@@ -11,10 +11,9 @@ export async function query(text, params) {
 }
 
 export async function initDB() {
-  // Enable UUID generation
   await query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
 
-  // Organizations — each customer is an org
+  // Organizations
   await query(`
     CREATE TABLE IF NOT EXISTS organizations (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -28,13 +27,44 @@ export async function initDB() {
     )
   `);
 
-  // Users — belongs to an org (except super_admin)
+  // Permissions (platform-wide)
+  await query(`
+    CREATE TABLE IF NOT EXISTS permissions (
+      id VARCHAR(50) PRIMARY KEY,
+      category VARCHAR(30) NOT NULL,
+      description VARCHAR(200)
+    )
+  `);
+
+  // Roles (per org)
+  await query(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id SERIAL PRIMARY KEY,
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(50) NOT NULL,
+      description VARCHAR(200),
+      is_default BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, name)
+    )
+  `);
+
+  // Role ↔ Permission mapping
+  await query(`
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
+      permission_id VARCHAR(50) REFERENCES permissions(id) ON DELETE CASCADE,
+      PRIMARY KEY (role_id, permission_id)
+    )
+  `);
+
+  // Users
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       username VARCHAR(50) NOT NULL,
       hashed_password VARCHAR(255) NOT NULL,
-      role VARCHAR(20) DEFAULT 'viewer',
+      role_id INTEGER REFERENCES roles(id),
       org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
       is_super_admin BOOLEAN DEFAULT false,
       created_at TIMESTAMPTZ DEFAULT NOW(),
