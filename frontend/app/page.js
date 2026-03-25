@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
+  const [org, setOrg] = useState(null);
   const [summary, setSummary] = useState(null);
   const [data, setData] = useState(null);
   const [ingestResult, setIngestResult] = useState(null);
@@ -12,7 +13,11 @@ export default function Dashboard() {
     fetch("/api/init").catch(() => {});
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((d) => setUser(d.user))
+      .then((d) => {
+        if (d.user?.is_super_admin) { window.location.href = "/super"; return; }
+        setUser(d.user);
+        setOrg(d.org);
+      })
       .catch(() => { window.location.href = "/login"; });
   }, []);
 
@@ -22,8 +27,8 @@ export default function Dashboard() {
   }, [user]);
 
   const loadData = () => {
-    fetch("/api/pipeline/summary").then((r) => r.json()).then(setSummary);
-    fetch("/api/pipeline/query").then((r) => r.json()).then(setData);
+    fetch("/api/pipeline/summary").then((r) => r.json()).then(setSummary).catch(() => {});
+    fetch("/api/pipeline/query").then((r) => r.json()).then(setData).catch(() => {});
   };
 
   const sendTestData = async () => {
@@ -53,13 +58,20 @@ export default function Dashboard() {
   return (
     <div style={{ padding: 40, maxWidth: 900 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ margin: 0 }}>IoT Stack Dashboard</h1>
+        <div>
+          <h1 style={{ margin: 0 }}>IoT Stack Dashboard</h1>
+          {org && (
+            <p style={{ color: "#666", margin: "4px 0 0" }}>
+              {org.name} — {org.plan} plan
+            </p>
+          )}
+        </div>
         <div>
           <span style={{ marginRight: 16, color: "#666" }}>
             {user.username} ({user.role})
           </span>
           {user.role === "admin" && (
-            <a href="/admin" style={{ marginRight: 16, color: "#0070f3" }}>Admin</a>
+            <a href="/admin" style={{ marginRight: 16, color: "#0070f3" }}>Users</a>
           )}
           <button onClick={handleLogout} style={btnGray}>Logout</button>
         </div>
@@ -86,8 +98,8 @@ export default function Dashboard() {
         {ingestResult && (
           <span style={{ color: ingestResult.ok ? "#38a169" : "#e53e3e", fontSize: 14 }}>
             {ingestResult.ok
-              ? `✓ ${ingestResult.validated} records ingested`
-              : `✗ ${ingestResult.errors[0]}`}
+              ? `${ingestResult.validated} records ingested`
+              : ingestResult.errors?.[0] || "Error"}
           </span>
         )}
       </div>

@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-export default function Admin() {
+export default function OrgAdmin() {
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ username: "", password: "", role: "viewer" });
   const [error, setError] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
+  const [org, setOrg] = useState(null);
 
   const loadUsers = () =>
     fetch("/api/users")
@@ -16,7 +17,10 @@ export default function Admin() {
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((data) => setCurrentUser(data.user));
+      .then((data) => {
+        setCurrentUser(data.user);
+        setOrg(data.org);
+      });
     loadUsers();
   }, []);
 
@@ -38,6 +42,7 @@ export default function Admin() {
   };
 
   const handleDelete = async (id) => {
+    if (!confirm("Delete this user?")) return;
     await fetch(`/api/users/${id}`, { method: "DELETE" });
     loadUsers();
   };
@@ -51,14 +56,23 @@ export default function Admin() {
     loadUsers();
   };
 
+  if (!currentUser) return <p style={{ padding: 40 }}>Loading...</p>;
+
   return (
     <div style={{ padding: 40, maxWidth: 800 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>User Management</h1>
+        <div>
+          <h1 style={{ margin: 0 }}>User Management</h1>
+          {org && (
+            <p style={{ color: "#666", margin: "4px 0 0" }}>
+              {org.name} — {org.plan} plan
+            </p>
+          )}
+        </div>
         <a href="/" style={{ color: "#0070f3" }}>← Dashboard</a>
       </div>
 
-      <form onSubmit={handleCreate} style={{ marginBottom: 24, display: "flex", gap: 8 }}>
+      <form onSubmit={handleCreate} style={{ marginTop: 24, marginBottom: 16, display: "flex", gap: 8 }}>
         <input
           placeholder="Username"
           value={form.username}

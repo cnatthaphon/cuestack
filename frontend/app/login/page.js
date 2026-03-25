@@ -5,6 +5,7 @@ import { useState } from "react";
 export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [orgSlug, setOrgSlug] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -13,17 +14,25 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
+      const body = { username, password };
+      if (orgSlug.trim()) body.org_slug = orgSlug.trim();
+
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Login failed");
         return;
       }
-      window.location.href = "/";
+      // Super admin → /super, org user → /
+      if (data.user.is_super_admin) {
+        window.location.href = "/super";
+      } else {
+        window.location.href = "/";
+      }
     } catch {
       setError("Connection error");
     } finally {
@@ -37,6 +46,14 @@ export default function Login() {
         <h1 style={{ margin: "0 0 8px" }}>IoT Stack</h1>
         <p style={{ color: "#666", margin: "0 0 24px" }}>Login to continue</p>
         {error && <p style={{ color: "#e53e3e", margin: "0 0 12px" }}>{error}</p>}
+        <input
+          type="text"
+          placeholder="Organization (slug)"
+          value={orgSlug}
+          onChange={(e) => setOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+          style={inputStyle}
+          autoComplete="organization"
+        />
         <input
           type="text"
           placeholder="Username"
@@ -58,7 +75,8 @@ export default function Login() {
           {loading ? "Logging in..." : "Login"}
         </button>
         <p style={{ color: "#999", fontSize: 13, marginTop: 16 }}>
-          Default: admin / admin
+          Super admin: leave org empty, admin / admin<br />
+          Demo org: demo, demo / demo1234
         </p>
       </form>
     </div>
