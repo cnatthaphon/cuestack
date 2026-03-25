@@ -1,0 +1,45 @@
+"""
+Pipeline definitions — wires blocks together.
+
+INGEST:  Validate → Transform → Store
+QUERY:   Query → Aggregate → Format(json)
+SUMMARY: Query → Aggregate → Format(summary)
+EXPORT:  Query → Aggregate → Format(csv)
+"""
+
+from blocks import (
+    Pipeline, ValidateBlock, TransformBlock, StoreBlock,
+    QueryBlock, AggregateBlock, FormatBlock,
+)
+
+
+def create_ingest_pipeline(db_pool=None):
+    return Pipeline("ingest", [
+        ValidateBlock(),
+        TransformBlock(),
+        StoreBlock(db_pool),
+    ])
+
+
+def create_query_pipeline(db_pool=None):
+    return Pipeline("query", [
+        QueryBlock(db_pool),
+        AggregateBlock(),
+        FormatBlock("json"),
+    ])
+
+
+def create_summary_pipeline(db_pool=None):
+    return Pipeline("summary", [
+        QueryBlock(db_pool),
+        AggregateBlock(["avg", "min", "max", "count", "sum"]),
+        FormatBlock("summary"),
+    ])
+
+
+def create_export_pipeline(db_pool=None):
+    return Pipeline("export", [
+        QueryBlock(db_pool),
+        AggregateBlock(),
+        FormatBlock("csv"),
+    ])
