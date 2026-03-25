@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "../../../../lib/db.js";
 import { requireSuperAdmin } from "../../../../lib/super-auth.js";
+import { createDefaultRoles } from "../../../../lib/permissions.js";
 
 // List all orgs
 export async function GET() {
@@ -38,6 +39,9 @@ export async function POST(request) {
        VALUES ($1, $2, $3, $4) RETURNING *`,
       [name, slug, plan || "free", storage_limit_mb || 1000]
     );
+    // Auto-create default roles for new org
+    await createDefaultRoles(result.rows[0].id);
+
     return NextResponse.json({ org: result.rows[0] }, { status: 201 });
   } catch (err) {
     if (err.code === "23505") {

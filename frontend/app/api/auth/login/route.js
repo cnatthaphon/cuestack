@@ -9,7 +9,6 @@ import {
 } from "../../../../lib/auth.js";
 
 export async function POST(request) {
-  // Rate limiting (ASVS V2.2.1)
   const ip = request.headers.get("x-forwarded-for") || "unknown";
   if (!checkRateLimit(ip)) {
     return NextResponse.json(
@@ -30,24 +29,25 @@ export async function POST(request) {
   let user;
 
   if (org_slug) {
-    // Org-scoped login: find user within specific org
     const result = await query(
-      `SELECT u.id, u.username, u.hashed_password, u.role, u.org_id, u.is_super_admin,
-              o.name as org_name, o.slug as org_slug
+      `SELECT u.id, u.username, u.hashed_password, u.role_id, u.org_id, u.is_super_admin,
+              o.name as org_name, o.slug as org_slug, r.name as role_name
        FROM users u
        JOIN organizations o ON u.org_id = o.id
+       LEFT JOIN roles r ON u.role_id = r.id
        WHERE u.username = $1 AND o.slug = $2 AND o.is_active = true`,
       [username, org_slug]
     );
     user = result.rows[0];
   } else {
-    // No org specified — try super admin first, then any user
     const result = await query(
-      `SELECT id, username, hashed_password, role, org_id, is_super_admin
-       FROM users WHERE username = $1`,
+      `SELECT u.id, u.username, u.hashed_password, u.role_id, u.org_id, u.is_super_admin,
+              r.name as role_name
+       FROM users u
+       LEFT JOIN roles r ON u.role_id = r.id
+       WHERE u.username = $1`,
       [username]
     );
-    // Prefer super admin if multiple matches
     user = result.rows.find((r) => r.is_super_admin) || result.rows[0];
   }
 
@@ -55,7 +55,6 @@ export async function POST(request) {
     return NextResponse.json({ error: "Bad credentials" }, { status: 401 });
   }
 
-  // Success
   resetRateLimit(ip);
   const token = await createToken(user);
   await setSessionCookie(token);
@@ -64,7 +63,8 @@ export async function POST(request) {
     user: {
       id: user.id,
       username: user.username,
-      role: user.role,
+      role_id: user.role_id,
+      role_name: user.role_name || null,
       org_id: user.org_id,
       org_name: user.org_name || null,
       org_slug: user.org_slug || null,
