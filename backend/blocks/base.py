@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 class PipelineContext:
     """Shared data bus flowing through the pipeline."""
 
+    # Tenant
+    org_id: str | None = None  # Organization ID — injected from JWT, never from user input
+
     # Input
     raw_data: Any = None
     device_id: str | None = None
