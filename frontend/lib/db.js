@@ -76,6 +76,38 @@ export async function initDB() {
       UNIQUE(username, org_id)
     )
   `);
+
+  // Org tables registry
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_tables (
+      id SERIAL PRIMARY KEY,
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      db_type VARCHAR(20) NOT NULL DEFAULT 'analytical',
+      columns JSONB NOT NULL DEFAULT '[]',
+      description VARCHAR(200),
+      row_count BIGINT DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, name)
+    )
+  `);
+
+  // API keys
+  await query(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      key_hash VARCHAR(255) NOT NULL,
+      key_prefix VARCHAR(20) NOT NULL,
+      permissions JSONB DEFAULT '[]',
+      rate_limit INTEGER,
+      is_active BOOLEAN DEFAULT true,
+      last_used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ
+    )
+  `);
 }
 
 export default pool;
