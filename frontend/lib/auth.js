@@ -130,33 +130,36 @@ export function resetRateLimit(ip) {
 
 export async function seedData() {
   const { seedPermissions, createDefaultRoles, getAdminRoleId } = await import("./permissions.js");
+  const { assignPlanFeatures } = await import("./features.js");
 
   if (process.env.SEED_DATA === "false") return;
 
   // Seed all permissions
   await seedPermissions();
 
-  // Seed Aimagin org
+  // Seed Aimagin org (enterprise = all features)
   const orgResult = await query(
     `INSERT INTO organizations (name, slug, plan)
      VALUES ($1, $2, $3)
      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
-     RETURNING id`,
+     RETURNING id, plan`,
     ["Aimagin", "aimagin", "enterprise"]
   );
   const aimaginOrgId = orgResult.rows[0].id;
   await createDefaultRoles(aimaginOrgId);
+  await assignPlanFeatures(aimaginOrgId, "enterprise");
 
-  // Seed Demo org
+  // Seed Demo org (free = basic features)
   const demoResult = await query(
     `INSERT INTO organizations (name, slug)
      VALUES ($1, $2)
      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
-     RETURNING id`,
+     RETURNING id, plan`,
     ["Demo", "demo"]
   );
   const demoOrgId = demoResult.rows[0].id;
   await createDefaultRoles(demoOrgId);
+  await assignPlanFeatures(demoOrgId, "free");
 
   // Seed super admin (no org_id — platform-wide)
   const superExists = await query(

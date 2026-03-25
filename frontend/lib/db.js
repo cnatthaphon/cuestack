@@ -92,6 +92,18 @@ export async function initDB() {
     )
   `);
 
+  // Org feature entitlements (Super Admin assigns)
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_features (
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      feature VARCHAR(50) NOT NULL,
+      config JSONB DEFAULT '{}',
+      enabled BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, feature)
+    )
+  `);
+
   // API keys
   await query(`
     CREATE TABLE IF NOT EXISTS api_keys (
