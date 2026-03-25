@@ -43,6 +43,18 @@ services:
       - /app/node_modules
       - /app/.next
 
+  jupyter:
+    build: ./jupyter
+    environment:
+      # Restricted user — can only access org data tables, NOT system/config tables
+      DATABASE_URL: postgresql://jupyter_user:${JUPYTER_DB_PASSWORD:-jupyter_readonly_123}@db:5432/${POSTGRES_DB:-iotstack}
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-dev-jupyter-token}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - jupyter_workspaces:/workspace
+
   nginx:
     image: nginx:alpine
     ports:
@@ -50,8 +62,10 @@ services:
     depends_on:
       - frontend
       - backend
+      - jupyter
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
 
 volumes:
   pgdata:
+  jupyter_workspaces:
