@@ -30,11 +30,14 @@ services:
   frontend:
     build: ./frontend
     environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-iot}:${POSTGRES_PASSWORD:-iot123}@db:5432/${POSTGRES_DB:-iotstack}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
       BACKEND_URL: http://backend:8000
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      db:
+        condition: service_healthy
     volumes:
       - ./frontend:/app
       - /app/node_modules
