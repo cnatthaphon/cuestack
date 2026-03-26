@@ -13,19 +13,14 @@ const APP_TYPES = [
 export default function AppsPage() {
   const { user, hasFeature, refresh } = useUser();
   const [apps, setApps] = useState([]);
-  const [navGroups, setNavGroups] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", description: "", app_type: "html", icon: "\u{1F4F1}" });
-  const [newGroupName, setNewGroupName] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => { loadApps(); loadGroups(); }, []);
+  useEffect(() => { loadApps(); }, []);
 
   const loadApps = () => {
     fetch("/api/apps").then((r) => r.ok ? r.json() : { apps: [] }).then((d) => setApps(d.apps || []));
-  };
-  const loadGroups = () => {
-    fetch("/api/nav-groups").then((r) => r.ok ? r.json() : { groups: [] }).then((d) => setNavGroups(d.groups || []));
   };
 
   if (!user) return null;
@@ -138,38 +133,6 @@ export default function AppsPage() {
         </form>
       )}
 
-      {/* Nav Groups */}
-      <div style={{ marginBottom: 16, padding: 12, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <strong style={{ fontSize: 13 }}>Navigation Groups</strong>
-        </div>
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-          {navGroups.map((g) => (
-            <span key={g.name} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "#f7f7f7", borderRadius: 4, fontSize: 12 }}>
-              {g.icon} {g.name}
-              <button onClick={async () => {
-                await fetch("/api/nav-groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete_group", name: g.name }) });
-                loadGroups(); refresh();
-              }} style={{ background: "none", border: "none", color: "#e53e3e", cursor: "pointer", fontSize: 11, padding: 0 }}>x</button>
-            </span>
-          ))}
-          {navGroups.length === 0 && <span style={{ fontSize: 12, color: "#999" }}>No groups yet</span>}
-        </div>
-        <div style={{ display: "flex", gap: 4 }}>
-          <input placeholder="Group name" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)}
-            onKeyDown={async (e) => { if (e.key === "Enter" && newGroupName.trim()) {
-              await fetch("/api/nav-groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create_group", name: newGroupName }) });
-              setNewGroupName(""); loadGroups(); refresh();
-            }}}
-            style={{ padding: 6, border: "1px solid #ddd", borderRadius: 4, fontSize: 12, width: 150 }} />
-          <button onClick={async () => { if (!newGroupName.trim()) return;
-            await fetch("/api/nav-groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create_group", name: newGroupName }) });
-            setNewGroupName(""); loadGroups(); refresh();
-          }} style={{ padding: "6px 12px", background: "#666", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>Add Group</button>
-        </div>
-        <p style={{ fontSize: 11, color: "#999", margin: "8px 0 0" }}>Groups organize published apps and dashboards into sections in the left navigation.</p>
-      </div>
-
       {/* App list */}
       {apps.length > 0 ? (
         <div>
@@ -197,16 +160,6 @@ export default function AppsPage() {
                 <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
                   <code>/apps/{app.slug}</code>
                   {app.permission_id && <span> &middot; <code>{app.permission_id}</code></span>}
-                  {app.status === "published" && (
-                    <span> &middot; group: <select value={app.nav_group || ""} onChange={async (e) => {
-                      await fetch("/api/nav-groups", { method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ action: "assign", item_type: "app", item_id: app.id, group: e.target.value }) });
-                      loadApps(); refresh();
-                    }} style={{ padding: 2, fontSize: 11, border: "1px solid #ddd", borderRadius: 3 }}>
-                      <option value="">(none)</option>
-                      {navGroups.map((g) => <option key={g.name} value={g.name}>{g.name}</option>)}
-                    </select></span>
-                  )}
                   {app.created_by_name && <span> &middot; by {app.created_by_name}</span>}
                 </div>
               </div>

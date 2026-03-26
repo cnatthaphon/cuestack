@@ -174,6 +174,8 @@ export async function initDB() {
   await query(`ALTER TABLE org_dashboards ADD COLUMN IF NOT EXISTS nav_order INTEGER DEFAULT 0`);
   await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS nav_group VARCHAR(50) DEFAULT ''`);
   await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS nav_order INTEGER DEFAULT 0`);
+  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS required_permissions JSONB DEFAULT '[]'`);
+  await query(`ALTER TABLE org_dashboards ADD COLUMN IF NOT EXISTS required_permissions JSONB DEFAULT '[]'`);
 
   // Nav groups — org-defined categories for published content
   await query(`
