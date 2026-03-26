@@ -104,6 +104,27 @@ export async function initDB() {
     )
   `);
 
+  // Org apps (user-built apps — HTML/JS, Dash, Visual)
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_apps (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      slug VARCHAR(100) NOT NULL,
+      description VARCHAR(500),
+      app_type VARCHAR(20) NOT NULL DEFAULT 'html',
+      icon VARCHAR(10) DEFAULT '\u{1F4F1}',
+      entrypoint VARCHAR(200) DEFAULT 'index.html',
+      config JSONB DEFAULT '{}',
+      status VARCHAR(20) DEFAULT 'draft',
+      permission_id VARCHAR(100),
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, slug)
+    )
+  `);
+
   // Python services registry
   await query(`
     CREATE TABLE IF NOT EXISTS org_services (

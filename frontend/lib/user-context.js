@@ -5,21 +5,28 @@ import { createContext, useContext, useEffect, useState } from "react";
 const UserContext = createContext(null);
 
 export function UserProvider({ children }) {
-  const [state, setState] = useState({ user: null, org: null, loading: true });
+  const [state, setState] = useState({ user: null, org: null, orgApps: [], loading: true });
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => {
-        if (!d.user) {
+    Promise.all([
+      fetch("/api/auth/me").then((r) => r.json()),
+      fetch("/api/apps?published=true").then((r) => r.ok ? r.json() : { apps: [] }),
+    ])
+      .then(([meData, appsData]) => {
+        if (!meData.user) {
           window.location.href = "/login";
           return;
         }
-        if (d.user.is_super_admin) {
+        if (meData.user.is_super_admin) {
           window.location.href = "/super";
           return;
         }
-        setState({ user: d.user, org: d.org, loading: false });
+        setState({
+          user: meData.user,
+          org: meData.org,
+          orgApps: appsData.apps || [],
+          loading: false,
+        });
       })
       .catch(() => {
         window.location.href = "/login";
@@ -32,9 +39,18 @@ export function UserProvider({ children }) {
   };
 
   const refresh = async () => {
-    const res = await fetch("/api/auth/me");
-    const d = await res.json();
-    if (d.user) setState({ user: d.user, org: d.org, loading: false });
+    const [meRes, appsRes] = await Promise.all([
+      fetch("/api/auth/me").then((r) => r.json()),
+      fetch("/api/apps?published=true").then((r) => r.ok ? r.json() : { apps: [] }),
+    ]);
+    if (meRes.user) {
+      setState({
+        user: meRes.user,
+        org: meRes.org,
+        orgApps: appsRes.apps || [],
+        loading: false,
+      });
+    }
   };
 
   const hasPermission = (perm) => {
