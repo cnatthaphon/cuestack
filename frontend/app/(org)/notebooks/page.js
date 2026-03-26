@@ -8,6 +8,7 @@ export default function NotebooksPage() {
   const { user, org, hasFeature } = useUser();
   const [sessions, setSessions] = useState([]);
   const [jupyterUrl, setJupyterUrl] = useState(null);
+  const [showJupyter, setShowJupyter] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [newName, setNewName] = useState("");
@@ -19,7 +20,7 @@ export default function NotebooksPage() {
     if (res.ok) {
       const d = await res.json();
       setSessions(d.sessions || []);
-      if (d.url) setJupyterUrl(d.url);
+      if (d.url) setJupyterUrl(d.url); // store URL but don't auto-open
     }
   };
 
@@ -47,18 +48,18 @@ export default function NotebooksPage() {
     if (!res.ok) { setError((await res.json()).error); setLoading(false); return; }
     const data = await res.json();
     setNewName("");
+    setJupyterUrl(data.url);
+    setShowJupyter(true);
     loadSessions();
     setLoading(false);
-    return data.url;
   };
 
-  const openNotebook = async (name) => {
-    const url = await startSession(name || "default");
-    if (url) setJupyterUrl(url);
+  const openNotebook = (name) => {
+    startSession(name || "default");
   };
 
-  // Jupyter iframe view
-  if (jupyterUrl) {
+  // Jupyter iframe view — only shown when user explicitly opens a notebook
+  if (showJupyter && jupyterUrl) {
     return (
       <div style={{ margin: -32, display: "flex", flexDirection: "column", height: "100vh" }}>
         <div style={{
@@ -71,7 +72,7 @@ export default function NotebooksPage() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => window.open(jupyterUrl, "_blank")} style={toolbarBtn}>New tab</button>
-            <button onClick={() => setJupyterUrl(null)} style={toolbarBtn}>Back to list</button>
+            <button onClick={() => setShowJupyter(false)} style={toolbarBtn}>Back to list</button>
           </div>
         </div>
         <iframe src={jupyterUrl} style={{ flex: 1, border: "none", width: "100%" }} title="JupyterLab" allow="clipboard-read; clipboard-write" />
@@ -79,7 +80,7 @@ export default function NotebooksPage() {
     );
   }
 
-  // Notebook sessions list
+  // Notebook sessions list — always shown by default
   const columns = [
     { key: "key", label: "Notebook" },
     { key: "username", label: "Created By" },
