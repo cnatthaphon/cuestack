@@ -5,20 +5,39 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { UserProvider, useUser } from "../../lib/user-context.js";
 
-// Reserved system pages — /s/ prefix
-// User apps will live under /apps/[slug]
-const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: "\u25A6", permission: null, feature: null },
-  { href: "/users", label: "Users", icon: "\u{1F465}", permission: "users.view", feature: null },
-  { href: "/roles", label: "Roles", icon: "\u{1F6E1}", permission: "roles.manage", feature: null },
-  { href: "/permissions", label: "Permissions", icon: "\u{1F511}", permission: "permissions.manage", feature: null },
-  { href: "/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
-  { href: "/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
-  { href: "/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
-  { href: "/dashboards", label: "Dashboards", icon: "\u{1F4CA}", permission: "dashboard.view", feature: "dashboards" },
-  { href: "/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: null, feature: "notebooks" },
-  { href: "/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
-  { href: "/apps", label: "Apps", icon: "\u{1F4F1}", permission: null, feature: "app_builder" },
+// Nav organized into sections
+const NAV_SECTIONS = [
+  {
+    label: null, // no section header for top items
+    items: [
+      { href: "/", label: "Dashboard", icon: "\u25A6", permission: null, feature: null },
+    ],
+  },
+  {
+    label: "Workspace",
+    items: [
+      { href: "/dashboards", label: "Dashboards", icon: "\u{1F4CA}", permission: "dashboard.view", feature: "dashboards" },
+      { href: "/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: null, feature: "notebooks" },
+      { href: "/apps", label: "Apps", icon: "\u{1F4F1}", permission: null, feature: "app_builder" },
+      { href: "/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
+    ],
+  },
+  {
+    label: "Data",
+    items: [
+      { href: "/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
+      { href: "/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
+      { href: "/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { href: "/users", label: "Users", icon: "\u{1F465}", permission: "users.view", feature: null },
+      { href: "/roles", label: "Roles", icon: "\u{1F6E1}", permission: "roles.manage", feature: null },
+      { href: "/permissions", label: "Permissions", icon: "\u{1F511}", permission: "permissions.manage", feature: null },
+    ],
+  },
 ];
 
 export default function OrgLayout({ children }) {
@@ -40,8 +59,8 @@ function OrgShell({ children }) {
 
   if (!user) return null;
 
-  // System nav items — filtered by permission + feature
-  const visibleNav = NAV_ITEMS.filter((item) => {
+  // Filter nav items by permission + feature
+  const filterItems = (items) => items.filter((item) => {
     if (item.permission && !user.is_super_admin && !user.permissions?.includes(item.permission)) return false;
     if (item.feature && !user.features?.includes(item.feature)) return false;
     return true;
@@ -111,99 +130,40 @@ function OrgShell({ children }) {
           )}
         </div>
 
-        {/* Nav Items */}
-        <div style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
-          {visibleNav.map((item) => {
-            const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+        {/* Nav Sections */}
+        <div style={{ flex: 1, padding: "4px 0", overflowY: "auto" }}>
+          {NAV_SECTIONS.map((section, si) => {
+            const items = filterItems(section.items);
+            if (items.length === 0) return null;
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "9px 16px",
-                  color: active ? "#fff" : "#8a8aa0",
-                  background: active ? "rgba(0,112,243,0.2)" : "transparent",
-                  borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
-                  textDecoration: "none",
-                  fontSize: 13,
-                  fontWeight: active ? 600 : 400,
-                  transition: "all 0.15s",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <span style={{ fontSize: 15, width: 22, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
+              <div key={si}>
+                {section.label && !collapsed && (
+                  <div style={{ padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
+                    {section.label}
+                  </div>
+                )}
+                {section.label && collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
+                {items.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
+              </div>
             );
           })}
 
-          {/* Published Dashboards — dynamic nav */}
+          {/* Published Dashboards — dynamic */}
           {dashNav.length > 0 && (
-            <>
-              {!collapsed && (
-                <div style={{ padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
-                  Dashboards
-                </div>
-              )}
+            <div>
+              {!collapsed && <div style={sectionLabel}>My Dashboards</div>}
               {collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
-              {dashNav.map((item) => {
-                const active = pathname === item.href;
-                return (
-                  <Link key={item.href} href={item.href} style={{
-                    display: "flex", alignItems: "center", gap: 10, padding: "9px 16px",
-                    color: active ? "#fff" : "#8a8aa0",
-                    background: active ? "rgba(0,112,243,0.2)" : "transparent",
-                    borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
-                    textDecoration: "none", fontSize: 13, fontWeight: active ? 600 : 400,
-                    transition: "all 0.15s", whiteSpace: "nowrap",
-                  }}>
-                    <span style={{ fontSize: 15, width: 22, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
-                    {!collapsed && <span>{item.label}</span>}
-                  </Link>
-                );
-              })}
-            </>
+              {dashNav.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
+            </div>
           )}
 
-          {/* Published Apps — dynamic nav */}
+          {/* Published Apps — dynamic */}
           {appNav.length > 0 && (
-            <>
-              {!collapsed && (
-                <div style={{ padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
-                  Apps
-                </div>
-              )}
+            <div>
+              {!collapsed && <div style={sectionLabel}>My Apps</div>}
               {collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
-              {appNav.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "9px 16px",
-                      color: active ? "#fff" : "#8a8aa0",
-                      background: active ? "rgba(0,112,243,0.2)" : "transparent",
-                      borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
-                      textDecoration: "none",
-                      fontSize: 13,
-                      fontWeight: active ? 600 : 400,
-                      transition: "all 0.15s",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <span style={{ fontSize: 15, width: 22, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
-                    {!collapsed && <span>{item.label}</span>}
-                  </Link>
-                );
-              })}
-            </>
+              {appNav.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
+            </div>
           )}
         </div>
 
@@ -247,3 +207,22 @@ function OrgShell({ children }) {
     </div>
   );
 }
+
+function NavLink({ item, pathname, collapsed }) {
+  const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+  return (
+    <Link href={item.href} style={{
+      display: "flex", alignItems: "center", gap: 10, padding: "8px 16px",
+      color: active ? "#fff" : "#8a8aa0",
+      background: active ? "rgba(0,112,243,0.2)" : "transparent",
+      borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+      textDecoration: "none", fontSize: 13, fontWeight: active ? 600 : 400,
+      transition: "all 0.15s", whiteSpace: "nowrap",
+    }}>
+      <span style={{ fontSize: 14, width: 22, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
+      {!collapsed && <span>{item.label}</span>}
+    </Link>
+  );
+}
+
+const sectionLabel = { padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 };
