@@ -100,11 +100,23 @@ export async function initDB() {
   await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_name ON org_file_entries (org_id, parent_id, name)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_owner ON org_file_entries (org_id, created_by)`);
 
-  // User profile fields (added to existing users table)
+  // User profile fields
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(50)`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR(50)`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(200)`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30)`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100)`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)`);
+
+  // User ↔ Roles (many-to-many) — supplements legacy role_id
+  await query(`
+    CREATE TABLE IF NOT EXISTS user_roles (
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
+      PRIMARY KEY (user_id, role_id)
+    )
+  `);
 
   // Notifications
   await query(`
