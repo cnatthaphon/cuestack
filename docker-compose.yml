@@ -50,7 +50,6 @@ services:
     environment:
       # Restricted user — can only access org data tables, NOT system/config tables
       DATABASE_URL: postgresql://jupyter_user:${JUPYTER_DB_PASSWORD:-jupyter_readonly_123}@db:5432/${POSTGRES_DB:-iotstack}
-      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-dev-jupyter-token}
     depends_on:
       db:
         condition: service_healthy
