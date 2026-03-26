@@ -30,7 +30,7 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, loading, logout } = useUser();
+  const { user, org, orgApps, loading, logout, hasPermission } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
@@ -40,11 +40,24 @@ function OrgShell({ children }) {
 
   if (!user) return null;
 
+  // System nav items — filtered by permission + feature
   const visibleNav = NAV_ITEMS.filter((item) => {
     if (item.permission && !user.is_super_admin && !user.permissions?.includes(item.permission)) return false;
     if (item.feature && !user.features?.includes(item.feature)) return false;
     return true;
   });
+
+  // Dynamic app nav — published apps the user has permission for
+  const appNav = (orgApps || [])
+    .filter((app) => !app.permission_id || hasPermission(app.permission_id))
+    .map((app) => ({
+      href: `/apps/${app.slug}`,
+      label: app.name,
+      icon: app.icon || "\u{1F4F1}",
+      permission: app.permission_id,
+      feature: null,
+      isApp: true,
+    }));
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -89,7 +102,7 @@ function OrgShell({ children }) {
         </div>
 
         {/* Nav Items */}
-        <div style={{ flex: 1, padding: "8px 0" }}>
+        <div style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
           {visibleNav.map((item) => {
             const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             return (
@@ -116,6 +129,44 @@ function OrgShell({ children }) {
               </Link>
             );
           })}
+
+          {/* Published Apps — dynamic nav */}
+          {appNav.length > 0 && (
+            <>
+              {!collapsed && (
+                <div style={{ padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
+                  Apps
+                </div>
+              )}
+              {collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
+              {appNav.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(item.href + "/");
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "9px 16px",
+                      color: active ? "#fff" : "#8a8aa0",
+                      background: active ? "rgba(0,112,243,0.2)" : "transparent",
+                      borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+                      textDecoration: "none",
+                      fontSize: 13,
+                      fontWeight: active ? 600 : 400,
+                      transition: "all 0.15s",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span style={{ fontSize: 15, width: 22, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
+                    {!collapsed && <span>{item.label}</span>}
+                  </Link>
+                );
+              })}
+            </>
+          )}
         </div>
 
         {/* User Footer */}
