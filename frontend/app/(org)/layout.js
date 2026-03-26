@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { UserProvider, useUser } from "../../lib/user-context.js";
+import TopBar from "../../lib/components/top-bar.js";
 
 // Nav organized into sections
 const NAV_SECTIONS = [
@@ -167,43 +168,39 @@ function OrgShell({ children }) {
           )}
         </div>
 
-        {/* User Footer */}
+        {/* Nav Footer — org info */}
         <div style={{ padding: collapsed ? "12px 8px" : "12px 16px", borderTop: "1px solid #2a2a4a" }}>
-          {!collapsed && (
-            <div style={{ fontSize: 12, color: "#8a8aa0", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {user.username}
-              {user.role_name && <span style={{ color: "#555" }}> \u2022 {user.role_name}</span>}
+          {!collapsed && org && (
+            <div style={{ fontSize: 11, color: "#555", textAlign: "center" }}>
+              {org.name} &middot; {org.plan}
             </div>
           )}
-          <button
-            onClick={logout}
-            style={{
-              width: "100%",
-              padding: "6px 0",
-              background: "none",
-              border: "1px solid #333",
-              color: "#8a8aa0",
-              borderRadius: 4,
-              cursor: "pointer",
-              fontSize: 11,
-            }}
-          >
-            {collapsed ? "\u23FB" : "Logout"}
-          </button>
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main style={{
+      {/* Main Area */}
+      <div style={{
         flex: 1,
         marginLeft: collapsed ? 56 : 220,
-        padding: 32,
-        background: "#f8f9fa",
+        display: "flex",
+        flexDirection: "column",
         minHeight: "100vh",
         transition: "margin-left 0.2s ease",
       }}>
-        {children}
-      </main>
+        {/* Top Bar */}
+        <header style={{
+          display: "flex", justifyContent: "flex-end", alignItems: "center",
+          padding: "8px 24px", background: "#fff", borderBottom: "1px solid #e2e8f0",
+          flexShrink: 0,
+        }}>
+          <TopBar />
+        </header>
+
+        {/* Page Content */}
+        <main style={{ flex: 1, padding: 32, background: "#f8f9fa" }}>
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
