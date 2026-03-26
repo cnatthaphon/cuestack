@@ -60,15 +60,41 @@ export async function POST(request) {
   }
 
   if (body.action === "assign") {
-    // Assign an app or dashboard to a group
     const { item_type, item_id, group, order } = body;
     if (!item_type || !item_id) return NextResponse.json({ error: "item_type and item_id required" }, { status: 400 });
-
     const table = item_type === "dashboard" ? "org_dashboards" : "org_apps";
-    await query(
-      `UPDATE ${table} SET nav_group = $1, nav_order = $2 WHERE id = $3 AND org_id = $4`,
-      [group || "", order || 0, item_id, user.org_id]
-    );
+    await query(`UPDATE ${table} SET nav_group = $1, nav_order = $2 WHERE id = $3 AND org_id = $4`,
+      [group || "", order || 0, item_id, user.org_id]);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === "reorder_groups") {
+    // body.order: [{ name, sort_order }]
+    for (const g of (body.order || [])) {
+      await query("UPDATE org_nav_groups SET sort_order = $1 WHERE org_id = $2 AND name = $3",
+        [g.sort_order, user.org_id, g.name]);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === "reorder_items") {
+    // body.items: [{ id, type, nav_group, nav_order }]
+    for (const item of (body.items || [])) {
+      const table = item.type === "dashboard" ? "org_dashboards" : "org_apps";
+      await query(`UPDATE ${table} SET nav_group = $1, nav_order = $2 WHERE id = $3 AND org_id = $4`,
+        [item.nav_group || "", item.nav_order || 0, item.id, user.org_id]);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === "rename_group") {
+    if (!body.old_name || !body.new_name) return NextResponse.json({ error: "old_name and new_name required" }, { status: 400 });
+    await query("UPDATE org_nav_groups SET name = $1, icon = COALESCE($2, icon) WHERE org_id = $3 AND name = $4",
+      [body.new_name, body.icon, user.org_id, body.old_name]);
+    await query("UPDATE org_apps SET nav_group = $1 WHERE org_id = $2 AND nav_group = $3",
+      [body.new_name, user.org_id, body.old_name]);
+    await query("UPDATE org_dashboards SET nav_group = $1 WHERE org_id = $2 AND nav_group = $3",
+      [body.new_name, user.org_id, body.old_name]);
     return NextResponse.json({ ok: true });
   }
 
