@@ -22,7 +22,7 @@ export async function GET(request, { params }) {
   }
 
   const result = await query(
-    `SELECT id, username, first_name, last_name, display_name, email, phone, department,
+    `SELECT id, username, first_name, last_name, display_name, email, phone, department, landing_page,
             role_id, org_id, is_super_admin, created_at, updated_at
      FROM users WHERE id = $1`,
     [id]
@@ -65,7 +65,7 @@ export async function PATCH(request, { params }) {
   let i = 2;
 
   // Profile fields
-  for (const field of ["first_name", "last_name", "display_name", "email", "phone", "department"]) {
+  for (const field of ["first_name", "last_name", "display_name", "email", "phone", "department", "landing_page"]) {
     if (body[field] !== undefined) { updates.push(`${field} = $${i}`); values.push(body[field]); i++; }
   }
 

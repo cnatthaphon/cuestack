@@ -1,9 +1,9 @@
 import { query } from "./db.js";
 
 export const APP_TYPES = [
-  { id: "html", label: "HTML / JS", description: "Static web app (HTML, CSS, JavaScript)" },
-  { id: "dash", label: "Dash (Python)", description: "Python Dash dashboard app" },
-  { id: "visual", label: "Visual Flow", description: "Block-based visual programming" },
+  { id: "html", label: "HTML / JS", description: "Static web app with platform SDK" },
+  { id: "dashboard", label: "Dashboard", description: "Drag-and-drop widget dashboard" },
+  { id: "visual", label: "Visual Flow", description: "Block-based data pipeline" },
 ];
 
 export async function listApps(orgId) {

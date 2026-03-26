@@ -20,9 +20,8 @@ const NAV_SECTIONS = [
   {
     label: "Workspace",
     items: [
-      { href: "/-/dashboards", label: "Dashboards", icon: "\u{1F4CA}", permission: "dashboard.view", feature: "dashboards" },
-      { href: "/-/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: null, feature: "notebooks" },
       { href: "/-/apps", label: "Apps", icon: "\u{1F4F1}", permission: null, feature: "app_builder" },
+      { href: "/-/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: null, feature: "notebooks" },
       { href: "/-/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
     ],
   },
