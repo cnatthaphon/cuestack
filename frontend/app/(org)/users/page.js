@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "../../../lib/user-context.js";
+import DataTable, { Badge, DateCell } from "../../../lib/components/data-table.js";
 
 export default function UsersPage() {
   const { user, hasPermission } = useUser();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ username: "", password: "", role_id: "" });
   const [error, setError] = useState("");
 
@@ -27,12 +29,21 @@ export default function UsersPage() {
     });
     if (!res.ok) { setError((await res.json()).error); return; }
     setForm({ username: "", password: "", role_id: "" });
+    setShowCreate(false);
     loadData();
   };
 
   const deleteUser = async (id) => {
     if (!confirm("Delete this user?")) return;
     await fetch(`/api/users/${id}`, { method: "DELETE" });
+    loadData();
+  };
+
+  const bulkDelete = async (ids) => {
+    if (!confirm(`Delete ${ids.length} users?`)) return;
+    for (const id of ids) {
+      if (id !== user.id) await fetch(`/api/users/${id}`, { method: "DELETE" });
+    }
     loadData();
   };
 
@@ -47,57 +58,67 @@ export default function UsersPage() {
 
   if (!user) return null;
 
+  const getRoleName = (roleId) => roles.find((r) => r.id === roleId)?.name || "\u2014";
+
+  const columns = [
+    { key: "id", label: "ID", width: 60 },
+    { key: "username", label: "Username" },
+    {
+      key: "role_id", label: "Role",
+      render: (val, row) => hasPermission("users.edit") ? (
+        <select value={val || ""} onChange={(e) => changeUserRole(row.id, e.target.value)}
+          style={{ padding: 4, fontSize: 13, border: "1px solid #ddd", borderRadius: 4 }}>
+          {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+      ) : (
+        <Badge color="#0070f3" bg="#e8f4ff">{getRoleName(val)}</Badge>
+      ),
+    },
+    { key: "created_at", label: "Created", render: (v) => <DateCell value={v} /> },
+  ];
+
   return (
     <div style={{ maxWidth: 900 }}>
-      <h1 style={{ margin: "0 0 20px" }}>Users</h1>
+      <h1 style={{ margin: "0 0 16px" }}>Users</h1>
 
-      {hasPermission("users.create") && (
-        <form onSubmit={createUser} style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      {showCreate && (
+        <form onSubmit={createUser} style={{ display: "flex", gap: 8, marginBottom: 16, padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
           <input placeholder="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} style={inputStyle} />
           <input type="password" placeholder="Password (min 8)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} style={inputStyle} autoComplete="new-password" />
           <select value={form.role_id} onChange={(e) => setForm({ ...form, role_id: parseInt(e.target.value) || "" })} style={inputStyle}>
             <option value="">Select role</option>
             {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <button type="submit" style={btnBlue}>Add User</button>
+          <button type="submit" style={btnBlue}>Create</button>
+          <button type="button" onClick={() => setShowCreate(false)} style={btnGray}>Cancel</button>
         </form>
       )}
-      {error && <p style={{ color: "#e53e3e", margin: "0 0 12px" }}>{error}</p>}
+      {error && <p style={{ color: "#e53e3e", margin: "0 0 12px", fontSize: 13 }}>{error}</p>}
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>{["ID", "Username", "Role", "Created", ""].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u.id}>
-              <td style={tdStyle}>{u.id}</td>
-              <td style={tdStyle}>{u.username}</td>
-              <td style={tdStyle}>
-                {hasPermission("users.edit") ? (
-                  <select value={u.role_id || ""} onChange={(e) => changeUserRole(u.id, e.target.value)} style={{ padding: 4, fontSize: 13 }}>
-                    {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                ) : (
-                  u.role || u.role_name
-                )}
-              </td>
-              <td style={tdStyle}>{new Date(u.created_at).toLocaleDateString()}</td>
-              <td style={tdStyle}>
-                {hasPermission("users.delete") && user.id !== u.id && (
-                  <button onClick={() => deleteUser(u.id)} style={btnDanger}>Delete</button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        columns={columns}
+        data={users}
+        searchKeys={["username"]}
+        bulkActions={hasPermission("users.delete") ? [
+          { label: "Delete Selected", onClick: bulkDelete, color: "#e53e3e" },
+        ] : undefined}
+        actions={hasPermission("users.delete") ? (row) => (
+          row.id !== user.id ? (
+            <button onClick={() => deleteUser(row.id)} style={btnDanger}>Delete</button>
+          ) : null
+        ) : undefined}
+        toolbar={hasPermission("users.create") && (
+          <button onClick={() => setShowCreate(!showCreate)} style={btnBlue}>
+            {showCreate ? "Cancel" : "Add User"}
+          </button>
+        )}
+        emptyMessage="No users"
+      />
     </div>
   );
 }
 
-const inputStyle = { padding: 8, border: "1px solid #ddd", borderRadius: 4, fontSize: 14, flex: 1 };
-const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", whiteSpace: "nowrap" };
+const inputStyle = { padding: 8, border: "1px solid #ddd", borderRadius: 4, fontSize: 13, flex: 1 };
+const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" };
+const btnGray = { padding: "8px 16px", background: "#666", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13 };
 const btnDanger = { padding: "4px 8px", background: "none", border: "none", color: "#e53e3e", cursor: "pointer", fontSize: 12 };
-const thStyle = { border: "1px solid #ddd", padding: 8, background: "#f5f5f5", textAlign: "left", fontSize: 13 };
-const tdStyle = { border: "1px solid #ddd", padding: 8, fontSize: 13 };
