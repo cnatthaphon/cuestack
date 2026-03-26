@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "../../../../lib/user-context.js";
+import DataTable, { Badge, DateCell } from "../../../../lib/components/data-table.js";
 
 export default function ServicesPage() {
   const { user, hasPermission, hasFeature } = useUser();
@@ -101,48 +102,36 @@ export default function ServicesPage() {
         </form>
       )}
 
-      {services.length > 0 ? (
-        <div>
-          {services.map((s) => (
-            <div key={s.id} style={{ padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <strong>{s.name}</strong>
-                  <span style={{
-                    fontSize: 11, padding: "2px 8px", borderRadius: 4, fontWeight: 600,
-                    background: s.status === "running" ? "#f0fde8" : s.status === "error" ? "#fef2f2" : "#f7f7f7",
-                    color: s.status === "running" ? "#38a169" : s.status === "error" ? "#e53e3e" : "#999",
-                  }}>
-                    {s.status}
-                  </span>
-                </div>
-                {s.description && <p style={{ margin: "4px 0 0", fontSize: 13, color: "#666" }}>{s.description}</p>}
-                <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
-                  Entrypoint: <code>{s.entrypoint}</code>
-                  {s.created_by_name && <span> &middot; by {s.created_by_name}</span>}
-                  <span> &middot; {new Date(s.created_at).toLocaleDateString()}</span>
-                </div>
-              </div>
-              {canManage && (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => toggleService(s.id, s.status)} style={{
-                    ...btnSmall,
-                    color: s.status === "running" ? "#e53e3e" : "#38a169",
-                    borderColor: s.status === "running" ? "#e53e3e" : "#38a169",
-                  }}>
-                    {s.status === "running" ? "Stop" : "Start"}
-                  </button>
-                  <button onClick={() => deleteService(s.id, s.name)} style={{ ...btnSmall, color: "#e53e3e" }}>Delete</button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div style={{ padding: 40, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center", color: "#999" }}>
-          No services yet. {canManage ? "Create one to get started." : ""}
-        </div>
-      )}
+      <DataTable
+        columns={[
+          { key: "name", label: "Name", render: (v) => <strong>{v}</strong> },
+          { key: "status", label: "Status", render: (v) => (
+            <Badge
+              color={v === "running" ? "#38a169" : v === "error" ? "#e53e3e" : "#999"}
+              bg={v === "running" ? "#f0fde8" : v === "error" ? "#fef2f2" : "#f7f7f7"}
+            >{v}</Badge>
+          ) },
+          { key: "description", label: "Description" },
+          { key: "entrypoint", label: "Entrypoint", render: (v) => <code>{v}</code> },
+          { key: "created_by_name", label: "Created By" },
+          { key: "created_at", label: "Created", render: (v) => <DateCell value={v} /> },
+        ]}
+        data={services}
+        searchKeys={["name", "status", "description", "entrypoint"]}
+        emptyMessage={`No services yet. ${canManage ? "Create one to get started." : ""}`}
+        actions={canManage ? (row) => (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => toggleService(row.id, row.status)} style={{
+              ...btnSmall,
+              color: row.status === "running" ? "#e53e3e" : "#38a169",
+              borderColor: row.status === "running" ? "#e53e3e" : "#38a169",
+            }}>
+              {row.status === "running" ? "Stop" : "Start"}
+            </button>
+            <button onClick={() => deleteService(row.id, row.name)} style={{ ...btnSmall, color: "#e53e3e" }}>Delete</button>
+          </div>
+        ) : undefined}
+      />
     </div>
   );
 }

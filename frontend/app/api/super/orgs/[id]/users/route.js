@@ -10,7 +10,9 @@ export async function GET(request, { params }) {
 
   const { id } = await params;
   const result = await query(
-    "SELECT id, username, role, created_at FROM users WHERE org_id = $1 ORDER BY id",
+    `SELECT u.id, u.username, u.role_id, r.name as role, u.created_at
+     FROM users u LEFT JOIN roles r ON u.role_id = r.id
+     WHERE u.org_id = $1 ORDER BY u.id`,
     [id]
   );
   return NextResponse.json({ users: result.rows });
@@ -31,16 +33,21 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
   }
 
-  const validRoles = ["admin", "editor", "viewer"];
-  const userRole = validRoles.includes(role) ? role : "viewer";
+  // Find role_id by name
+  const roleName = role || "viewer";
+  const roleResult = await query(
+    "SELECT id FROM roles WHERE org_id = $1 AND LOWER(name) = LOWER($2)",
+    [id, roleName]
+  );
+  const roleId = roleResult.rows[0]?.id || null;
 
   try {
     const hash = await hashPassword(password);
     const result = await query(
-      "INSERT INTO users (username, hashed_password, role, org_id) VALUES ($1, $2, $3, $4) RETURNING id, username, role, org_id",
-      [username, hash, userRole, id]
+      "INSERT INTO users (username, hashed_password, role_id, org_id) VALUES ($1, $2, $3, $4) RETURNING id, username, role_id, org_id",
+      [username, hash, roleId, id]
     );
-    return NextResponse.json({ user: result.rows[0] }, { status: 201 });
+    return NextResponse.json({ user: { ...result.rows[0], role: roleName } }, { status: 201 });
   } catch (err) {
     if (err.code === "23505") {
       return NextResponse.json({ error: "Username already exists in this organization" }, { status: 409 });
