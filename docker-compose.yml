@@ -33,6 +33,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-iot}:${POSTGRES_PASSWORD:-iot123}@db:5432/${POSTGRES_DB:-iotstack}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
       BACKEND_URL: http://backend:8000
+      FILES_ROOT: /files
     ports:
       - "3000:3000"
     depends_on:
@@ -42,6 +43,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
+      - org_files:/files
 
   jupyter:
     build: ./jupyter
@@ -54,6 +56,7 @@ services:
         condition: service_healthy
     volumes:
       - jupyter_workspaces:/workspace
+      - org_files:/files:ro
 
   nginx:
     image: nginx:alpine
@@ -69,3 +72,4 @@ services:
 volumes:
   pgdata:
   jupyter_workspaces:
+  org_files:
