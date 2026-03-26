@@ -34,7 +34,16 @@ export default function DatabasesPage() {
         columns={[
           { key: "name", label: "Name", render: (v) => <code style={{ fontSize: 12 }}>{v}</code> },
           { key: "db_type", label: "Type", render: (v) => <Badge color={v === "analytical" ? "#0070f3" : "#92400e"} bg={v === "analytical" ? "#e8f4ff" : "#fef3c7"}>{v}</Badge> },
-          { key: "columns", label: "Columns", sortable: false, render: (v) => { const cols = typeof v === "string" ? JSON.parse(v) : (v || []); return <span style={{ fontSize: 12 }}>{cols.map((c) => `${c.name}:${c.type}`).join(", ")}</span>; } },
+          { key: "columns", label: "Columns", sortable: false, render: (v) => {
+            const cols = typeof v === "string" ? JSON.parse(v) : (v || []);
+            return <span style={{ fontSize: 11 }}>{cols.map((c) => {
+              let f = "";
+              if (c.unique) f += " UQ";
+              if (c.indexed) f += " IX";
+              if (!c.nullable) f += " NN";
+              return `${c.name}:${c.type}${f}`;
+            }).join(", ")}</span>;
+          }},
           { key: "row_count", label: "Rows", render: (v) => v || 0 },
           { key: "description", label: "Description" },
           { key: "created_at", label: "Created", render: (v) => <DateCell value={v} /> },

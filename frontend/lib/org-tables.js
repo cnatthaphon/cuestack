@@ -5,11 +5,15 @@ import crypto from "crypto";
 
 const TYPE_MAP = {
   text: "VARCHAR(500)",
+  long_text: "TEXT",
   integer: "INTEGER",
+  bigint: "BIGINT",
   float: "DOUBLE PRECISION",
   boolean: "BOOLEAN",
   timestamp: "TIMESTAMPTZ",
+  date: "DATE",
   json: "JSONB",
+  uuid: "UUID",
 };
 
 const VALID_TYPES = Object.keys(TYPE_MAP);
@@ -61,15 +65,38 @@ export async function createOrgTable(orgId, { name, db_type, columns, descriptio
     "org_id UUID NOT NULL",
     "created_at TIMESTAMPTZ DEFAULT NOW()",
   ];
+  const postConstraints = [];
+  const indexCols = [];
+
   for (const col of columns) {
-    const nullable = col.nullable ? "" : " NOT NULL";
-    const def = col.default != null ? ` DEFAULT ${col.default}` : "";
-    colDefs.push(`"${col.name}" ${TYPE_MAP[col.type]}${nullable}${def}`);
+    let def = `"${col.name}" ${TYPE_MAP[col.type]}`;
+    if (!col.nullable) def += " NOT NULL";
+    if (col.unique) def += " UNIQUE";
+    if (col.default_value != null && col.default_value !== "") {
+      // Sanitize default — only allow safe literals
+      const dv = col.default_value;
+      if (col.type === "boolean") {
+        def += ` DEFAULT ${dv === "true" || dv === true ? "TRUE" : "FALSE"}`;
+      } else if (["integer", "bigint", "float"].includes(col.type)) {
+        def += ` DEFAULT ${parseFloat(dv) || 0}`;
+      } else if (col.type === "timestamp" || col.type === "date") {
+        if (dv === "now" || dv === "NOW()") def += " DEFAULT NOW()";
+      } else {
+        def += ` DEFAULT '${String(dv).replace(/'/g, "''")}'`;
+      }
+    }
+    colDefs.push(def);
+    if (col.indexed) indexCols.push(col.name);
   }
 
   // Create real table
   await query(`CREATE TABLE IF NOT EXISTS "${realName}" (${colDefs.join(", ")})`);
   await query(`CREATE INDEX IF NOT EXISTS "idx_${realName}_org" ON "${realName}" (org_id, created_at DESC)`);
+
+  // Create indexes for columns marked as indexed
+  for (const colName of indexCols) {
+    await query(`CREATE INDEX IF NOT EXISTS "idx_${realName}_${colName}" ON "${realName}" ("${colName}")`);
+  }
 
   // Grant jupyter_user access to new table
   try {
