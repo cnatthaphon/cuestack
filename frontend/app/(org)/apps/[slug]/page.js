@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useUser } from "../../../../lib/user-context.js";
+import FlowEditor from "./flow-editor.js";
 
 export default function AppViewer() {
   const { user, hasPermission } = useUser();
@@ -92,16 +93,9 @@ export default function AppViewer() {
     );
   }
 
-  // Visual flow app — render block output
+  // Visual flow app — full flow editor
   if (app.app_type === "visual") {
-    const flow = typeof app.config === "string" ? JSON.parse(app.config) : (app.config || {});
-    return (
-      <div style={{ maxWidth: 900 }}>
-        <h1 style={{ margin: "0 0 8px" }}>{app.icon} {app.name}</h1>
-        {app.description && <p style={{ color: "#666", fontSize: 13, margin: "0 0 16px" }}>{app.description}</p>}
-        <VisualFlowRenderer flow={flow} orgId={user.org_id} />
-      </div>
-    );
+    return <VisualFlowApp app={app} />;
   }
 
   // Dash app — proxy (placeholder)
@@ -116,55 +110,62 @@ export default function AppViewer() {
   );
 }
 
-// Simple visual flow renderer — executes block pipeline
-function VisualFlowRenderer({ flow, orgId }) {
-  const [output, setOutput] = useState(null);
-  const [running, setRunning] = useState(false);
-  const blocks = flow.blocks || [];
+// Visual flow app — uses FlowEditor with save + run
+function VisualFlowApp({ app }) {
+  const [tables, setTables] = useState([]);
+  const [runResults, setRunResults] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [currentBlocks, setCurrentBlocks] = useState(null);
 
-  const runFlow = async () => {
-    setRunning(true);
-    // Execute blocks in sequence via pipeline API
-    try {
-      const res = await fetch("/api/pipeline/query");
-      const data = await res.json();
-      setOutput(data);
-    } catch (e) {
-      setOutput({ error: e.message });
-    }
-    setRunning(false);
+  useEffect(() => {
+    fetch("/api/tables").then((r) => r.ok ? r.json() : { tables: [] }).then((d) => setTables(d.tables || []));
+  }, []);
+
+  const config = typeof app.config === "string" ? JSON.parse(app.config) : (app.config || {});
+  const initialBlocks = config.blocks || [];
+
+  const handleRun = async (blocks) => {
+    setRunResults(null);
+    const res = await fetch("/api/flow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blocks }),
+    });
+    const data = await res.json();
+    setRunResults(data.results || [{ error: data.error }]);
   };
 
-  if (blocks.length === 0) {
-    return (
-      <div style={{ padding: 32, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center", color: "#999" }}>
-        No blocks configured. Edit this app to add blocks.
-      </div>
-    );
-  }
+  const handleSave = async () => {
+    if (!currentBlocks) return;
+    setSaving(true);
+    await fetch(`/api/apps/${app.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: { blocks: currentBlocks } }),
+    });
+    setSaving(false);
+  };
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {blocks.map((b, i) => (
-          <div key={i} style={{
-            padding: "8px 16px", background: "#e8f4ff", borderRadius: 6,
-            border: "1px solid #0070f3", fontSize: 13, display: "flex", alignItems: "center", gap: 4,
-          }}>
-            <strong>{b.type}</strong>
-            {i < blocks.length - 1 && <span style={{ marginLeft: 8, color: "#0070f3" }}>&rarr;</span>}
-          </div>
-        ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <h1 style={{ margin: "0 0 4px", fontSize: 20 }}>{app.icon} {app.name}</h1>
+          {app.description && <p style={{ color: "#666", fontSize: 13, margin: 0 }}>{app.description}</p>}
+        </div>
+        <button onClick={handleSave} disabled={saving} style={{
+          padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13,
+        }}>
+          {saving ? "Saving..." : "Save Flow"}
+        </button>
       </div>
-      <button onClick={runFlow} disabled={running}
-        style={{ padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13, marginBottom: 16 }}>
-        {running ? "Running..." : "Run Flow"}
-      </button>
-      {output && (
-        <pre style={{ padding: 16, background: "#f7f7f7", borderRadius: 8, fontSize: 12, overflow: "auto", maxHeight: 400 }}>
-          {JSON.stringify(output, null, 2)}
-        </pre>
-      )}
+      <FlowEditor
+        initialBlocks={initialBlocks}
+        tables={tables}
+        onSave={(blocks) => setCurrentBlocks(blocks)}
+        onRun={handleRun}
+        runResults={runResults}
+      />
     </div>
   );
 }
