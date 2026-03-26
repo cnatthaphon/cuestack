@@ -95,8 +95,10 @@ export async function initDB() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await query(`ALTER TABLE org_file_entries ADD COLUMN IF NOT EXISTS visibility VARCHAR(10) DEFAULT 'private'`);
   await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_parent ON org_file_entries (org_id, parent_id)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_name ON org_file_entries (org_id, parent_id, name)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_owner ON org_file_entries (org_id, created_by)`);
 
   // User profile fields (added to existing users table)
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);
