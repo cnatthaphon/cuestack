@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "../../../../lib/user-context.js";
+import DataTable, { Badge, DateCell, DateTimeCell } from "../../../../lib/components/data-table.js";
 
 export default function ApiKeysPage() {
   const { user } = useUser();
@@ -120,36 +121,27 @@ export default function ApiKeysPage() {
       </form>
       {error && <p style={{ color: "#e53e3e", margin: "-12px 0 12px" }}>{error}</p>}
 
-      {keys.length > 0 ? (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>{["Name", "Prefix", "Permissions", "Active", "Last Used", "Expires", "Created", ""].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {keys.map((k) => {
-              const perms = typeof k.permissions === "string" ? JSON.parse(k.permissions) : (k.permissions || []);
-              return (
-                <tr key={k.id}>
-                  <td style={tdStyle}>{k.name}</td>
-                  <td style={tdStyle}><code style={{ fontSize: 12 }}>{k.key_prefix}...</code></td>
-                  <td style={tdStyle}><span style={{ fontSize: 11 }}>{perms.map((p) => `${p.table}(${p.read ? "R" : ""}${p.write ? "W" : ""})`).join(", ") || "none"}</span></td>
-                  <td style={tdStyle}>
-                    <button onClick={() => toggleKeyActive(k.id, k.is_active)} style={{ ...btnSmall, color: k.is_active ? "#38a169" : "#e53e3e" }}>
-                      {k.is_active ? "Active" : "Disabled"}
-                    </button>
-                  </td>
-                  <td style={tdStyle}>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "Never"}</td>
-                  <td style={tdStyle}>{k.expires_at ? new Date(k.expires_at).toLocaleDateString() : "Never"}</td>
-                  <td style={tdStyle}>{new Date(k.created_at).toLocaleDateString()}</td>
-                  <td style={tdStyle}><button onClick={() => deleteKey(k.id, k.name)} style={btnDanger}>Revoke</button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
-        <p style={{ color: "#999", fontSize: 14 }}>No API keys yet.</p>
-      )}
+      <DataTable
+        columns={[
+          { key: "name", label: "Name" },
+          { key: "key_prefix", label: "Prefix", render: (v) => <code style={{ fontSize: 12 }}>{v}...</code> },
+          { key: "permissions", label: "Permissions", sortable: false, render: (v) => { const perms = typeof v === "string" ? JSON.parse(v) : (v || []); return <span style={{ fontSize: 11 }}>{perms.map((p) => `${p.table}(${p.read ? "R" : ""}${p.write ? "W" : ""})`).join(", ") || "none"}</span>; } },
+          { key: "is_active", label: "Active", render: (v, row) => (
+            <button onClick={() => toggleKeyActive(row.id, row.is_active)} style={{ ...btnSmall, color: row.is_active ? "#38a169" : "#e53e3e" }}>
+              {row.is_active ? "Active" : "Disabled"}
+            </button>
+          ) },
+          { key: "last_used_at", label: "Last Used", render: (v) => v ? <DateTimeCell value={v} /> : "Never" },
+          { key: "expires_at", label: "Expires", render: (v) => v ? <DateCell value={v} /> : "Never" },
+          { key: "created_at", label: "Created", render: (v) => <DateCell value={v} /> },
+        ]}
+        data={keys}
+        searchKeys={["name", "key_prefix"]}
+        emptyMessage="No API keys yet."
+        actions={(row) => (
+          <button onClick={() => deleteKey(row.id, row.name)} style={btnDanger}>Revoke</button>
+        )}
+      />
     </div>
   );
 }
@@ -159,4 +151,3 @@ const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", bor
 const btnSmall = { padding: "4px 8px", background: "none", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 12 };
 const btnDanger = { padding: "4px 8px", background: "none", border: "none", color: "#e53e3e", cursor: "pointer", fontSize: 12 };
 const thStyle = { border: "1px solid #ddd", padding: 8, background: "#f5f5f5", textAlign: "left", fontSize: 13 };
-const tdStyle = { border: "1px solid #ddd", padding: 8, fontSize: 13 };

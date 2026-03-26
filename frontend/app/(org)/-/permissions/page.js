@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "../../../../lib/user-context.js";
+import DataTable, { Badge } from "../../../../lib/components/data-table.js";
 
 export default function PermissionsPage() {
   const { user } = useUser();
@@ -52,32 +53,20 @@ export default function PermissionsPage() {
       </form>
       {error && <p style={{ color: "#e53e3e", margin: "-12px 0 12px" }}>{error}</p>}
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>{["ID", "Label", "Category", "Type", ""].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
-        </thead>
-        <tbody>
-          {permissions.map((p) => (
-            <tr key={p.id}>
-              <td style={tdStyle}><code style={{ fontSize: 12 }}>{p.id}</code></td>
-              <td style={tdStyle}>{p.label || p.id}</td>
-              <td style={tdStyle}>{p.category}</td>
-              <td style={tdStyle}>
-                <span style={{
-                  fontSize: 11, padding: "2px 6px", borderRadius: 4,
-                  background: p.type === "system" ? "#e8f4ff" : "#f0fde8",
-                  color: p.type === "system" ? "#0070f3" : "#38a169",
-                }}>
-                  {p.type}
-                </span>
-              </td>
-              <td style={tdStyle}>
-                {p.type === "app" && <button onClick={() => deletePermission(p.id)} style={btnDanger}>Delete</button>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        columns={[
+          { key: "id", label: "ID", render: (v) => <code style={{ fontSize: 12 }}>{v}</code> },
+          { key: "label", label: "Label", render: (v, row) => v || row.id },
+          { key: "category", label: "Category" },
+          { key: "type", label: "Type", render: (v) => <Badge color={v === "system" ? "#0070f3" : "#38a169"} bg={v === "system" ? "#e8f4ff" : "#f0fde8"}>{v}</Badge> },
+        ]}
+        data={permissions}
+        searchKeys={["id", "label", "category", "type"]}
+        emptyMessage="No permissions found."
+        actions={(row) => row.type === "app" ? (
+          <button onClick={() => deletePermission(row.id)} style={btnDanger}>Delete</button>
+        ) : null}
+      />
     </div>
   );
 }
@@ -85,5 +74,3 @@ export default function PermissionsPage() {
 const inputStyle = { padding: 8, border: "1px solid #ddd", borderRadius: 4, fontSize: 14, flex: 1 };
 const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", whiteSpace: "nowrap" };
 const btnDanger = { padding: "4px 8px", background: "none", border: "none", color: "#e53e3e", cursor: "pointer", fontSize: 12 };
-const thStyle = { border: "1px solid #ddd", padding: 8, background: "#f5f5f5", textAlign: "left", fontSize: 13 };
-const tdStyle = { border: "1px solid #ddd", padding: 8, fontSize: 13 };

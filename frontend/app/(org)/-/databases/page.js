@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "../../../../lib/user-context.js";
+import DataTable, { Badge, DateCell } from "../../../../lib/components/data-table.js";
 
 export default function DatabasesPage() {
   const { user, hasPermission } = useUser();
@@ -98,35 +99,22 @@ export default function DatabasesPage() {
       )}
       {error && <p style={{ color: "#e53e3e", margin: "-12px 0 12px" }}>{error}</p>}
 
-      {tables.length > 0 ? (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>{["Name", "Type", "Columns", "Rows", "Description", "Created", ""].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {tables.map((t) => {
-              const cols = typeof t.columns === "string" ? JSON.parse(t.columns) : (t.columns || []);
-              return (
-                <tr key={t.id}>
-                  <td style={tdStyle}><code style={{ fontSize: 12 }}>{t.name}</code></td>
-                  <td style={tdStyle}>
-                    <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: t.db_type === "analytical" ? "#e8f4ff" : "#fef3c7", color: t.db_type === "analytical" ? "#0070f3" : "#92400e" }}>
-                      {t.db_type}
-                    </span>
-                  </td>
-                  <td style={tdStyle}><span style={{ fontSize: 12 }}>{cols.map((c) => `${c.name}:${c.type}`).join(", ")}</span></td>
-                  <td style={tdStyle}>{t.row_count || 0}</td>
-                  <td style={tdStyle}>{t.description}</td>
-                  <td style={tdStyle}>{new Date(t.created_at).toLocaleDateString()}</td>
-                  <td style={tdStyle}>{hasPermission("db.delete") && <button onClick={() => deleteTable(t.id, t.name)} style={btnDanger}>Delete</button>}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
-        <p style={{ color: "#999", fontSize: 14 }}>No tables yet.</p>
-      )}
+      <DataTable
+        columns={[
+          { key: "name", label: "Name", render: (v) => <code style={{ fontSize: 12 }}>{v}</code> },
+          { key: "db_type", label: "Type", render: (v) => <Badge color={v === "analytical" ? "#0070f3" : "#92400e"} bg={v === "analytical" ? "#e8f4ff" : "#fef3c7"}>{v}</Badge> },
+          { key: "columns", label: "Columns", sortable: false, render: (v) => { const cols = typeof v === "string" ? JSON.parse(v) : (v || []); return <span style={{ fontSize: 12 }}>{cols.map((c) => `${c.name}:${c.type}`).join(", ")}</span>; } },
+          { key: "row_count", label: "Rows", render: (v) => v || 0 },
+          { key: "description", label: "Description" },
+          { key: "created_at", label: "Created", render: (v) => <DateCell value={v} /> },
+        ]}
+        data={tables}
+        searchKeys={["name", "db_type", "description"]}
+        emptyMessage="No tables yet."
+        actions={hasPermission("db.delete") ? (row) => (
+          <button onClick={() => deleteTable(row.id, row.name)} style={btnDanger}>Delete</button>
+        ) : undefined}
+      />
     </div>
   );
 }
@@ -135,5 +123,3 @@ const inputStyle = { padding: 8, border: "1px solid #ddd", borderRadius: 4, font
 const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", whiteSpace: "nowrap" };
 const btnSmall = { padding: "4px 8px", background: "none", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 12 };
 const btnDanger = { padding: "4px 8px", background: "none", border: "none", color: "#e53e3e", cursor: "pointer", fontSize: 12 };
-const thStyle = { border: "1px solid #ddd", padding: 8, background: "#f5f5f5", textAlign: "left", fontSize: 13 };
-const tdStyle = { border: "1px solid #ddd", padding: 8, fontSize: 13 };
