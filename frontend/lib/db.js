@@ -210,6 +210,13 @@ export async function initJupyterUser() {
     await query("GRANT USAGE ON SCHEMA public TO jupyter_user");
     // Revoke default public schema privileges that PostgreSQL grants to all users
     await query("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC");
+    // Explicitly block system tables (catches PUBLIC role grants)
+    const systemTables = ["organizations", "users", "permissions", "roles", "role_permissions",
+      "api_keys", "org_configs", "org_features", "org_services", "org_apps", "org_dashboards"];
+    for (const t of systemTables) {
+      try { await query(`REVOKE ALL ON ${t} FROM jupyter_user`); } catch {}
+      try { await query(`REVOKE ALL ON ${t} FROM PUBLIC`); } catch {}
+    }
     // Allow reading org_tables registry (to list tables, not configs)
     await query("GRANT SELECT ON org_tables TO jupyter_user");
     // Allow read/write on org data tables (org_* prefix)
