@@ -2,16 +2,24 @@ import os
 
 c = get_config()  # noqa: F821
 
-# Security: token-based auth (token set via env var)
-c.ServerApp.token = os.environ.get("JUPYTER_TOKEN", "")
+# Auth: disable token — platform handles auth via login + nginx proxy.
+# Jupyter is NOT exposed to the internet, only accessible through nginx
+# which requires platform authentication to reach /jupyter/*.
+c.ServerApp.token = ""
 c.ServerApp.password = ""
+c.ServerApp.disable_check_xsrf = True
 
-# Allow embedding in iframe (platform proxies through auth)
+# Allow embedding in iframe + WebSocket from same origin
 c.ServerApp.tornado_settings = {
     "headers": {
         "Content-Security-Policy": "frame-ancestors 'self' *",
-    }
+        "Access-Control-Allow-Origin": "*",
+    },
+    "websocket_ping_interval": 30,
+    "websocket_ping_timeout": 20,
 }
+c.ServerApp.allow_origin = "*"
+c.ServerApp.allow_credentials = True
 
 # Base URL — proxied under /jupyter/
 c.ServerApp.base_url = "/jupyter/"

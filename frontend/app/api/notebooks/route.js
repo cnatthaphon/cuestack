@@ -3,7 +3,8 @@ import { getCurrentUser } from "../../../lib/auth.js";
 import { hasFeature } from "../../../lib/features.js";
 import { getConfig, setConfig, getConfigsByCategory } from "../../../lib/org-config.js";
 
-const JUPYTER_TOKEN = process.env.JUPYTER_TOKEN || "dev-jupyter-token";
+// No token needed — Jupyter auth disabled, platform handles auth
+const JUPYTER_TOKEN = "";
 const JUPYTER_INTERNAL = "http://jupyter:8888";
 
 // GET — get notebook session info (Jupyter URL with token)
