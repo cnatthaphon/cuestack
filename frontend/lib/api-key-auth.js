@@ -75,12 +75,19 @@ function checkRate(prefix, limit) {
 
 /**
  * Check if API key has permission for a table + action.
- * permissions format: [{ table: "sensor_data", access: "read" }, { table: "sensor_data", access: "write" }]
+ * Supports two formats:
+ *   1. { table, access: "read"|"write" }
+ *   2. { table, read: true, write: true }
  * Empty permissions = all tables, all access.
  */
 export function keyHasAccess(permissions, tableName, action) {
   if (!permissions || permissions.length === 0) return true; // empty = full access
-  return permissions.some(
-    (p) => (p.table === "*" || p.table === tableName) && (p.access === "*" || p.access === action)
-  );
+  return permissions.some((p) => {
+    const tableMatch = p.table === "*" || p.table === tableName;
+    if (!tableMatch) return false;
+    // Format 1: { access: "read" }
+    if (p.access) return p.access === "*" || p.access === action;
+    // Format 2: { read: true, write: true }
+    return p[action] === true;
+  });
 }
