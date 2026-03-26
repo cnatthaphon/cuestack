@@ -77,6 +77,27 @@ export async function initDB() {
     )
   `);
 
+  // Virtual file system — metadata in DB, physical files stored flat
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_file_entries (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      parent_id UUID REFERENCES org_file_entries(id) ON DELETE CASCADE,
+      entry_type VARCHAR(10) NOT NULL DEFAULT 'file',
+      storage_key VARCHAR(255),
+      size BIGINT DEFAULT 0,
+      mime_type VARCHAR(100),
+      is_public BOOLEAN DEFAULT false,
+      shared_with JSONB DEFAULT '[]',
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_parent ON org_file_entries (org_id, parent_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_name ON org_file_entries (org_id, parent_id, name)`);
+
   // User profile fields (added to existing users table)
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(200)`);

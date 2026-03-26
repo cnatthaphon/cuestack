@@ -3,7 +3,7 @@ import { getCurrentUser } from "../../../../lib/auth.js";
 import { hasPermission } from "../../../../lib/permissions.js";
 import { downloadFile } from "../../../../lib/org-files.js";
 
-// GET — download a file
+// GET — download a file by ID
 export async function GET(request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -13,15 +13,15 @@ export async function GET(request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const filePath = searchParams.get("path");
-  if (!filePath) return NextResponse.json({ error: "Path required" }, { status: 400 });
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "File ID required" }, { status: 400 });
 
   try {
-    const { buffer, filename } = await downloadFile(user.org_id, filePath);
+    const { buffer, filename, mime_type } = await downloadFile(user.org_id, id);
     return new NextResponse(buffer, {
       headers: {
         "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}"`,
-        "Content-Type": "application/octet-stream",
+        "Content-Type": mime_type || "application/octet-stream",
         "Content-Length": buffer.length.toString(),
       },
     });

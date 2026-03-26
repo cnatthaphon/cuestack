@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser } from "../../../lib/user-context.js";
-import DataTable, { DateTimeCell } from "../../../lib/components/data-table.js";
+import { useUser } from "../../../../lib/user-context.js";
+import DataTable, { DateTimeCell } from "../../../../lib/components/data-table.js";
 
 export default function NotebooksPage() {
   const { user, org, hasFeature } = useUser();

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useUser } from "../../../lib/user-context.js";
+import { useUser } from "../../../../lib/user-context.js";
 
 const APP_TYPES = [
   { id: "html", label: "HTML / JS", icon: "\u{1F310}", desc: "Static web app (HTML, CSS, JavaScript)" },

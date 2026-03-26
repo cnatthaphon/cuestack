@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useUser } from "../../../lib/user-context.js";
+import { useUser } from "../../../../lib/user-context.js";
 
 export default function DashboardsPage() {
   const { user, hasPermission, hasFeature, refresh } = useUser();
