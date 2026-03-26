@@ -10,6 +10,8 @@ const VIEWS = [
   { id: "org", label: "Org Files", icon: "\u{1F3E2}" },
 ];
 
+const VIS_ICONS = { private: "\u{1F512}", org: "\u{1F465}", public: "\u{1F310}" };
+
 export default function FilesPage() {
   const { user, hasPermission } = useUser();
   const [files, setFiles] = useState([]);
@@ -24,30 +26,22 @@ export default function FilesPage() {
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [sharingEntry, setSharingEntry] = useState(null);
-  const [shareInput, setShareInput] = useState("");
   const [orgUsers, setOrgUsers] = useState([]);
+  const [orgRoles, setOrgRoles] = useState([]);
   const [dragOverId, setDragOverId] = useState(null);
   const fileInputRef = useRef(null);
 
-  useEffect(() => { loadFiles("my", null); loadOrgUsers(); }, []);
+  useEffect(() => {
+    loadFiles("my", null);
+    fetch("/api/users").then((r) => r.ok ? r.json() : { users: [] }).then((d) => setOrgUsers(d.users || []));
+    fetch("/api/roles").then((r) => r.ok ? r.json() : { roles: [] }).then((d) => setOrgRoles(d.roles || []));
+  }, []);
 
   const loadFiles = async (v, pid) => {
     const params = new URLSearchParams({ view: v });
     if (pid) params.set("parent", pid);
     const res = await fetch(`/api/files?${params}`);
-    if (res.ok) {
-      const d = await res.json();
-      setFiles(d.files || []);
-      setStorage(d.storage);
-      setBreadcrumb(d.breadcrumb || []);
-      setParentId(pid);
-      setView(v);
-    }
-  };
-
-  const loadOrgUsers = async () => {
-    const res = await fetch("/api/users");
-    if (res.ok) { const d = await res.json(); setOrgUsers(d.users || []); }
+    if (res.ok) { const d = await res.json(); setFiles(d.files || []); setStorage(d.storage); setBreadcrumb(d.breadcrumb || []); setParentId(pid); setView(v); }
   };
 
   const switchView = (v) => { loadFiles(v, null); setError(""); setRenamingId(null); setShowNewFolder(false); setSharingEntry(null); };
@@ -57,11 +51,10 @@ export default function FilesPage() {
   const uploadFiles = async (fileList) => {
     setUploading(true); setError("");
     for (const file of fileList) {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (parentId) formData.append("parent_id", parentId);
-      formData.append("visibility", view === "org" ? "org" : "private");
-      const res = await fetch("/api/files", { method: "POST", body: formData });
+      const fd = new FormData(); fd.append("file", file);
+      if (parentId) fd.append("parent_id", parentId);
+      fd.append("visibility", view === "org" ? "org" : "private");
+      const res = await fetch("/api/files", { method: "POST", body: fd });
       if (!res.ok) { setError((await res.json()).error); break; }
     }
     setUploading(false); loadFiles(view, parentId);
@@ -69,17 +62,16 @@ export default function FilesPage() {
 
   const createFolder = async () => {
     if (!newFolderName.trim()) return;
-    const res = await fetch("/api/files", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "mkdir", name: newFolderName, parent_id: parentId, visibility: view === "org" ? "org" : "private" }),
-    });
+    const res = await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "mkdir", name: newFolderName, parent_id: parentId, visibility: view === "org" ? "org" : "private" }) });
     if (!res.ok) { setError((await res.json()).error); return; }
     setNewFolderName(""); setShowNewFolder(false); loadFiles(view, parentId);
   };
 
   const doRename = async () => {
     if (!renameValue.trim() || !renamingId) return;
-    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "rename", id: renamingId, name: renameValue }) });
+    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "rename", id: renamingId, name: renameValue }) });
     setRenamingId(null); loadFiles(view, parentId);
   };
 
@@ -90,24 +82,58 @@ export default function FilesPage() {
     e.preventDefault(); setDragOverId(null);
     const entryId = e.dataTransfer.getData("entry_id");
     if (!entryId || entryId === targetId) return;
-    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", id: entryId, parent_id: targetId }) });
+    const res = await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "move", id: entryId, parent_id: targetId }) });
+    if (!res.ok) setError((await res.json()).error);
     loadFiles(view, parentId);
   };
 
-  // Share dialog
-  const openShare = (entry) => { setSharingEntry(entry); setShareInput(""); };
-  const doShare = async (shareWith) => {
-    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "share", id: sharingEntry.id, share_with: shareWith }) });
-    setSharingEntry(null); loadFiles(view, parentId);
+  // Share dialog helpers
+  const openShare = (entry) => setSharingEntry({ ...entry, shared_with: entry.shared_with || [] });
+  const updateShare = async (newSharedWith) => {
+    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "share", id: sharingEntry.id, share_with: newSharedWith }) });
+    setSharingEntry({ ...sharingEntry, shared_with: newSharedWith });
+    loadFiles(view, parentId);
   };
   const setVis = async (id, visibility) => {
-    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_visibility", id, visibility }) });
+    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_visibility", id, visibility }) });
+    if (sharingEntry) setSharingEntry({ ...sharingEntry, visibility });
     loadFiles(view, parentId);
+  };
+
+  const toggleShareUser = (userId, access) => {
+    const current = sharingEntry.shared_with || [];
+    const existing = current.find((s) => s.type === "user" && s.id === userId);
+    let next;
+    if (existing && existing.access === access) {
+      next = current.filter((s) => !(s.type === "user" && s.id === userId)); // remove
+    } else {
+      next = [...current.filter((s) => !(s.type === "user" && s.id === userId)), { type: "user", id: userId, access }];
+    }
+    updateShare(next);
+  };
+
+  const toggleShareRole = (roleId, access) => {
+    const current = sharingEntry.shared_with || [];
+    const existing = current.find((s) => s.type === "role" && s.id === roleId);
+    let next;
+    if (existing && existing.access === access) {
+      next = current.filter((s) => !(s.type === "role" && s.id === roleId));
+    } else {
+      next = [...current.filter((s) => !(s.type === "role" && s.id === roleId)), { type: "role", id: roleId, access }];
+    }
+    updateShare(next);
   };
 
   if (!user) return null;
   const isOwnerView = view === "my";
   const formatSize = (b) => { if (!b) return "\u2014"; if (b < 1024) return `${b} B`; if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`; return `${(b / 1048576).toFixed(1)} MB`; };
+
+  const isShared = (row) => (row.shared_with && row.shared_with.length > 0) || row.visibility === "org" || row.visibility === "public";
+  const isOwner = (row) => row.created_by === user.id;
+  const canEdit = (row) => isOwner(row) || row.my_access === "editor";
 
   const columns = [
     { key: "name", label: "Name", render: (v, row) => {
@@ -117,21 +143,28 @@ export default function FilesPage() {
           autoFocus style={{ padding: 4, border: "1px solid #0070f3", borderRadius: 4, fontSize: 13, width: 200 }} />
       );
       const icon = row.entry_type === "directory" ? "\u{1F4C1}" : "\u{1F4C4}";
+      const shareIcon = isShared(row) ? ` ${VIS_ICONS[row.visibility] || "\u{1F465}"}` : "";
       return (
-        <div draggable={isOwnerView} onDragStart={(e) => { e.dataTransfer.setData("entry_id", row.id); }}
+        <div draggable={isOwner(row)} onDragStart={(e) => { e.dataTransfer.setData("entry_id", row.id); }}
           onDragOver={(e) => { if (row.entry_type === "directory") { e.preventDefault(); setDragOverId(row.id); } }}
           onDragLeave={() => setDragOverId(null)} onDrop={(e) => row.entry_type === "directory" && handleDrop(e, row.id)}
           onClick={() => row.entry_type === "directory" && navigateTo(row.id)}
           style={{ cursor: row.entry_type === "directory" ? "pointer" : "default", background: dragOverId === row.id ? "#e8f4ff" : "transparent", padding: "2px 4px", borderRadius: 4 }}>
-          {icon} {v}
+          {icon} {v}{shareIcon}
         </div>
       );
     }},
-    ...(view !== "my" ? [{ key: "owner_name", label: "Owner", width: 100 }] : []),
-    { key: "visibility", label: "Visibility", width: 90, render: (v) => {
-      const colors = { private: "#666", org: "#0070f3", public: "#38a169" };
-      return <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: `${colors[v] || "#666"}15`, color: colors[v] || "#666" }}>{v}</span>;
-    }},
+    ...(view === "shared" ? [
+      { key: "owner_name", label: "Owner", width: 100 },
+      { key: "my_access", label: "Access", width: 80, render: (v) => (
+        <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: v === "editor" ? "#fef3c7" : "#f0f0f0", color: v === "editor" ? "#92400e" : "#666" }}>
+          {v}
+        </span>
+      )},
+    ] : []),
+    { key: "visibility", label: "", width: 30, render: (v) => (
+      <span title={v} style={{ fontSize: 14 }}>{VIS_ICONS[v] || ""}</span>
+    )},
     { key: "size", label: "Size", width: 90, render: (v, row) => row.entry_type === "file" ? formatSize(v) : "\u2014" },
     { key: "updated_at", label: "Modified", render: (v) => <DateTimeCell value={v} /> },
   ];
@@ -157,9 +190,7 @@ export default function FilesPage() {
             padding: "8px 16px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
             background: view === v.id ? "#0070f3" : "transparent", color: view === v.id ? "#fff" : "#666",
             borderRadius: "6px 6px 0 0",
-          }}>
-            {v.icon} {v.label}
-          </button>
+          }}>{v.icon} {v.label}</button>
         ))}
       </div>
 
@@ -167,12 +198,11 @@ export default function FilesPage() {
       {view !== "shared" && (
         <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 12, fontSize: 13 }}>
           <button onClick={() => navigateTo(null)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, null)}
-            style={{ background: "none", border: "none", color: "#0070f3", cursor: "pointer", padding: 0, fontSize: 13 }}>Home</button>
+            style={crumbBtn}>Home</button>
           {breadcrumb.map((c) => (
             <span key={c.id}>
               <span style={{ color: "#999", margin: "0 4px" }}>/</span>
-              <button onClick={() => navigateTo(c.id)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, c.id)}
-                style={{ background: "none", border: "none", color: "#0070f3", cursor: "pointer", padding: 0, fontSize: 13 }}>{c.name}</button>
+              <button onClick={() => navigateTo(c.id)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, c.id)} style={crumbBtn}>{c.name}</button>
             </span>
           ))}
         </div>
@@ -186,40 +216,70 @@ export default function FilesPage() {
           <button onClick={() => setShowNewFolder(false)} style={btnGray}>Cancel</button>
         </div>
       )}
-      {error && <p style={{ color: "#e53e3e", margin: "0 0 12px", fontSize: 13 }}>{error}</p>}
 
       {/* Share dialog */}
       {sharingEntry && (
         <div style={{ marginBottom: 12, padding: 16, background: "#fff", borderRadius: 8, border: "2px solid #0070f3" }}>
-          <h3 style={{ margin: "0 0 12px", fontSize: 14 }}>Share: {sharingEntry.name}</h3>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <button onClick={() => setVis(sharingEntry.id, "private")} style={{ ...visBtn, ...(sharingEntry.visibility === "private" ? visBtnActive : {}) }}>Private</button>
-            <button onClick={() => setVis(sharingEntry.id, "org")} style={{ ...visBtn, ...(sharingEntry.visibility === "org" ? visBtnActive : {}) }}>Org (everyone)</button>
-            <button onClick={() => setVis(sharingEntry.id, "public")} style={{ ...visBtn, ...(sharingEntry.visibility === "public" ? visBtnActive : {}) }}>Public link</button>
+          <h3 style={{ margin: "0 0 12px", fontSize: 14 }}>
+            Share: {sharingEntry.entry_type === "directory" ? "\u{1F4C1}" : "\u{1F4C4}"} {sharingEntry.name}
+          </h3>
+
+          {/* Visibility */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            {[["private", "\u{1F512} Private", "Only you"], ["org", "\u{1F465} Org", "All org members (view)"], ["public", "\u{1F310} Public", "Anyone with link"]].map(([v, label, desc]) => (
+              <button key={v} onClick={() => setVis(sharingEntry.id, v)} style={{
+                flex: 1, padding: 10, borderRadius: 6, cursor: "pointer", textAlign: "center",
+                border: sharingEntry.visibility === v ? "2px solid #0070f3" : "1px solid #ddd",
+                background: sharingEntry.visibility === v ? "#e8f4ff" : "#fff",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
+                <div style={{ fontSize: 11, color: "#666" }}>{desc}</div>
+              </button>
+            ))}
           </div>
-          <p style={{ fontSize: 12, color: "#666", margin: "0 0 8px" }}>Share with specific users:</p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-            {orgUsers.filter((u) => u.id !== user.id).map((u) => {
-              const isShared = (sharingEntry.shared_with || []).some((s) => s.type === "user" && s.id === u.id);
+
+          {/* Share with Roles */}
+          <p style={{ fontSize: 12, color: "#555", fontWeight: 600, margin: "0 0 6px" }}>Share with roles:</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
+            {orgRoles.map((role) => {
+              const shared = (sharingEntry.shared_with || []).find((s) => s.type === "role" && s.id === role.id);
               return (
-                <button key={u.id} onClick={() => {
-                  const current = sharingEntry.shared_with || [];
-                  const next = isShared ? current.filter((s) => !(s.type === "user" && s.id === u.id)) : [...current, { type: "user", id: u.id }];
-                  doShare(next);
-                  setSharingEntry({ ...sharingEntry, shared_with: next });
-                }} style={{
-                  padding: "4px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer",
-                  background: isShared ? "#e8f4ff" : "#f7f7f7", border: isShared ? "1px solid #0070f3" : "1px solid #ddd",
-                  color: isShared ? "#0070f3" : "#666",
-                }}>
-                  {u.username} {isShared ? "\u2713" : ""}
-                </button>
+                <div key={role.id} style={{ display: "flex", border: "1px solid #ddd", borderRadius: 4, overflow: "hidden" }}>
+                  <span style={{ padding: "4px 8px", fontSize: 12, background: shared ? "#e8f4ff" : "#f7f7f7", color: shared ? "#0070f3" : "#666" }}>
+                    {role.name}
+                  </span>
+                  <button onClick={() => toggleShareRole(role.id, "viewer")} style={{ ...accessBtn, background: shared?.access === "viewer" ? "#38a169" : "#f0f0f0", color: shared?.access === "viewer" ? "#fff" : "#999" }}>V</button>
+                  <button onClick={() => toggleShareRole(role.id, "editor")} style={{ ...accessBtn, background: shared?.access === "editor" ? "#f59e0b" : "#f0f0f0", color: shared?.access === "editor" ? "#fff" : "#999" }}>E</button>
+                </div>
               );
             })}
+          </div>
+
+          {/* Share with Users */}
+          <p style={{ fontSize: 12, color: "#555", fontWeight: 600, margin: "0 0 6px" }}>Share with users:</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
+            {orgUsers.filter((u) => u.id !== user.id).map((u) => {
+              const shared = (sharingEntry.shared_with || []).find((s) => s.type === "user" && s.id === u.id);
+              return (
+                <div key={u.id} style={{ display: "flex", border: "1px solid #ddd", borderRadius: 4, overflow: "hidden" }}>
+                  <span style={{ padding: "4px 8px", fontSize: 12, background: shared ? "#e8f4ff" : "#f7f7f7", color: shared ? "#0070f3" : "#666" }}>
+                    {u.first_name ? `${u.first_name} ${u.last_name || ""}`.trim() : u.username}
+                  </span>
+                  <button onClick={() => toggleShareUser(u.id, "viewer")} title="Viewer" style={{ ...accessBtn, background: shared?.access === "viewer" ? "#38a169" : "#f0f0f0", color: shared?.access === "viewer" ? "#fff" : "#999" }}>V</button>
+                  <button onClick={() => toggleShareUser(u.id, "editor")} title="Editor" style={{ ...accessBtn, background: shared?.access === "editor" ? "#f59e0b" : "#f0f0f0", color: shared?.access === "editor" ? "#fff" : "#999" }}>E</button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 8 }}>
+            <strong>V</strong> = Viewer (view + download) &nbsp; <strong>E</strong> = Editor (view + download + add files to folder)
           </div>
           <button onClick={() => setSharingEntry(null)} style={btnGray}>Done</button>
         </div>
       )}
+
+      {error && <p style={{ color: "#e53e3e", margin: "0 0 12px", fontSize: 13 }}>{error}</p>}
 
       <DataTable columns={columns} data={files} searchKeys={["name"]}
         bulkActions={isOwnerView && hasPermission("files.delete") ? [
@@ -227,10 +287,10 @@ export default function FilesPage() {
         ] : undefined}
         actions={(row) => (
           <div style={{ display: "flex", gap: 4 }}>
-            {row.entry_type === "file" && <button onClick={() => downloadItem(row.id)} style={btnLink}>Download</button>}
-            {row.created_by === user.id && <button onClick={() => openShare(row)} style={btnLink}>Share</button>}
-            {row.created_by === user.id && <button onClick={() => { setRenamingId(row.id); setRenameValue(row.name); }} style={btnLink}>Rename</button>}
-            {row.created_by === user.id && <button onClick={() => deleteItem(row.id, row.name)} style={btnDanger}>Delete</button>}
+            {row.entry_type === "file" && <button onClick={() => downloadItem(row.id)} style={actBtn}>Download</button>}
+            {isOwner(row) && <button onClick={() => openShare(row)} style={actBtn}>Share</button>}
+            {isOwner(row) && <button onClick={() => { setRenamingId(row.id); setRenameValue(row.name); }} style={actBtn}>Rename</button>}
+            {isOwner(row) && <button onClick={() => deleteItem(row.id, row.name)} style={{ ...actBtn, color: "#e53e3e" }}>Delete</button>}
           </div>
         )}
         toolbar={
@@ -245,9 +305,8 @@ export default function FilesPage() {
             )}
           </div>
         }
-        emptyMessage={view === "shared" ? "No files shared with you yet" : "Empty — upload files or create a folder"}
+        emptyMessage={view === "shared" ? "No files shared with you yet" : "Empty"}
       />
-      <p style={{ fontSize: 11, color: "#999", marginTop: 8 }}>Drag items onto folders to move. Only file owners can rename, move, share, or delete.</p>
     </div>
   );
 }
@@ -255,7 +314,6 @@ export default function FilesPage() {
 const inputStyle = { padding: 8, border: "1px solid #ddd", borderRadius: 4, fontSize: 13, flex: 1 };
 const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" };
 const btnGray = { padding: "8px 16px", background: "#666", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" };
-const btnLink = { background: "none", border: "none", color: "#0070f3", cursor: "pointer", fontSize: 12, padding: "2px 4px" };
-const btnDanger = { background: "none", border: "none", color: "#e53e3e", cursor: "pointer", fontSize: 12, padding: "2px 4px" };
-const visBtn = { padding: "6px 12px", background: "#f7f7f7", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 12 };
-const visBtnActive = { background: "#e8f4ff", borderColor: "#0070f3", color: "#0070f3" };
+const actBtn = { background: "none", border: "none", color: "#0070f3", cursor: "pointer", fontSize: 12, padding: "2px 4px" };
+const crumbBtn = { background: "none", border: "none", color: "#0070f3", cursor: "pointer", padding: 0, fontSize: 13 };
+const accessBtn = { padding: "4px 8px", border: "none", borderLeft: "1px solid #ddd", cursor: "pointer", fontSize: 11, fontWeight: 700 };

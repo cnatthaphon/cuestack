@@ -4,27 +4,35 @@ import { hasPermission } from "../../../lib/permissions.js";
 import {
   listMyFiles, listSharedWithMe, listOrgFiles,
   uploadFile, createDirectory, deleteEntry, renameEntry, moveEntry,
-  shareEntry, setVisibility,
-  getStorageStats, getBreadcrumb, getEntry, canAccess,
+  shareEntry, setVisibility, getAccessLevel,
+  getStorageStats, getBreadcrumb, getEntry,
 } from "../../../lib/org-files.js";
 import { query } from "../../../lib/db.js";
+
+// Get user's role IDs for access checks
+async function getUserRoleIds(userId) {
+  const res = await query("SELECT role_id FROM user_roles WHERE user_id = $1", [userId]);
+  if (res.rows.length > 0) return res.rows.map((r) => r.role_id);
+  // Fallback to legacy role_id
+  const legacy = await query("SELECT role_id FROM users WHERE id = $1", [userId]);
+  return legacy.rows[0]?.role_id ? [legacy.rows[0].role_id] : [];
+}
 
 // GET — list files by view
 export async function GET(request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   if (!user.org_id) return NextResponse.json({ error: "No organization" }, { status: 403 });
-  if (!(await hasPermission(user, "files.view"))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!(await hasPermission(user, "files.view"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
-  const view = searchParams.get("view") || "my"; // my | shared | org
+  const view = searchParams.get("view") || "my";
   const parentId = searchParams.get("parent") || null;
+  const roleIds = await getUserRoleIds(user.id);
 
   let files;
   if (view === "shared") {
-    files = await listSharedWithMe(user.org_id, user.id, user.role_id);
+    files = await listSharedWithMe(user.org_id, user.id, roleIds);
   } else if (view === "org") {
     files = await listOrgFiles(user.org_id, parentId);
   } else {
@@ -44,32 +52,39 @@ export async function POST(request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   if (!user.org_id) return NextResponse.json({ error: "No organization" }, { status: 403 });
-  if (!(await hasPermission(user, "files.upload"))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!(await hasPermission(user, "files.upload"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const contentType = request.headers.get("content-type") || "";
+  const roleIds = await getUserRoleIds(user.id);
 
   if (contentType.includes("application/json")) {
     const body = await request.json();
 
     if (body.action === "mkdir") {
+      // Editors can create folders inside shared folders
+      if (body.parent_id) {
+        const parent = await getEntry(user.org_id, body.parent_id);
+        const access = getAccessLevel(parent, user.id, roleIds);
+        if (!access || access === "viewer") return NextResponse.json({ error: "No write access to this folder" }, { status: 403 });
+      }
       const entry = await createDirectory(user.org_id, body.name, body.parent_id, user.id, body.visibility || "private");
       return NextResponse.json({ entry }, { status: 201 });
     }
 
     if (body.action === "rename") {
-      if (!body.id || !body.name) return NextResponse.json({ error: "ID and name required" }, { status: 400 });
       const entry = await getEntry(user.org_id, body.id);
-      if (!entry || entry.created_by !== user.id) return NextResponse.json({ error: "Not your file" }, { status: 403 });
+      if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      const access = getAccessLevel(entry, user.id, roleIds);
+      if (access !== "owner") return NextResponse.json({ error: "Only owner can rename" }, { status: 403 });
       await renameEntry(user.org_id, body.id, body.name);
       return NextResponse.json({ ok: true });
     }
 
     if (body.action === "move") {
-      if (!body.id) return NextResponse.json({ error: "ID required" }, { status: 400 });
       const entry = await getEntry(user.org_id, body.id);
-      if (!entry || entry.created_by !== user.id) return NextResponse.json({ error: "Not your file" }, { status: 403 });
+      if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      const access = getAccessLevel(entry, user.id, roleIds);
+      if (access !== "owner") return NextResponse.json({ error: "Only owner can move" }, { status: 403 });
       try {
         await moveEntry(user.org_id, body.id, body.parent_id || null);
         return NextResponse.json({ ok: true });
@@ -77,15 +92,14 @@ export async function POST(request) {
     }
 
     if (body.action === "share") {
-      if (!body.id) return NextResponse.json({ error: "ID required" }, { status: 400 });
       const entry = await getEntry(user.org_id, body.id);
       if (!entry || entry.created_by !== user.id) return NextResponse.json({ error: "Only owner can share" }, { status: 403 });
+      // share_with: [{ type, id, access }]
       await shareEntry(user.org_id, body.id, body.share_with || []);
       return NextResponse.json({ ok: true });
     }
 
     if (body.action === "set_visibility") {
-      if (!body.id || !body.visibility) return NextResponse.json({ error: "ID and visibility required" }, { status: 400 });
       const entry = await getEntry(user.org_id, body.id);
       if (!entry || entry.created_by !== user.id) return NextResponse.json({ error: "Only owner can change visibility" }, { status: 403 });
       try {
@@ -104,6 +118,13 @@ export async function POST(request) {
     const parentId = formData.get("parent_id") || null;
     const visibility = formData.get("visibility") || "private";
 
+    // Check editor access if uploading into a shared folder
+    if (parentId) {
+      const parent = await getEntry(user.org_id, parentId);
+      const access = getAccessLevel(parent, user.id, roleIds);
+      if (!access || access === "viewer") return NextResponse.json({ error: "No write access to this folder" }, { status: 403 });
+    }
+
     if (!file || typeof file === "string") return NextResponse.json({ error: "No file provided" }, { status: 400 });
     if (file.size > 50 * 1024 * 1024) return NextResponse.json({ error: "File too large (max 50MB)" }, { status: 400 });
 
@@ -115,14 +136,12 @@ export async function POST(request) {
   }
 }
 
-// DELETE
+// DELETE — owner only
 export async function DELETE(request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   if (!user.org_id) return NextResponse.json({ error: "No organization" }, { status: 403 });
-  if (!(await hasPermission(user, "files.delete"))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  if (!(await hasPermission(user, "files.delete"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

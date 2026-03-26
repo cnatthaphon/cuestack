@@ -3,51 +3,75 @@ import path from "path";
 import crypto from "crypto";
 import { query } from "./db.js";
 
-// Physical storage — flat, files stored by UUID key
 const STORE_ROOT = process.env.FILES_ROOT || "/files";
+function storeDir(orgId) { const s = orgId.replace(/-/g, "").slice(0, 8); return path.join(STORE_ROOT, `store_${s}`); }
+async function ensureDir(dir) { await fs.mkdir(dir, { recursive: true }); }
 
-function storeDir(orgId) {
-  const short = orgId.replace(/-/g, "").slice(0, 8);
-  return path.join(STORE_ROOT, `store_${short}`);
+// Access levels: owner > editor > viewer
+// shared_with: [{ type: "user"|"role", id: N, access: "editor"|"viewer" }]
+
+// --- Access check ---
+// Returns: "owner", "editor", "viewer", or null (no access)
+export function getAccessLevel(entry, userId, roleIds = []) {
+  if (!entry) return null;
+  if (entry.created_by === userId) return "owner";
+  if (entry.visibility === "public") return "viewer";
+  if (entry.visibility === "org") return "viewer"; // org = everyone can view
+
+  const shared = entry.shared_with || [];
+  let best = null;
+  for (const s of shared) {
+    const match =
+      (s.type === "user" && s.id === userId) ||
+      (s.type === "role" && roleIds.includes(s.id));
+    if (match) {
+      const level = s.access || "viewer";
+      if (level === "editor") return "editor"; // editor is highest shared level
+      best = "viewer";
+    }
+  }
+  return best;
 }
 
-async function ensureDir(dir) {
-  await fs.mkdir(dir, { recursive: true });
+export function canAccess(entry, userId, roleIds = []) {
+  return getAccessLevel(entry, userId, roleIds) !== null;
 }
-
-// visibility: 'private' (only owner), 'org' (all org members), 'public' (anyone with link)
-// shared_with: [{ type: 'user', id: 1 }, { type: 'role', id: 5 }]
 
 // --- List files by view ---
-
-// My Files — files I own in a specific parent
 export async function listMyFiles(orgId, userId, parentId = null) {
   const result = await query(
-    `SELECT * FROM org_file_entries
-     WHERE org_id = $1 AND created_by = $2 AND ${parentId ? "parent_id = $3" : "parent_id IS NULL"}
-     ORDER BY entry_type ASC, name ASC`,
+    `SELECT * FROM org_file_entries WHERE org_id = $1 AND created_by = $2 AND ${parentId ? "parent_id = $3" : "parent_id IS NULL"} ORDER BY entry_type ASC, name ASC`,
     parentId ? [orgId, userId, parentId] : [orgId, userId]
   );
   return result.rows;
 }
 
-// Shared with me — files others shared with me (via user ID or my role IDs)
-export async function listSharedWithMe(orgId, userId, roleId) {
+export async function listSharedWithMe(orgId, userId, roleIds = []) {
+  // Find all entries shared with this user or any of their roles
+  const conditions = [`f.shared_with @> $3::jsonb`];
+  const params = [orgId, userId, JSON.stringify([{ type: "user", id: userId }])];
+  let i = 4;
+  for (const rid of roleIds) {
+    conditions.push(`f.shared_with @> $${i}::jsonb`);
+    params.push(JSON.stringify([{ type: "role", id: rid }]));
+    i++;
+  }
+
   const result = await query(
-    `SELECT f.*, u.username as owner_name FROM org_file_entries f
-     LEFT JOIN users u ON f.created_by = u.id
-     WHERE f.org_id = $1 AND f.created_by != $2
-     AND (
-       f.shared_with @> $3::jsonb
-       OR f.shared_with @> $4::jsonb
-     )
+    `SELECT f.*, u.username as owner_name, u.first_name as owner_first, u.last_name as owner_last
+     FROM org_file_entries f LEFT JOIN users u ON f.created_by = u.id
+     WHERE f.org_id = $1 AND f.created_by != $2 AND (${conditions.join(" OR ")})
      ORDER BY f.updated_at DESC`,
-    [orgId, userId, JSON.stringify([{ type: "user", id: userId }]), JSON.stringify([{ type: "role", id: roleId }])]
+    params
   );
-  return result.rows;
+
+  // Add computed access level for each entry
+  return result.rows.map((r) => ({
+    ...r,
+    my_access: getAccessLevel(r, userId, roleIds),
+  }));
 }
 
-// Org Files — files with visibility = 'org'
 export async function listOrgFiles(orgId, parentId = null) {
   const result = await query(
     `SELECT f.*, u.username as owner_name FROM org_file_entries f
@@ -59,33 +83,17 @@ export async function listOrgFiles(orgId, parentId = null) {
   return result.rows;
 }
 
-// --- Get single entry (with access check) ---
+// --- Get single entry ---
 export async function getEntry(orgId, entryId) {
-  const result = await query(
-    "SELECT * FROM org_file_entries WHERE id = $1 AND org_id = $2",
-    [entryId, orgId]
-  );
+  const result = await query("SELECT * FROM org_file_entries WHERE id = $1 AND org_id = $2", [entryId, orgId]);
   return result.rows[0] || null;
-}
-
-export function canAccess(entry, userId, roleId) {
-  if (!entry) return false;
-  if (entry.created_by === userId) return true; // owner
-  if (entry.visibility === "org" || entry.visibility === "public") return true;
-  // Check shared_with
-  const shared = entry.shared_with || [];
-  return shared.some((s) =>
-    (s.type === "user" && s.id === userId) ||
-    (s.type === "role" && s.id === roleId)
-  );
 }
 
 // --- Create directory ---
 export async function createDirectory(orgId, name, parentId = null, userId = null, visibility = "private") {
   if (!name || !/^[^/\\<>:"|?*]+$/.test(name)) throw new Error("Invalid directory name");
   const result = await query(
-    `INSERT INTO org_file_entries (org_id, name, parent_id, entry_type, visibility, created_by)
-     VALUES ($1, $2, $3, 'directory', $4, $5) RETURNING *`,
+    `INSERT INTO org_file_entries (org_id, name, parent_id, entry_type, visibility, created_by) VALUES ($1, $2, $3, 'directory', $4, $5) RETURNING *`,
     [orgId, name, parentId || null, visibility, userId]
   );
   return result.rows[0];
@@ -97,36 +105,31 @@ export async function uploadFile(orgId, name, parentId, buffer, mimeType, userId
   const limit = await getLimit(orgId);
   const usage = await getUsage(orgId);
   if (usage + buffer.length > limit) throw new Error(`Storage limit exceeded (${Math.round(limit / 1024 / 1024)}MB)`);
-
   const storageKey = crypto.randomUUID();
-  const dir = storeDir(orgId);
-  await ensureDir(dir);
-  await fs.writeFile(path.join(dir, storageKey), buffer);
-
+  await ensureDir(storeDir(orgId));
+  await fs.writeFile(path.join(storeDir(orgId), storageKey), buffer);
   const result = await query(
-    `INSERT INTO org_file_entries (org_id, name, parent_id, entry_type, storage_key, size, mime_type, visibility, created_by)
-     VALUES ($1, $2, $3, 'file', $4, $5, $6, $7, $8) RETURNING *`,
+    `INSERT INTO org_file_entries (org_id, name, parent_id, entry_type, storage_key, size, mime_type, visibility, created_by) VALUES ($1, $2, $3, 'file', $4, $5, $6, $7, $8) RETURNING *`,
     [orgId, name, parentId || null, storageKey, buffer.length, mimeType || "application/octet-stream", visibility, userId]
   );
   return result.rows[0];
 }
 
-// --- Download file ---
+// --- Download ---
 export async function downloadFile(orgId, entryId) {
   const entry = await getEntry(orgId, entryId);
   if (!entry || entry.entry_type !== "file") throw new Error("File not found");
-  const filePath = path.join(storeDir(orgId), entry.storage_key);
-  const buffer = await fs.readFile(filePath);
+  const buffer = await fs.readFile(path.join(storeDir(orgId), entry.storage_key));
   return { buffer, filename: entry.name, size: entry.size, mime_type: entry.mime_type };
 }
 
-// --- Rename (instant — DB only) ---
+// --- Rename (owner only) ---
 export async function renameEntry(orgId, entryId, newName) {
   if (!newName || !/^[^/\\<>:"|?*]+$/.test(newName)) throw new Error("Invalid name");
   await query("UPDATE org_file_entries SET name = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3", [newName, entryId, orgId]);
 }
 
-// --- Move (instant — DB only) ---
+// --- Move (owner only) ---
 export async function moveEntry(orgId, entryId, newParentId) {
   if (newParentId) {
     let check = newParentId;
@@ -139,7 +142,7 @@ export async function moveEntry(orgId, entryId, newParentId) {
   await query("UPDATE org_file_entries SET parent_id = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3", [newParentId || null, entryId, orgId]);
 }
 
-// --- Delete ---
+// --- Delete (owner only, recursive) ---
 export async function deleteEntry(orgId, entryId) {
   const entry = await getEntry(orgId, entryId);
   if (!entry) return false;
@@ -156,19 +159,15 @@ export async function deleteEntry(orgId, entryId) {
 
 // --- Share ---
 export async function shareEntry(orgId, entryId, shareWith) {
-  // shareWith: [{ type: 'user', id: 1 }, { type: 'role', id: 5 }]
-  await query(
-    "UPDATE org_file_entries SET shared_with = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3",
-    [JSON.stringify(shareWith), entryId, orgId]
-  );
+  // shareWith: [{ type: "user", id: 1, access: "editor" }, { type: "role", id: 5, access: "viewer" }]
+  await query("UPDATE org_file_entries SET shared_with = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3",
+    [JSON.stringify(shareWith), entryId, orgId]);
 }
 
 export async function setVisibility(orgId, entryId, visibility) {
   if (!["private", "org", "public"].includes(visibility)) throw new Error("Invalid visibility");
-  await query(
-    "UPDATE org_file_entries SET visibility = $1, is_public = $2, updated_at = NOW() WHERE id = $3 AND org_id = $4",
-    [visibility, visibility === "public", entryId, orgId]
-  );
+  await query("UPDATE org_file_entries SET visibility = $1, is_public = $2, updated_at = NOW() WHERE id = $3 AND org_id = $4",
+    [visibility, visibility === "public", entryId, orgId]);
 }
 
 // --- Breadcrumb ---
@@ -184,17 +183,32 @@ export async function getBreadcrumb(orgId, entryId) {
   return crumbs;
 }
 
+// --- Get entry by path ---
+export async function getEntryByPath(orgId, filePath) {
+  const parts = filePath.split("/").filter(Boolean);
+  let parentId = null;
+  let entry = null;
+  for (const name of parts) {
+    const result = await query(
+      `SELECT * FROM org_file_entries WHERE org_id = $1 AND name = $2 AND ${parentId ? "parent_id = $3" : "parent_id IS NULL"}`,
+      parentId ? [orgId, name, parentId] : [orgId, name]
+    );
+    entry = result.rows[0];
+    if (!entry) return null;
+    parentId = entry.id;
+  }
+  return entry;
+}
+
 // --- Storage stats ---
 async function getUsage(orgId) {
   const result = await query("SELECT COALESCE(SUM(size), 0) as total FROM org_file_entries WHERE org_id = $1 AND entry_type = 'file'", [orgId]);
   return parseInt(result.rows[0].total);
 }
-
 async function getLimit(orgId) {
   const result = await query("SELECT storage_limit_mb FROM organizations WHERE id = $1", [orgId]);
   return (result.rows[0]?.storage_limit_mb || 1000) * 1024 * 1024;
 }
-
 export async function getStorageStats(orgId) {
   const usage = await getUsage(orgId);
   const limit = await getLimit(orgId);
