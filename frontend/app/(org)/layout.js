@@ -53,8 +53,9 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, orgApps, orgDashboards, loading, logout, hasPermission } = useUser();
+  const { user, org, navData, loading, logout, hasPermission } = useUser();
   const [collapsed, setCollapsed] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
   const pathname = usePathname();
 
   if (loading) {
@@ -63,30 +64,56 @@ function OrgShell({ children }) {
 
   if (!user) return null;
 
-  // Filter nav items by permission + feature
   const filterItems = (items) => items.filter((item) => {
     if (item.permission && !user.is_super_admin && !user.permissions?.includes(item.permission)) return false;
     if (item.feature && !user.features?.includes(item.feature)) return false;
     return true;
   });
 
-  // Dynamic dashboard nav — published dashboards under /d/[slug]
-  const dashNav = (orgDashboards || [])
-    .filter((d) => !d.permission_id || hasPermission(d.permission_id))
-    .map((d) => ({
-      href: `/d/${d.slug}`,
-      label: d.name,
-      icon: "\u{1F4CA}",
-      permission: d.permission_id,
-    }));
+  const toggleGroup = (name) => setCollapsedGroups((g) => ({ ...g, [name]: !g[name] }));
 
-  // Dynamic app nav — published apps under /a/[slug]
-  const appNav = (orgApps || [])
-    .filter((app) => !app.permission_id || hasPermission(app.permission_id))
-    .map((app) => ({
-      href: `/a/${app.slug}`,
-      label: app.name,
-      icon: app.icon || "\u{1F4F1}",
+  // Build published content nav from navData
+  const navGroups = navData?.groups || [];
+  const pubDashboards = (navData?.dashboards || []).filter((d) => !d.permission_id || hasPermission(d.permission_id));
+  const pubApps = (navData?.apps || []).filter((a) => !a.permission_id || hasPermission(a.permission_id));
+
+  // Group items by nav_group
+  const groupedItems = {};
+  for (const d of pubDashboards) {
+    const g = d.nav_group || "";
+    if (!groupedItems[g]) groupedItems[g] = [];
+    groupedItems[g].push({ href: `/d/${d.slug}`, label: d.name, icon: "\u{1F4CA}", order: d.nav_order || 0 });
+  }
+  for (const a of pubApps) {
+    const g = a.nav_group || "";
+    if (!groupedItems[g]) groupedItems[g] = [];
+    groupedItems[g].push({ href: `/a/${a.slug}`, label: a.name, icon: a.icon || "\u{1F4F1}", order: a.nav_order || 0 });
+  }
+
+  // Sort items within each group
+  for (const g of Object.keys(groupedItems)) {
+    groupedItems[g].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+  }
+
+  // Build ordered list of groups (defined groups first, then ungrouped)
+  const orderedGroups = [
+    ...navGroups.map((g) => ({ name: g.name, icon: g.icon, items: groupedItems[g.name] || [] })),
+  ];
+  // Add ungrouped items
+  const ungrouped = groupedItems[""] || [];
+  const definedGroupNames = new Set(navGroups.map((g) => g.name));
+  // Add items from groups not in org_nav_groups (shouldn't happen but safety)
+  for (const [gName, items] of Object.entries(groupedItems)) {
+    if (gName && !definedGroupNames.has(gName)) {
+      orderedGroups.push({ name: gName, icon: "", items });
+    }
+  }
+
+  // Legacy compat — keep appNav and dashNav for old code
+  const appNav = pubApps.map((app) => ({
+    href: `/a/${app.slug}`,
+    label: app.name,
+    icon: app.icon || "\u{1F4F1}",
       permission: app.permission_id,
       feature: null,
       isApp: true,
@@ -152,21 +179,29 @@ function OrgShell({ children }) {
             );
           })}
 
-          {/* Published Dashboards — dynamic */}
-          {dashNav.length > 0 && (
-            <div>
-              {!collapsed && <div style={sectionLabel}>My Dashboards</div>}
-              {collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
-              {dashNav.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
-            </div>
-          )}
+          {/* Published content — grouped by nav_group */}
+          {orderedGroups.map((group) => {
+            if (group.items.length === 0) return null;
+            const isGroupCollapsed = collapsedGroups[group.name];
+            return (
+              <div key={group.name}>
+                {!collapsed && (
+                  <div onClick={() => toggleGroup(group.name)} style={{ ...sectionLabel, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>{group.icon} {group.name}</span>
+                    <span style={{ fontSize: 10 }}>{isGroupCollapsed ? "\u25B6" : "\u25BC"}</span>
+                  </div>
+                )}
+                {collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
+                {!isGroupCollapsed && group.items.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
+              </div>
+            );
+          })}
 
-          {/* Published Apps — dynamic */}
-          {appNav.length > 0 && (
+          {/* Ungrouped published items */}
+          {ungrouped.length > 0 && (
             <div>
-              {!collapsed && <div style={sectionLabel}>My Apps</div>}
-              {collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
-              {appNav.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
+              {!collapsed && orderedGroups.length > 0 && <div style={sectionLabel}>Other</div>}
+              {ungrouped.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
             </div>
           )}
         </div>
