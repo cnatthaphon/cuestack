@@ -26,10 +26,19 @@ export async function GET() {
 
   const permissions = await getUserPermissions(user.role_id);
 
+  // Fetch profile fields
+  const profileRes = await query(
+    "SELECT display_name, email, phone FROM users WHERE id = $1",
+    [user.id]
+  );
+  const profile = profileRes.rows[0] || {};
+
   return NextResponse.json({
     user: {
       id: user.id,
       username: user.username,
+      display_name: profile.display_name || null,
+      email: profile.email || null,
       role_id: user.role_id,
       role_name: user.role_name || null,
       org_id: user.org_id,
