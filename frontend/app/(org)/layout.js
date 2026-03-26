@@ -7,9 +7,12 @@ import { UserProvider, useUser } from "../../lib/user-context.js";
 import TopBar from "../../lib/components/top-bar.js";
 
 // Nav organized into sections
+// System pages under /-/ prefix (reserved, never conflicts with user content)
+// Published content: /d/[slug] (dashboards), /a/[slug] (apps)
+// Public content: /public/[org]/d/[slug], /public/[org]/a/[slug]
 const NAV_SECTIONS = [
   {
-    label: null, // no section header for top items
+    label: null,
     items: [
       { href: "/", label: "Dashboard", icon: "\u25A6", permission: null, feature: null },
     ],
@@ -17,26 +20,26 @@ const NAV_SECTIONS = [
   {
     label: "Workspace",
     items: [
-      { href: "/dashboards", label: "Dashboards", icon: "\u{1F4CA}", permission: "dashboard.view", feature: "dashboards" },
-      { href: "/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: null, feature: "notebooks" },
-      { href: "/apps", label: "Apps", icon: "\u{1F4F1}", permission: null, feature: "app_builder" },
-      { href: "/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
+      { href: "/-/dashboards", label: "Dashboards", icon: "\u{1F4CA}", permission: "dashboard.view", feature: "dashboards" },
+      { href: "/-/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: null, feature: "notebooks" },
+      { href: "/-/apps", label: "Apps", icon: "\u{1F4F1}", permission: null, feature: "app_builder" },
+      { href: "/-/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
     ],
   },
   {
     label: "Data",
     items: [
-      { href: "/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
-      { href: "/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
-      { href: "/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
+      { href: "/-/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
+      { href: "/-/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
+      { href: "/-/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
     ],
   },
   {
     label: "Settings",
     items: [
-      { href: "/users", label: "Users", icon: "\u{1F465}", permission: "users.view", feature: null },
-      { href: "/roles", label: "Roles", icon: "\u{1F6E1}", permission: "roles.manage", feature: null },
-      { href: "/permissions", label: "Permissions", icon: "\u{1F511}", permission: "permissions.manage", feature: null },
+      { href: "/-/users", label: "Users", icon: "\u{1F465}", permission: "users.view", feature: null },
+      { href: "/-/roles", label: "Roles", icon: "\u{1F6E1}", permission: "roles.manage", feature: null },
+      { href: "/-/permissions", label: "Permissions", icon: "\u{1F511}", permission: "permissions.manage", feature: null },
     ],
   },
 ];
@@ -67,21 +70,21 @@ function OrgShell({ children }) {
     return true;
   });
 
-  // Dynamic dashboard nav — published dashboards the user has permission for
+  // Dynamic dashboard nav — published dashboards under /d/[slug]
   const dashNav = (orgDashboards || [])
     .filter((d) => !d.permission_id || hasPermission(d.permission_id))
     .map((d) => ({
-      href: `/dashboards/${d.id}`,
+      href: `/d/${d.slug}`,
       label: d.name,
       icon: "\u{1F4CA}",
       permission: d.permission_id,
     }));
 
-  // Dynamic app nav — published apps the user has permission for
+  // Dynamic app nav — published apps under /a/[slug]
   const appNav = (orgApps || [])
     .filter((app) => !app.permission_id || hasPermission(app.permission_id))
     .map((app) => ({
-      href: `/apps/${app.slug}`,
+      href: `/a/${app.slug}`,
       label: app.name,
       icon: app.icon || "\u{1F4F1}",
       permission: app.permission_id,

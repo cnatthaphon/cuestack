@@ -6,15 +6,6 @@ const SECRET = new TextEncoder().encode(
 );
 const COOKIE_NAME = "iot-session";
 
-// Reserved system pages — all org-scoped, need auth + org context
-// User-created apps will live under /apps/[slug] (caught by /apps prefix)
-const ORG_PAGES = [
-  "/",
-  "/users", "/roles", "/permissions",
-  "/databases", "/files", "/api-keys",
-  "/dashboards", "/notebooks", "/services", "/apps",
-];
-
 const AUTH_PAGES = ["/login"];
 
 export async function middleware(request) {
@@ -31,7 +22,16 @@ export async function middleware(request) {
     }
   }
 
-  const isOrgPage = ORG_PAGES.includes(pathname) || ORG_PAGES.some((p) => p !== "/" && pathname.startsWith(p + "/"));
+  // Public routes — no auth needed
+  if (pathname.startsWith("/public/")) {
+    return NextResponse.next();
+  }
+
+  // Determine if this is an org page (needs auth + org)
+  const isOrgPage = pathname === "/" ||
+    pathname.startsWith("/-/") ||
+    pathname.startsWith("/d/") ||
+    pathname.startsWith("/a/");
 
   // Protected pages — redirect to login
   if ((isOrgPage || pathname === "/super") && !user) {
@@ -67,9 +67,9 @@ export async function middleware(request) {
 export const config = {
   matcher: [
     "/", "/login", "/super",
-    "/users", "/roles", "/permissions",
-    "/databases", "/files", "/api-keys",
-    "/dashboards/:path*", "/notebooks", "/services",
-    "/apps/:path*",
+    "/-/:path*",
+    "/d/:path*",
+    "/a/:path*",
+    "/public/:path*",
   ],
 };

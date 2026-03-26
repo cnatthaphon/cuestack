@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useUser } from "../../../../../lib/user-context.js";
+import { useUser } from "../../../../../../lib/user-context.js";
 
 const WIDGET_TYPES = [
   { id: "stat", label: "Stat Card", icon: "\u{1F4CA}" },
@@ -99,7 +99,7 @@ export default function DashboardEditor() {
       {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Link href="/dashboards" style={{ color: "#666", textDecoration: "none", fontSize: 13 }}>&larr; Back</Link>
+          <Link href="/-/dashboards" style={{ color: "#666", textDecoration: "none", fontSize: 13 }}>&larr; Back</Link>
           <h1 style={{ margin: 0, fontSize: 20 }}>Edit: {dashboard.name}</h1>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

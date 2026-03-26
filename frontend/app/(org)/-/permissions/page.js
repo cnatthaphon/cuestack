@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser } from "../../../lib/user-context.js";
+import { useUser } from "../../../../lib/user-context.js";
 
 export default function PermissionsPage() {
   const { user } = useUser();

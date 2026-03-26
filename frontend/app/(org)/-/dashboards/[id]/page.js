@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useUser } from "../../../../lib/user-context.js";
+import { useUser } from "../../../../../lib/user-context.js";
 
 export default function DashboardViewer() {
   const { user } = useUser();
