@@ -30,7 +30,7 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, orgApps, loading, logout, hasPermission } = useUser();
+  const { user, org, orgApps, orgDashboards, loading, logout, hasPermission } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
@@ -46,6 +46,16 @@ function OrgShell({ children }) {
     if (item.feature && !user.features?.includes(item.feature)) return false;
     return true;
   });
+
+  // Dynamic dashboard nav — published dashboards the user has permission for
+  const dashNav = (orgDashboards || [])
+    .filter((d) => !d.permission_id || hasPermission(d.permission_id))
+    .map((d) => ({
+      href: `/dashboards/${d.id}`,
+      label: d.name,
+      icon: "\u{1F4CA}",
+      permission: d.permission_id,
+    }));
 
   // Dynamic app nav — published apps the user has permission for
   const appNav = (orgApps || [])
@@ -129,6 +139,34 @@ function OrgShell({ children }) {
               </Link>
             );
           })}
+
+          {/* Published Dashboards — dynamic nav */}
+          {dashNav.length > 0 && (
+            <>
+              {!collapsed && (
+                <div style={{ padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
+                  Dashboards
+                </div>
+              )}
+              {collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
+              {dashNav.map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link key={item.href} href={item.href} style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "9px 16px",
+                    color: active ? "#fff" : "#8a8aa0",
+                    background: active ? "rgba(0,112,243,0.2)" : "transparent",
+                    borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+                    textDecoration: "none", fontSize: 13, fontWeight: active ? 600 : 400,
+                    transition: "all 0.15s", whiteSpace: "nowrap",
+                  }}>
+                    <span style={{ fontSize: 15, width: 22, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
+                    {!collapsed && <span>{item.label}</span>}
+                  </Link>
+                );
+              })}
+            </>
+          )}
 
           {/* Published Apps — dynamic nav */}
           {appNav.length > 0 && (

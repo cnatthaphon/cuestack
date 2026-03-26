@@ -69,7 +69,7 @@ export const config = {
     "/", "/login", "/super",
     "/users", "/roles", "/permissions",
     "/databases", "/files", "/api-keys",
-    "/dashboards", "/notebooks", "/services",
+    "/dashboards/:path*", "/notebooks", "/services",
     "/apps/:path*",
   ],
 };

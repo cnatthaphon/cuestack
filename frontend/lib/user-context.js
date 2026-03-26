@@ -5,14 +5,15 @@ import { createContext, useContext, useEffect, useState } from "react";
 const UserContext = createContext(null);
 
 export function UserProvider({ children }) {
-  const [state, setState] = useState({ user: null, org: null, orgApps: [], loading: true });
+  const [state, setState] = useState({ user: null, org: null, orgApps: [], orgDashboards: [], loading: true });
 
   useEffect(() => {
     Promise.all([
       fetch("/api/auth/me").then((r) => r.json()),
       fetch("/api/apps?published=true").then((r) => r.ok ? r.json() : { apps: [] }),
+      fetch("/api/dashboards?published=true").then((r) => r.ok ? r.json() : { dashboards: [] }),
     ])
-      .then(([meData, appsData]) => {
+      .then(([meData, appsData, dashData]) => {
         if (!meData.user) {
           window.location.href = "/login";
           return;
@@ -25,6 +26,7 @@ export function UserProvider({ children }) {
           user: meData.user,
           org: meData.org,
           orgApps: appsData.apps || [],
+          orgDashboards: dashData.dashboards || [],
           loading: false,
         });
       })
@@ -39,15 +41,17 @@ export function UserProvider({ children }) {
   };
 
   const refresh = async () => {
-    const [meRes, appsRes] = await Promise.all([
+    const [meRes, appsRes, dashRes] = await Promise.all([
       fetch("/api/auth/me").then((r) => r.json()),
       fetch("/api/apps?published=true").then((r) => r.ok ? r.json() : { apps: [] }),
+      fetch("/api/dashboards?published=true").then((r) => r.ok ? r.json() : { dashboards: [] }),
     ]);
     if (meRes.user) {
       setState({
         user: meRes.user,
         org: meRes.org,
         orgApps: appsRes.apps || [],
+        orgDashboards: dashRes.dashboards || [],
         loading: false,
       });
     }

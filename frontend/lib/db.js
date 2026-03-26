@@ -92,6 +92,25 @@ export async function initDB() {
     )
   `);
 
+  // Dashboards
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_dashboards (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      slug VARCHAR(100) NOT NULL,
+      description VARCHAR(500),
+      widgets JSONB DEFAULT '[]',
+      layout JSONB DEFAULT '{}',
+      status VARCHAR(20) DEFAULT 'draft',
+      permission_id VARCHAR(100),
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, slug)
+    )
+  `);
+
   // Org feature entitlements (Super Admin assigns)
   await query(`
     CREATE TABLE IF NOT EXISTS org_features (
