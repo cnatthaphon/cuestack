@@ -108,6 +108,7 @@ export async function initDB() {
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30)`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100)`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS landing_page VARCHAR(200)`);
 
   // User ↔ Roles (many-to-many) — supplements legacy role_id
   await query(`

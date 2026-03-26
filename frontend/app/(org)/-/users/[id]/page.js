@@ -28,6 +28,7 @@ export default function UserDetailPage() {
           email: d.user.email || "",
           phone: d.user.phone || "",
           department: d.user.department || "",
+          landing_page: d.user.landing_page || "",
         });
         setSelectedRoles(d.user.roles?.map((r) => r.id) || []);
       }
@@ -93,6 +94,10 @@ export default function UserDetailPage() {
           </label>
           <label style={labelStyle}>Phone
             <input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} disabled={!canEdit} style={inputStyle} />
+          </label>
+          <label style={{ ...labelStyle, gridColumn: "1 / -1" }}>Landing Page
+            <input value={form.landing_page || ""} onChange={(e) => setForm({ ...form, landing_page: e.target.value })} disabled={!canEdit}
+              placeholder="e.g. /a/my-dashboard (leave empty for default home)" style={inputStyle} />
           </label>
         </div>
 

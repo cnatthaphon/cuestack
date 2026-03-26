@@ -29,6 +29,7 @@ export async function PATCH(request) {
   if (body.last_name !== undefined) { updates.push(`last_name = $${i}`); values.push(body.last_name); i++; }
   if (body.display_name !== undefined) { updates.push(`display_name = $${i}`); values.push(body.display_name); i++; }
   if (body.department !== undefined) { updates.push(`department = $${i}`); values.push(body.department); i++; }
+  if (body.landing_page !== undefined) { updates.push(`landing_page = $${i}`); values.push(body.landing_page); i++; }
   if (body.email !== undefined) {
     if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
       return NextResponse.json({ error: "Invalid email format" }, { status: 400 });

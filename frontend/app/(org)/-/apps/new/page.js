@@ -6,9 +6,9 @@ import Link from "next/link";
 import { useUser } from "../../../../../lib/user-context.js";
 
 const APP_TYPES = [
-  { id: "html", label: "HTML / JS", icon: "\u{1F310}", desc: "Static web app with HTML, CSS, and JavaScript" },
-  { id: "dash", label: "Dash (Python)", icon: "\u{1F4CA}", desc: "Python Dash dashboard application" },
-  { id: "visual", label: "Visual Flow", icon: "\u{1F9E9}", desc: "Block-based visual programming editor" },
+  { id: "html", label: "HTML / JS", icon: "\u{1F310}", desc: "Static web app with platform SDK" },
+  { id: "dashboard", label: "Dashboard", icon: "\u{1F4CA}", desc: "Drag-and-drop widget dashboard" },
+  { id: "visual", label: "Visual Flow", icon: "\u{1F9E9}", desc: "Block-based data pipeline" },
 ];
 
 export default function NewAppPage() {

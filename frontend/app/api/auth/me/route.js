@@ -29,7 +29,7 @@ export async function GET() {
 
   // Profile fields
   const profileRes = await query(
-    "SELECT display_name, first_name, last_name, email, phone, department FROM users WHERE id = $1",
+    "SELECT display_name, first_name, last_name, email, phone, department, landing_page FROM users WHERE id = $1",
     [user.id]
   );
   const profile = profileRes.rows[0] || {};
@@ -43,6 +43,7 @@ export async function GET() {
       last_name: profile.last_name || null,
       email: profile.email || null,
       department: profile.department || null,
+      landing_page: profile.landing_page || null,
       role_id: user.role_id, // legacy single role
       role_name: roles.map((r) => r.name).join(", ") || null,
       roles, // [{id, name}, ...]
