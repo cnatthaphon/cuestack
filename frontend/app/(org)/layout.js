@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/roles", label: "Roles", icon: "\u{1F6E1}", permission: "roles.manage", feature: null },
   { href: "/permissions", label: "Permissions", icon: "\u{1F511}", permission: "permissions.manage", feature: null },
   { href: "/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
+  { href: "/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
   { href: "/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
   { href: "/dashboards", label: "Dashboards", icon: "\u{1F4CA}", permission: "dashboard.view", feature: "dashboards" },
   { href: "/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: null, feature: "notebooks" },

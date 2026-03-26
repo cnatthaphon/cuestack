@@ -104,6 +104,24 @@ export async function initDB() {
     )
   `);
 
+  // Python services registry
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_services (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      description VARCHAR(500),
+      entrypoint VARCHAR(200) NOT NULL,
+      status VARCHAR(20) DEFAULT 'stopped',
+      port INTEGER,
+      env JSONB DEFAULT '{}',
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, name)
+    )
+  `);
+
   // Org config store (internal — not exposed to org users)
   await query(`
     CREATE TABLE IF NOT EXISTS org_configs (

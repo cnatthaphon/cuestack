@@ -22,6 +22,10 @@ export const SYSTEM_PERMISSIONS = [
   { id: "db.create", category: "database", label: "Create Tables", description: "Create database tables" },
   { id: "db.edit", category: "database", label: "Edit Tables", description: "Edit table schema" },
   { id: "db.delete", category: "database", label: "Delete Tables", description: "Delete database tables" },
+  { id: "files.view", category: "files", label: "View Files", description: "View and download files" },
+  { id: "files.upload", category: "files", label: "Upload Files", description: "Upload files to storage" },
+  { id: "files.delete", category: "files", label: "Delete Files", description: "Delete files from storage" },
+  { id: "services.manage", category: "services", label: "Manage Services", description: "Deploy and manage Python services" },
   { id: "org.settings", category: "org", label: "Org Settings", description: "Manage org settings" },
   { id: "roles.manage", category: "org", label: "Manage Roles", description: "Manage roles and permissions" },
   { id: "permissions.manage", category: "org", label: "Manage Permissions", description: "Create/edit app permissions" },
@@ -43,14 +47,14 @@ const DEFAULT_ROLES = [
     permissions: [
       "data.ingest", "data.query", "data.export",
       "dashboard.view", "dashboard.create", "dashboard.edit",
-      "devices.view", "db.view",
+      "devices.view", "db.view", "files.view", "files.upload",
     ],
   },
   {
     name: "Viewer",
     description: "View-only access",
     is_default: true,
-    permissions: ["data.query", "dashboard.view", "devices.view", "db.view"],
+    permissions: ["data.query", "dashboard.view", "devices.view", "db.view", "files.view"],
   },
 ];
 

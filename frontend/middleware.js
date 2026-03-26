@@ -11,7 +11,7 @@ const COOKIE_NAME = "iot-session";
 const ORG_PAGES = [
   "/",
   "/users", "/roles", "/permissions",
-  "/databases", "/api-keys",
+  "/databases", "/files", "/api-keys",
   "/dashboards", "/notebooks", "/services", "/apps",
 ];
 
@@ -68,7 +68,7 @@ export const config = {
   matcher: [
     "/", "/login", "/super",
     "/users", "/roles", "/permissions",
-    "/databases", "/api-keys",
+    "/databases", "/files", "/api-keys",
     "/dashboards", "/notebooks", "/services",
     "/apps/:path*",
   ],
