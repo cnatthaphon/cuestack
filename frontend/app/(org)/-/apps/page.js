@@ -13,9 +13,6 @@ const APP_TYPES = [
 export default function AppsPage() {
   const { user, hasFeature, refresh } = useUser();
   const [apps, setApps] = useState([]);
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", slug: "", description: "", app_type: "html", icon: "\u{1F4F1}" });
-  const [error, setError] = useState("");
 
   useEffect(() => { loadApps(); }, []);
 
@@ -36,20 +33,6 @@ export default function AppsPage() {
     );
   }
 
-  const createApp = async (e) => {
-    e.preventDefault();
-    setError("");
-    const res = await fetch("/api/apps", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (!res.ok) { setError((await res.json()).error); return; }
-    setForm({ name: "", slug: "", description: "", app_type: "html", icon: "\u{1F4F1}" });
-    setShowCreate(false);
-    loadApps();
-  };
-
   const publishApp = async (id) => {
     await fetch(`/api/apps/${id}`, {
       method: "PATCH",
@@ -57,7 +40,7 @@ export default function AppsPage() {
       body: JSON.stringify({ action: "publish" }),
     });
     loadApps();
-    refresh(); // Refresh nav to show new app
+    refresh();
   };
 
   const unpublishApp = async (id) => {
@@ -86,52 +69,8 @@ export default function AppsPage() {
             Build and deploy apps. Published apps appear in the navigation for permitted users.
           </p>
         </div>
-        <button onClick={() => setShowCreate(!showCreate)} style={btnBlue}>
-          {showCreate ? "Cancel" : "New App"}
-        </button>
+        <Link href="/-/apps/new" style={{ padding: "8px 16px", background: "#0070f3", color: "#fff", borderRadius: 4, fontSize: 13, textDecoration: "none" }}>New App</Link>
       </div>
-
-      {showCreate && (
-        <form onSubmit={createApp} style={{ padding: 20, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 16 }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: 15 }}>Create App</h3>
-
-          {/* App type selection */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            {APP_TYPES.map((t) => (
-              <button key={t.id} type="button" onClick={() => setForm({ ...form, app_type: t.id })}
-                style={{
-                  flex: 1, padding: 12, borderRadius: 8, cursor: "pointer", textAlign: "center",
-                  border: form.app_type === t.id ? "2px solid #0070f3" : "1px solid #ddd",
-                  background: form.app_type === t.id ? "#e8f4ff" : "#fff",
-                }}>
-                <div style={{ fontSize: 24 }}>{t.icon}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginTop: 4 }}>{t.label}</div>
-                <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>{t.desc}</div>
-              </button>
-            ))}
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <input placeholder="App Name" value={form.name}
-              onChange={(e) => {
-                const name = e.target.value;
-                const slug = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-/, "");
-                setForm({ ...form, name, slug });
-              }} style={inputStyle} />
-            <input placeholder="slug" value={form.slug}
-              onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
-              style={{ ...inputStyle, flex: "none", width: 160 }} />
-            <input placeholder="Icon (emoji)" value={form.icon}
-              onChange={(e) => setForm({ ...form, icon: e.target.value })}
-              style={{ ...inputStyle, flex: "none", width: 60, textAlign: "center" }} />
-          </div>
-          <input placeholder="Description" value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            style={{ ...inputStyle, width: "100%", marginBottom: 12 }} />
-          <button type="submit" style={btnBlue}>Create App</button>
-          {error && <p style={{ color: "#e53e3e", margin: "8px 0 0", fontSize: 13 }}>{error}</p>}
-        </form>
-      )}
 
       {/* App list */}
       {apps.length > 0 ? (
@@ -198,6 +137,4 @@ export default function AppsPage() {
   );
 }
 
-const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" };
 const btnSmall = { padding: "4px 12px", background: "none", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 12 };
-const inputStyle = { padding: 8, border: "1px solid #ddd", borderRadius: 4, fontSize: 13, flex: 1 };
