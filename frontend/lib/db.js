@@ -157,6 +157,24 @@ export async function initDB() {
     )
   `);
 
+  // Nav group columns for apps and dashboards
+  await query(`ALTER TABLE org_dashboards ADD COLUMN IF NOT EXISTS nav_group VARCHAR(50) DEFAULT ''`);
+  await query(`ALTER TABLE org_dashboards ADD COLUMN IF NOT EXISTS nav_order INTEGER DEFAULT 0`);
+  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS nav_group VARCHAR(50) DEFAULT ''`);
+  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS nav_order INTEGER DEFAULT 0`);
+
+  // Nav groups — org-defined categories for published content
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_nav_groups (
+      id SERIAL PRIMARY KEY,
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(50) NOT NULL,
+      icon VARCHAR(10) DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      UNIQUE(org_id, name)
+    )
+  `);
+
   // Org feature entitlements (Super Admin assigns)
   await query(`
     CREATE TABLE IF NOT EXISTS org_features (
