@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../../lib/auth.js";
-import { getUserPermissions } from "../../../../lib/permissions.js";
+import { getUserPermissions, getUserRoleNames } from "../../../../lib/permissions.js";
 import { getOrgFeatures } from "../../../../lib/features.js";
 import { query } from "../../../../lib/db.js";
 
@@ -19,16 +19,17 @@ export async function GET() {
     );
     org = result.rows[0] || null;
 
-    // Get enabled features for navigation
     const allFeatures = await getOrgFeatures(user.org_id);
     features = allFeatures.filter((f) => f.enabled).map((f) => f.id);
   }
 
-  const permissions = await getUserPermissions(user.role_id);
+  // Multi-role: union permissions across all roles
+  const permissions = await getUserPermissions(user.id, user.role_id);
+  const roles = await getUserRoleNames(user.id, user.role_id);
 
-  // Fetch profile fields
+  // Profile fields
   const profileRes = await query(
-    "SELECT display_name, email, phone FROM users WHERE id = $1",
+    "SELECT display_name, first_name, last_name, email, phone, department FROM users WHERE id = $1",
     [user.id]
   );
   const profile = profileRes.rows[0] || {};
@@ -37,10 +38,14 @@ export async function GET() {
     user: {
       id: user.id,
       username: user.username,
-      display_name: profile.display_name || null,
+      display_name: profile.display_name || [profile.first_name, profile.last_name].filter(Boolean).join(" ") || null,
+      first_name: profile.first_name || null,
+      last_name: profile.last_name || null,
       email: profile.email || null,
-      role_id: user.role_id,
-      role_name: user.role_name || null,
+      department: profile.department || null,
+      role_id: user.role_id, // legacy single role
+      role_name: roles.map((r) => r.name).join(", ") || null,
+      roles, // [{id, name}, ...]
       org_id: user.org_id,
       is_super_admin: user.is_super_admin,
       permissions,

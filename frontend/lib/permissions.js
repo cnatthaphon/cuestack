@@ -94,15 +94,43 @@ export async function createDefaultRoles(orgId) {
   return roleIds;
 }
 
-// --- Get user's permissions (system + app) ---
+// --- Get user's permissions (union of ALL assigned roles) ---
 
-export async function getUserPermissions(roleId) {
-  if (!roleId) return [];
+export async function getUserPermissions(userId, legacyRoleId = null) {
+  // Get role IDs from user_roles table (multi-role)
+  const multiRoles = await query(
+    "SELECT role_id FROM user_roles WHERE user_id = $1",
+    [userId]
+  );
+  const roleIds = multiRoles.rows.map((r) => r.role_id);
+
+  // Also include legacy single role_id for backward compat
+  if (legacyRoleId && !roleIds.includes(legacyRoleId)) {
+    roleIds.push(legacyRoleId);
+  }
+
+  if (roleIds.length === 0) return [];
+
+  // Union permissions across all roles
   const result = await query(
-    `SELECT permission_id FROM role_permissions WHERE role_id = $1`,
-    [roleId]
+    `SELECT DISTINCT permission_id FROM role_permissions WHERE role_id = ANY($1::int[])`,
+    [roleIds]
   );
   return result.rows.map((r) => r.permission_id);
+}
+
+// Get user's role names
+export async function getUserRoleNames(userId, legacyRoleId = null) {
+  const multiRoles = await query(
+    "SELECT r.id, r.name FROM user_roles ur JOIN roles r ON ur.role_id = r.id WHERE ur.user_id = $1",
+    [userId]
+  );
+  const roles = multiRoles.rows;
+  if (legacyRoleId && !roles.find((r) => r.id === legacyRoleId)) {
+    const legacy = await query("SELECT id, name FROM roles WHERE id = $1", [legacyRoleId]);
+    if (legacy.rows[0]) roles.push(legacy.rows[0]);
+  }
+  return roles;
 }
 
 // --- Check permission ---
@@ -110,8 +138,7 @@ export async function getUserPermissions(roleId) {
 export async function hasPermission(user, permission) {
   if (!user) return false;
   if (user.is_super_admin) return true;
-  if (!user.role_id) return false;
-  const perms = await getUserPermissions(user.role_id);
+  const perms = await getUserPermissions(user.id, user.role_id);
   return perms.includes(permission);
 }
 

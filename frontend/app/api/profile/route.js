@@ -8,7 +8,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const result = await query(
-    "SELECT id, username, display_name, email, phone, avatar_url, role_id, org_id, is_super_admin, created_at FROM users WHERE id = $1",
+    "SELECT id, username, first_name, last_name, display_name, email, phone, department, avatar_url, role_id, org_id, is_super_admin, created_at FROM users WHERE id = $1",
     [user.id]
   );
   return NextResponse.json({ profile: result.rows[0] || null });
@@ -25,7 +25,10 @@ export async function PATCH(request) {
   let i = 2;
 
   // Allowed self-edit fields
+  if (body.first_name !== undefined) { updates.push(`first_name = $${i}`); values.push(body.first_name); i++; }
+  if (body.last_name !== undefined) { updates.push(`last_name = $${i}`); values.push(body.last_name); i++; }
   if (body.display_name !== undefined) { updates.push(`display_name = $${i}`); values.push(body.display_name); i++; }
+  if (body.department !== undefined) { updates.push(`department = $${i}`); values.push(body.department); i++; }
   if (body.email !== undefined) {
     if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
       return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
