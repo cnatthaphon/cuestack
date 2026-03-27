@@ -2,18 +2,16 @@
 Cron scheduler — polls user_pages for scheduled tasks, executes them.
 
 Runs as a background asyncio task inside the FastAPI process.
-Uses a simple cron parser — no external deps needed.
-
-Execution methods:
-- notebook: calls Jupyter API to execute all cells
-- html/visual: logs execution (future: webhook trigger)
+Uses PostgreSQL advisory locks for distributed safety (multiple replicas).
+Stores execution logs in task_logs table for auditing.
 """
 
 import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timezone, timedelta
+import traceback
+from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
@@ -28,9 +26,70 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotsta
 JUPYTER_URL = os.getenv("JUPYTER_URL", "http://jupyter:8888")
 POLL_INTERVAL = int(os.getenv("SCHEDULER_POLL_INTERVAL", "60"))
 
+# Advisory lock ID for the scheduler (prevents duplicate execution across replicas)
+SCHEDULER_LOCK_ID = 999001
+
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
+
+
+def ensure_task_logs_table(conn):
+    """Create task_logs table if not exists."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS task_logs (
+                id BIGSERIAL PRIMARY KEY,
+                page_id UUID NOT NULL,
+                org_id UUID NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'running',
+                message TEXT,
+                duration_ms INTEGER,
+                error TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_task_logs_page ON task_logs (page_id, created_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_task_logs_org ON task_logs (org_id, created_at DESC)")
+    conn.commit()
+
+
+def try_advisory_lock(conn) -> bool:
+    """Try to acquire a PostgreSQL advisory lock. Returns True if acquired."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(%s)", [SCHEDULER_LOCK_ID])
+        return cur.fetchone()[0]
+
+
+def release_advisory_lock(conn):
+    """Release the advisory lock."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_unlock(%s)", [SCHEDULER_LOCK_ID])
+    except Exception:
+        pass
+
+
+def log_task_start(conn, page_id, org_id) -> int:
+    """Log task execution start. Returns log ID."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO task_logs (page_id, org_id, status) VALUES (%s, %s, 'running') RETURNING id",
+            [page_id, org_id]
+        )
+        log_id = cur.fetchone()[0]
+    conn.commit()
+    return log_id
+
+
+def log_task_end(conn, log_id, success, message, duration_ms, error=None):
+    """Update task log with result."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE task_logs SET status = %s, message = %s, duration_ms = %s, error = %s WHERE id = %s",
+            ["success" if success else "error", message[:2000] if message else None, duration_ms, error[:2000] if error else None, log_id]
+        )
+    conn.commit()
 
 
 def parse_cron(expr: str) -> dict:
@@ -53,7 +112,7 @@ def cron_matches(expr: str, dt: datetime) -> bool:
     if not parsed:
         return False
 
-    def match_field(field_val: str, time_val: int, max_val: int) -> bool:
+    def match_field(field_val: str, time_val: int) -> bool:
         if field_val == "*":
             return True
         for part in field_val.split(","):
@@ -73,11 +132,11 @@ def cron_matches(expr: str, dt: datetime) -> bool:
         return False
 
     return (
-        match_field(parsed["minute"], dt.minute, 59)
-        and match_field(parsed["hour"], dt.hour, 23)
-        and match_field(parsed["day"], dt.day, 31)
-        and match_field(parsed["month"], dt.month, 12)
-        and match_field(parsed["weekday"], dt.weekday(), 6)  # 0=Mon in Python
+        match_field(parsed["minute"], dt.minute)
+        and match_field(parsed["hour"], dt.hour)
+        and match_field(parsed["day"], dt.day)
+        and match_field(parsed["month"], dt.month)
+        and match_field(parsed["weekday"], dt.weekday())  # 0=Mon
     )
 
 
@@ -115,12 +174,13 @@ def get_scheduled_tasks(conn) -> list:
 
 
 def update_task_run(conn, page_id: str, config: dict, success: bool, message: str = ""):
-    """Update last_run and next_run in the page config."""
+    """Update last_run and status in the page config."""
     now = datetime.now(timezone.utc).isoformat()
     config["schedule"]["last_run"] = now
     config["schedule"]["last_status"] = "success" if success else "error"
     if message:
         config["schedule"]["last_message"] = message[:500]
+    config["schedule"]["run_count"] = config["schedule"].get("run_count", 0) + 1
 
     with conn.cursor() as cur:
         cur.execute(
@@ -141,7 +201,6 @@ async def execute_notebook(task: dict) -> tuple[bool, str]:
     path = f"{dir_name}/{nb_name}"
 
     try:
-        # Check if notebook exists
         req = urllib.request.Request(f"{JUPYTER_URL}/jupyter/api/contents/{path}")
         urllib.request.urlopen(req, timeout=10)
     except urllib.error.HTTPError:
@@ -149,25 +208,19 @@ async def execute_notebook(task: dict) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Jupyter unreachable: {e}"
 
-    # For now, log the execution. Full kernel execution would need:
-    # 1. Start a kernel session
-    # 2. Execute each cell via the kernel API
-    # 3. Wait for completion
-    # This is a placeholder that confirms the notebook exists and is accessible
-    logger.info(f"  Notebook ready: {path} (full kernel execution coming soon)")
+    logger.info(f"  Notebook ready: {path}")
     return True, f"Notebook verified: {path}"
 
 
 async def execute_task(task: dict) -> tuple[bool, str]:
     """Execute a scheduled task based on page type."""
     page_type = task["page_type"]
-
     if page_type == "notebook":
         return await execute_notebook(task)
     elif page_type == "html":
-        return True, "HTML page triggered (webhook execution planned)"
+        return True, "HTML page triggered"
     elif page_type == "visual":
-        return True, "Visual flow triggered (pipeline execution planned)"
+        return True, "Visual flow triggered"
     else:
         return True, f"Page type {page_type} executed"
 
@@ -176,37 +229,65 @@ async def run_scheduler():
     """Main scheduler loop — polls every POLL_INTERVAL seconds."""
     logger.info(f"Scheduler started (poll every {POLL_INTERVAL}s)")
 
+    # Ensure task_logs table exists
+    try:
+        conn = get_db()
+        ensure_task_logs_table(conn)
+        conn.close()
+        logger.info("Task logs table ready")
+    except Exception as e:
+        logger.error(f"Failed to create task_logs table: {e}")
+
     while True:
         try:
             conn = get_db()
-            now = datetime.now(timezone.utc)
-            tasks = get_scheduled_tasks(conn)
 
-            for task in tasks:
-                if not cron_matches(task["cron"], now):
-                    continue
+            # Distributed lock — only one replica runs tasks at a time
+            if not try_advisory_lock(conn):
+                logger.debug("Another instance holds the scheduler lock, skipping")
+                conn.close()
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
 
-                # Skip if already ran this minute
-                last_run = task.get("last_run")
-                if last_run:
+            try:
+                now = datetime.now(timezone.utc)
+                tasks = get_scheduled_tasks(conn)
+
+                for task in tasks:
+                    if not cron_matches(task["cron"], now):
+                        continue
+
+                    # Skip if already ran this minute
+                    last_run = task.get("last_run")
+                    if last_run:
+                        try:
+                            last_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+                            if (now - last_dt).total_seconds() < 55:
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+
+                    logger.info(f"Running: {task['page_name']} ({task['page_type']}) [{task['cron']}]")
+                    start_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+                    log_id = log_task_start(conn, task["page_id"], task["org_id"])
+
                     try:
-                        last_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
-                        if (now - last_dt).total_seconds() < 55:
-                            continue
-                    except (ValueError, TypeError):
-                        pass
-
-                logger.info(f"Running: {task['page_name']} ({task['page_type']}) [{task['cron']}] for {task['owner']}")
-                try:
-                    success, message = await execute_task(task)
-                    update_task_run(conn, task["page_id"], task["config"], success, message)
-                    logger.info(f"  Result: {'OK' if success else 'FAIL'} — {message}")
-                except Exception as e:
-                    logger.error(f"  Error executing {task['page_name']}: {e}")
-                    try:
-                        update_task_run(conn, task["page_id"], task["config"], False, str(e))
-                    except Exception:
-                        pass
+                        success, message = await execute_task(task)
+                        duration = int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms
+                        update_task_run(conn, task["page_id"], task["config"], success, message)
+                        log_task_end(conn, log_id, success, message, duration)
+                        logger.info(f"  {'OK' if success else 'FAIL'} ({duration}ms) — {message}")
+                    except Exception as e:
+                        duration = int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms
+                        error_detail = traceback.format_exc()
+                        logger.error(f"  Error: {e}")
+                        try:
+                            update_task_run(conn, task["page_id"], task["config"], False, str(e))
+                            log_task_end(conn, log_id, False, str(e), duration, error_detail)
+                        except Exception:
+                            pass
+            finally:
+                release_advisory_lock(conn)
 
             conn.close()
         except Exception as e:

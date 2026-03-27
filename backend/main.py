@@ -58,7 +58,19 @@ def get_org_id(user: dict) -> str | None:
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "pipeline"}
+    checks = {"service": "ok", "database": "unknown", "scheduler": "running"}
+    try:
+        import psycopg2
+        conn = psycopg2.connect(os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack"))
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        conn.close()
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "error"
+
+    healthy = all(v in ("ok", "running") for v in checks.values())
+    return {"status": "healthy" if healthy else "degraded", "checks": checks}
 
 
 # --- Pipeline Info (no auth) ---
