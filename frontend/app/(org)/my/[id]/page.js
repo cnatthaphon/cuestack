@@ -1,0 +1,333 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useUser } from "../../../../lib/user-context.js";
+
+const WIDGET_TYPES = [
+  { id: "stat", label: "Stat", icon: "\u{1F522}" },
+  { id: "line", label: "Line", icon: "\u{1F4C8}" },
+  { id: "bar", label: "Bar", icon: "\u{1F4CA}" },
+  { id: "table", label: "Table", icon: "\u{1F4CB}" },
+  { id: "text", label: "Text", icon: "\u{1F4DD}" },
+  { id: "pie", label: "Pie", icon: "\u{1F967}" },
+];
+
+export default function PersonalDashboard() {
+  const { user, refresh } = useUser();
+  const params = useParams();
+  const router = useRouter();
+  const [dash, setDash] = useState(null);
+  const [widgets, setWidgets] = useState([]);
+  const [widgetData, setWidgetData] = useState({});
+  const [layout, setLayout] = useState({ columns: 2 });
+  const [editing, setEditing] = useState(false);
+  const [editIdx, setEditIdx] = useState(null);
+  const [tables, setTables] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [orgUsers, setOrgUsers] = useState([]);
+
+  useEffect(() => {
+    loadDashboard();
+    fetch("/api/tables").then((r) => r.ok ? r.json() : { tables: [] }).then((d) => setTables(d.tables || []));
+    fetch("/api/users").then((r) => r.ok ? r.json() : { users: [] }).then((d) => setOrgUsers(d.users || []));
+  }, [params.id]);
+
+  const loadDashboard = async () => {
+    const res = await fetch(`/api/my-dashboards/${params.id}`);
+    if (!res.ok) { router.push("/"); return; }
+    const d = await res.json();
+    const db = d.dashboard;
+    setDash(db);
+    const w = typeof db.widgets === "string" ? JSON.parse(db.widgets) : (db.widgets || []);
+    const l = typeof db.layout === "string" ? JSON.parse(db.layout) : (db.layout || { columns: 2 });
+    setWidgets(w);
+    setLayout(l);
+    loadWidgetData(w);
+  };
+
+  const loadWidgetData = async (w) => {
+    const data = {};
+    for (let i = 0; i < w.length; i++) {
+      try {
+        const res = await fetch("/api/dashboards/widget-data", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ widget: w[i] }),
+        });
+        data[i] = await res.json();
+      } catch { data[i] = { data: { error: "Failed" } }; }
+    }
+    setWidgetData(data);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    await fetch(`/api/my-dashboards/${params.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ widgets, layout }),
+    });
+    setSaving(false);
+    loadWidgetData(widgets);
+    refresh();
+  };
+
+  const deleteDash = async () => {
+    if (!confirm("Delete this dashboard?")) return;
+    await fetch(`/api/my-dashboards/${params.id}`, { method: "DELETE" });
+    refresh();
+    router.push("/");
+  };
+
+  const cloneDash = async () => {
+    const res = await fetch(`/api/my-dashboards/${params.id}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "clone" }),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      refresh();
+      router.push(`/my/${d.dashboard.id}`);
+    }
+  };
+
+  const updateVisibility = async (visibility) => {
+    await fetch(`/api/my-dashboards/${params.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visibility }),
+    });
+    loadDashboard();
+  };
+
+  const updateSharing = async (sharedWith) => {
+    await fetch(`/api/my-dashboards/${params.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shared_with: sharedWith }),
+    });
+    loadDashboard();
+  };
+
+  // Widget operations
+  const addWidget = (type) => {
+    const w = { type, config: {}, width: "auto", x: 0, y: widgets.length, w: 1, h: 1 };
+    if (type === "stat") w.config = { label: "Metric", aggregation: "count" };
+    if (type === "text") w.config = { text: "Enter text" };
+    if (type === "table") w.config = { max_rows: 10 };
+    setWidgets([...widgets, w]);
+    setEditIdx(widgets.length);
+  };
+  const removeWidget = (idx) => { setWidgets(widgets.filter((_, i) => i !== idx)); setEditIdx(null); };
+  const moveWidget = (idx, dir) => {
+    const ni = idx + dir;
+    if (ni < 0 || ni >= widgets.length) return;
+    const c = [...widgets]; [c[idx], c[ni]] = [c[ni], c[idx]]; setWidgets(c); setEditIdx(ni);
+  };
+  const updateConfig = (idx, key, val) => {
+    setWidgets(widgets.map((w, i) => i === idx ? { ...w, config: { ...w.config, [key]: val } } : w));
+  };
+  const setWidth = (idx, width) => {
+    setWidgets(widgets.map((w, i) => i === idx ? { ...w, width } : w));
+  };
+
+  const getTableCols = (name) => {
+    const t = tables.find((t) => t.name === name);
+    if (!t) return [];
+    const c = typeof t.columns === "string" ? JSON.parse(t.columns) : (t.columns || []);
+    return ["id", ...c.map((col) => col.name), "created_at"];
+  };
+
+  if (!user || !dash) return <div style={{ padding: 32, color: "#666" }}>Loading...</div>;
+  const isOwner = dash.user_id === user.id;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 24 }}>{dash.icon}</span>
+          <h1 style={{ margin: 0, fontSize: 20 }}>{dash.name}</h1>
+          <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: dash.visibility === "org" ? "#e8f4ff" : dash.visibility === "public" ? "#f0fde8" : "#f7f7f7", color: dash.visibility === "org" ? "#0070f3" : dash.visibility === "public" ? "#38a169" : "#999" }}>{dash.visibility}</span>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {!editing && <button onClick={() => loadWidgetData(widgets)} style={btnGray}>Refresh</button>}
+          {!editing && !isOwner && <button onClick={cloneDash} style={btnGray}>Clone</button>}
+          {isOwner && !editing && <button onClick={() => setShowShare(!showShare)} style={btnGray}>Share</button>}
+          {isOwner && (
+            editing
+              ? <>
+                  <button onClick={() => { save(); setEditing(false); setEditIdx(null); }} disabled={saving} style={btnBlue}>{saving ? "Saving..." : "Save"}</button>
+                  <button onClick={() => { setEditing(false); setEditIdx(null); loadDashboard(); }} style={btnGray}>Cancel</button>
+                </>
+              : <button onClick={() => setEditing(true)} style={btnBlue}>Edit</button>
+          )}
+          {isOwner && <button onClick={deleteDash} style={{ ...btnGray, color: "#e53e3e" }}>Delete</button>}
+        </div>
+      </div>
+
+      {/* Share dialog */}
+      {showShare && isOwner && (
+        <div style={{ marginBottom: 16, padding: 16, background: "#fff", borderRadius: 8, border: "2px solid #0070f3" }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: 14 }}>Share Dashboard</h3>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {["private", "org", "public"].map((v) => (
+              <button key={v} onClick={() => updateVisibility(v)} style={{
+                flex: 1, padding: 8, borderRadius: 6, cursor: "pointer", textAlign: "center", fontSize: 12,
+                border: dash.visibility === v ? "2px solid #0070f3" : "1px solid #ddd",
+                background: dash.visibility === v ? "#e8f4ff" : "#fff", fontWeight: 600,
+              }}>
+                {v === "private" ? "\u{1F512} Private" : v === "org" ? "\u{1F465} Org" : "\u{1F310} Public"}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: 12, color: "#666", margin: "0 0 8px" }}>Share with users:</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+            {orgUsers.filter((u) => u.id !== user.id).map((u) => {
+              const isShared = (dash.shared_with || []).some((s) => s.type === "user" && s.id === u.id);
+              return (
+                <button key={u.id} onClick={() => {
+                  const current = dash.shared_with || [];
+                  const next = isShared ? current.filter((s) => !(s.type === "user" && s.id === u.id)) : [...current, { type: "user", id: u.id }];
+                  updateSharing(next);
+                }} style={{
+                  padding: "4px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer",
+                  background: isShared ? "#e8f4ff" : "#f7f7f7", border: isShared ? "1px solid #0070f3" : "1px solid #ddd",
+                }}>
+                  {u.first_name || u.username} {isShared && "\u2713"}
+                </button>
+              );
+            })}
+          </div>
+          <button onClick={() => setShowShare(false)} style={btnGray}>Done</button>
+        </div>
+      )}
+
+      {/* Widget toolbar (edit mode) */}
+      {editing && (
+        <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+          {WIDGET_TYPES.map((t) => (
+            <button key={t.id} onClick={() => addWidget(t.id)} style={{ padding: "6px 12px", background: "#fff", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+          <span style={{ marginLeft: "auto", fontSize: 13, color: "#666" }}>Columns:
+            <select value={layout.columns} onChange={(e) => setLayout({ ...layout, columns: parseInt(e.target.value) })} style={{ marginLeft: 4, padding: 4, fontSize: 13 }}>
+              {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </span>
+        </div>
+      )}
+
+      {/* Widget grid */}
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${layout.columns || 2}, 1fr)`, gap: 12 }}>
+        {widgets.map((w, i) => (
+          <div key={i} onClick={() => editing && setEditIdx(i)} style={{
+            background: "#fff", borderRadius: 8, padding: editing ? 12 : 16,
+            border: editing && editIdx === i ? "2px solid #0070f3" : "1px solid #e2e8f0",
+            gridColumn: w.width === "full" ? "1 / -1" : "auto",
+            cursor: editing ? "pointer" : "default", minHeight: editing ? 60 : 80,
+          }}>
+            {editing && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 11, color: "#999" }}>{WIDGET_TYPES.find((t) => t.id === w.type)?.icon} {WIDGET_TYPES.find((t) => t.id === w.type)?.label}</span>
+                <div style={{ display: "flex", gap: 2 }}>
+                  <select value={w.width || "auto"} onChange={(e) => setWidth(i, e.target.value)} style={{ padding: 1, fontSize: 10, border: "1px solid #ddd", borderRadius: 2 }}>
+                    <option value="auto">1col</option><option value="full">Full</option>
+                  </select>
+                  <button onClick={(e) => { e.stopPropagation(); moveWidget(i, -1); }} style={miniBtn}>&uarr;</button>
+                  <button onClick={(e) => { e.stopPropagation(); moveWidget(i, 1); }} style={miniBtn}>&darr;</button>
+                  <button onClick={(e) => { e.stopPropagation(); removeWidget(i); }} style={{ ...miniBtn, color: "#e53e3e" }}>x</button>
+                </div>
+              </div>
+            )}
+            {editing && editIdx === i ? (
+              <WidgetConfig widget={w} tables={tables} getTableCols={getTableCols} updateConfig={(k, v) => updateConfig(i, k, v)} />
+            ) : (
+              <WidgetView widget={w} data={widgetData[i]?.data} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {widgets.length === 0 && (
+        <div style={{ padding: 40, background: "#fff", borderRadius: 8, border: editing ? "2px dashed #0070f3" : "1px solid #e2e8f0", textAlign: "center", color: "#999" }}>
+          {editing ? "Click a widget type above to add it" : "Empty dashboard. Click Edit to add widgets."}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WidgetConfig({ widget, tables, getTableCols, updateConfig }) {
+  const { type, config } = widget;
+  if (type === "text") return <textarea value={config?.text || ""} onChange={(e) => updateConfig("text", e.target.value)} style={{ width: "100%", padding: 6, border: "1px solid #ddd", borderRadius: 4, fontSize: 12, minHeight: 50, boxSizing: "border-box" }} />;
+  return (
+    <div style={{ fontSize: 12 }}>
+      <input placeholder="Title/Label" value={config?.title || config?.label || ""} onChange={(e) => updateConfig(type === "stat" ? "label" : "title", e.target.value)} style={cfgInput} />
+      <select value={config?.table || ""} onChange={(e) => updateConfig("table", e.target.value)} style={cfgInput}>
+        <option value="">Select table...</option>
+        {tables.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+      </select>
+      {config?.table && type === "stat" && (
+        <div style={{ display: "flex", gap: 4 }}>
+          <select value={config?.column || ""} onChange={(e) => updateConfig("column", e.target.value)} style={cfgInput}>
+            <option value="">(count)</option>
+            {getTableCols(config.table).map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={config?.aggregation || "count"} onChange={(e) => updateConfig("aggregation", e.target.value)} style={cfgInput}>
+            {["count", "avg", "sum", "min", "max"].map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+      )}
+      {config?.table && ["line", "bar", "pie"].includes(type) && (
+        <div style={{ display: "flex", gap: 4 }}>
+          <select value={config?.x_column || ""} onChange={(e) => updateConfig("x_column", e.target.value)} style={cfgInput}>
+            <option value="created_at">x: created_at</option>
+            {getTableCols(config.table).map((c) => <option key={c} value={c}>x: {c}</option>)}
+          </select>
+          <select value={config?.y_column || ""} onChange={(e) => updateConfig("y_column", e.target.value)} style={cfgInput}>
+            <option value="">y: select...</option>
+            {getTableCols(config.table).map((c) => <option key={c} value={c}>y: {c}</option>)}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WidgetView({ widget, data }) {
+  if (!data) return <div style={{ color: "#ccc", fontSize: 13 }}>Loading...</div>;
+  if (data.error) return <div style={{ color: "#e53e3e", fontSize: 12 }}>{data.error}</div>;
+  const { type, config } = widget;
+  if (type === "stat") return <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#666", textTransform: "uppercase" }}>{data.label}</div><div style={{ fontSize: 32, fontWeight: 700 }}>{data.value ?? "\u2014"}</div></div>;
+  if (type === "text") return <div style={{ fontSize: 14, lineHeight: 1.6 }}>{config?.text || ""}</div>;
+  if (type === "table") return (
+    <div style={{ overflow: "auto" }}>
+      {config?.title && <h3 style={{ margin: "0 0 6px", fontSize: 13 }}>{config.title}</h3>}
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+        <thead><tr>{(data.columns || []).map((c) => <th key={c} style={{ border: "1px solid #eee", padding: 4, background: "#f9fafb" }}>{c}</th>)}</tr></thead>
+        <tbody>{(data.rows || []).slice(0, 20).map((r, i) => <tr key={i}>{(data.columns || []).map((c) => <td key={c} style={{ border: "1px solid #eee", padding: 4 }}>{r[c] != null ? String(r[c]) : ""}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  );
+  if (["bar", "line"].includes(type) && data.values) {
+    const max = Math.max(...data.values, 1); const h = 120;
+    return (
+      <div>
+        {config?.title && <h3 style={{ margin: "0 0 6px", fontSize: 13 }}>{config.title}</h3>}
+        <svg width="100%" height={h + 25} viewBox={`0 0 ${Math.max(data.values.length * 45, 180)} ${h + 25}`}>
+          {type === "line" ? (
+            <polyline points={data.values.map((v, i) => `${i * 45 + 22},${h - (v / max) * h}`).join(" ")} fill="none" stroke="#0070f3" strokeWidth={2} />
+          ) : (
+            data.values.map((v, i) => <g key={i}><rect x={i * 45 + 3} y={h - (v / max) * h} width={38} height={(v / max) * h} fill="#0070f3" rx={3} /><text x={i * 45 + 22} y={h + 12} textAnchor="middle" fontSize={8} fill="#666">{String(data.labels?.[i] || "").slice(0, 6)}</text></g>))
+          }
+        </svg>
+      </div>
+    );
+  }
+  return null;
+}
+
+const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13 };
+const btnGray = { padding: "8px 16px", background: "#f0f0f0", color: "#333", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 13 };
+const miniBtn = { padding: "1px 5px", background: "none", border: "1px solid #ddd", borderRadius: 2, cursor: "pointer", fontSize: 10, color: "#666" };
+const cfgInput = { display: "block", width: "100%", padding: 4, border: "1px solid #ddd", borderRadius: 3, fontSize: 12, marginBottom: 4, boxSizing: "border-box" };

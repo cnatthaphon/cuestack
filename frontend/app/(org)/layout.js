@@ -53,7 +53,7 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, navData, loading, logout, hasPermission } = useUser();
+  const { user, org, navData, myDashboards, loading, logout, hasPermission, refresh } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const pathname = usePathname();
@@ -204,6 +204,32 @@ function OrgShell({ children }) {
               {ungrouped.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
             </div>
           )}
+        </div>
+
+        {/* Personal Dashboards */}
+        <div style={{ borderTop: "1px solid #2a2a4a", padding: "4px 0" }}>
+          {!collapsed && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 16px 4px" }}>
+              <span style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>My Dashboards</span>
+              <button onClick={async () => {
+                const name = prompt("Dashboard name:");
+                if (!name) return;
+                const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+                if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
+              }} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 14, padding: 0 }} title="New Dashboard">+</button>
+            </div>
+          )}
+          {collapsed && (
+            <button onClick={async () => {
+              const name = prompt("Dashboard name:");
+              if (!name) return;
+              const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+              if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
+            }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 16, padding: "8px 0" }} title="New Dashboard">+</button>
+          )}
+          {(myDashboards || []).map((d) => (
+            <NavLink key={d.id} item={{ href: `/my/${d.id}`, label: d.name, icon: d.icon || "\u{1F4CA}" }} pathname={pathname} collapsed={collapsed} />
+          ))}
         </div>
 
         {/* Nav Footer — org info */}

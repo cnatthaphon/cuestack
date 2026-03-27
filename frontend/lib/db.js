@@ -100,6 +100,25 @@ export async function initDB() {
   await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_name ON org_file_entries (org_id, parent_id, name)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_owner ON org_file_entries (org_id, created_by)`);
 
+  // Personal dashboards (per-user, not org apps)
+  await query(`
+    CREATE TABLE IF NOT EXISTS user_dashboards (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      icon VARCHAR(10) DEFAULT '\u{1F4CA}',
+      widgets JSONB DEFAULT '[]',
+      layout JSONB DEFAULT '{"columns":2}',
+      visibility VARCHAR(10) DEFAULT 'private',
+      shared_with JSONB DEFAULT '[]',
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_user_dashboards_user ON user_dashboards (org_id, user_id)`);
+
   // User profile fields
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(50)`);
