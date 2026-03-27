@@ -81,5 +81,13 @@ export async function POST(request, { params }) {
     return NextResponse.json({ dashboard: result.rows[0] }, { status: 201 });
   }
 
+  if (action === "move") {
+    const { parent_id } = await request.json().catch(() => ({}));
+    const dash2 = await query("SELECT user_id FROM user_dashboards WHERE id = $1", [id]);
+    if (!dash2.rows[0] || dash2.rows[0].user_id !== user.id) return NextResponse.json({ error: "Not owner" }, { status: 403 });
+    await query("UPDATE user_dashboards SET parent_id = $1, updated_at = NOW() WHERE id = $2", [parent_id || null, id]);
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 }
