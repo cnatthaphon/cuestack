@@ -58,6 +58,11 @@ export default function PageViewer() {
   };
 
   const saveConfig = async (config) => {
+    // Config versioning — increment on every save
+    const currentCfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+    config._version = (currentCfg._version || 0) + 1;
+    config._updated_by = user.username;
+    config._updated_at = new Date().toISOString();
     await fetch(`/api/pages/${params.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config }),
@@ -67,7 +72,9 @@ export default function PageViewer() {
 
   if (!user || !page) return <div style={{ padding: 32, color: "#666" }}>Loading...</div>;
   const isOwner = page.user_id === user.id;
-  const canSchedule = isOwner && hasPermission("pages.schedule");
+  // Schedule only for executable types (notebook, visual). Not for dashboard/html.
+  const SCHEDULABLE = ["notebook", "visual"];
+  const canSchedule = isOwner && hasPermission("pages.schedule") && SCHEDULABLE.includes(page.page_type);
 
   // Render based on page_type
   const renderers = {
@@ -95,6 +102,9 @@ export default function PageViewer() {
             <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "#fff3e0", color: "#e65100" }} title="Scheduled">
               {"\u23F0"} {getScheduleLabel(page)}
             </span>
+          )}
+          {getConfigVersion(page) > 0 && (
+            <span style={{ fontSize: 10, color: "#bbb" }} title={`Last edited by ${getConfigUpdatedBy(page)}`}>v{getConfigVersion(page)}</span>
           )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -183,6 +193,16 @@ function getScheduleLabel(page) {
   if (!cron) return "";
   const preset = CRON_PRESETS.find((p) => p.value === cron);
   return preset ? preset.label : cron;
+}
+
+function getConfigVersion(page) {
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+  return cfg._version || 0;
+}
+
+function getConfigUpdatedBy(page) {
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+  return cfg._updated_by || "";
 }
 
 // ─── Schedule dialog ──────────────────────────────────────────────────────────
@@ -389,7 +409,7 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
       )}
 
       {/* Widget grid */}
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${layout.columns || 2}, 1fr)`, gap: 12, gridAutoRows: "minmax(120px, auto)" }}>
+      <div data-widget-grid style={{ display: "grid", gridTemplateColumns: `repeat(${layout.columns || 2}, 1fr)`, gap: 12, gridAutoRows: "minmax(120px, auto)" }}>
         {widgets.map((w, i) => {
           const cs = w.colSpan || 1;
           const rs = w.rowSpan || 1;
@@ -426,6 +446,37 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
                 <WidgetConfig widget={w} tables={tables} getTableCols={getTableCols} updateConfig={(k, v) => updateConfig(i, k, v)} />
               ) : (
                 <WidgetView widget={w} data={widgetData[i]?.data} />
+              )}
+              {/* Drag resize handle */}
+              {editing && (
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+                    const startW = cs;
+                    const startH = rs;
+                    const gridEl = e.target.closest("[data-widget-grid]");
+                    const cellW = gridEl ? gridEl.offsetWidth / (layout.columns || 2) : 200;
+                    const cellH = 132; // minmax(120px, auto) + gap
+
+                    const onMove = (me) => {
+                      const dx = me.clientX - startX;
+                      const dy = me.clientY - startY;
+                      const newW = Math.max(1, Math.min(layout.columns || 2, startW + Math.round(dx / cellW)));
+                      const newH = Math.max(1, Math.min(4, startH + Math.round(dy / cellH)));
+                      if (newW !== cs || newH !== rs) setWidgetSize(i, newW, newH);
+                    };
+                    const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+                    document.addEventListener("mousemove", onMove);
+                    document.addEventListener("mouseup", onUp);
+                  }}
+                  style={{
+                    position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize",
+                    background: "linear-gradient(135deg, transparent 50%, #0070f3 50%)", borderRadius: "0 0 6px 0", opacity: 0.5,
+                  }}
+                  title="Drag to resize"
+                />
               )}
             </div>
           );
@@ -807,6 +858,11 @@ function VisualRenderer({ page, isOwner, saveConfig }) {
 
 // ─── Notebook renderer (Jupyter iframe) ──────────────────────────────────────
 function NotebookRenderer({ page, isOwner }) {
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+  const schedule = cfg.schedule;
+  const lastRun = schedule?.last_run;
+  const lastStatus = schedule?.last_status;
+
   const [jupyterUrl, setJupyterUrl] = useState(null);
   const [showJupyter, setShowJupyter] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -815,6 +871,7 @@ function NotebookRenderer({ page, isOwner }) {
   const openNotebook = async () => {
     setLoading(true);
     setError("");
+    // Use page slug as notebook name — creates the notebook if it doesn't exist
     const name = page.slug || page.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
     const res = await fetch("/api/notebooks", {
       method: "POST",
@@ -828,6 +885,7 @@ function NotebookRenderer({ page, isOwner }) {
     setLoading(false);
   };
 
+  // Jupyter editor (owner only)
   if (showJupyter && jupyterUrl) {
     return (
       <div style={{ margin: "-32px -32px 0", display: "flex", flexDirection: "column", height: "calc(100vh - 49px)" }}>
@@ -838,6 +896,7 @@ function NotebookRenderer({ page, isOwner }) {
           <div>
             <strong>{page.icon} {page.name}</strong>
             <span style={{ color: "#888", marginLeft: 12 }}>Notebook</span>
+            {schedule?.cron && <span style={{ marginLeft: 12, color: "#fbbf24" }}>{"\u23F0"} {schedule.cron}</span>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => window.open(jupyterUrl, "_blank")} style={toolbarBtn}>New tab</button>
@@ -850,28 +909,64 @@ function NotebookRenderer({ page, isOwner }) {
   }
 
   return (
-    <div style={{ padding: 32, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center", minHeight: 300 }}>
-      <div style={{ fontSize: 48, marginBottom: 16 }}>{"\u{1F4D3}"}</div>
-      <h2 style={{ margin: "0 0 8px" }}>{page.name}</h2>
-      <p style={{ color: "#666", fontSize: 14, marginBottom: 16 }}>
-        Jupyter notebook with IoT Stack SDK pre-loaded.
-      </p>
-      <button onClick={openNotebook} disabled={loading} style={btnBlue}>
-        {loading ? "Starting..." : "Open Notebook"}
-      </button>
-      {error && <p style={{ color: "#e53e3e", margin: "12px 0 0", fontSize: 13 }}>{error}</p>}
+    <div>
+      {/* Notebook info card */}
+      <div style={{ padding: 24, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{page.name}</h2>
+            <p style={{ color: "#666", fontSize: 13, margin: 0 }}>
+              Jupyter notebook with IoT Stack SDK pre-loaded.
+            </p>
+          </div>
+          {isOwner && (
+            <button onClick={openNotebook} disabled={loading} style={btnBlue}>
+              {loading ? "Starting..." : "Open in Jupyter"}
+            </button>
+          )}
+        </div>
+        {error && <p style={{ color: "#e53e3e", margin: "8px 0 0", fontSize: 13 }}>{error}</p>}
 
-      <div style={{ marginTop: 24, textAlign: "left", maxWidth: 500, margin: "24px auto 0" }}>
-        <pre style={{ background: "#f7f7f7", padding: 12, borderRadius: 6, fontSize: 12, overflow: "auto", lineHeight: 1.6 }}>
-{`# Auto-injected SDK
-from iot_stack import connect
+        {/* Schedule info */}
+        {schedule?.cron && (
+          <div style={{ marginTop: 12, padding: 10, background: "#fffbeb", borderRadius: 6, border: "1px solid #fde68a", fontSize: 12 }}>
+            <strong>{"\u23F0"} Scheduled:</strong> {schedule.cron}
+            {schedule.enabled === false && <span style={{ color: "#999" }}> (paused)</span>}
+            {lastRun && <span> &middot; Last run: {new Date(lastRun).toLocaleString()}</span>}
+            {lastStatus && <span> &middot; <span style={{ color: lastStatus === "success" ? "#38a169" : "#e53e3e" }}>{lastStatus}</span></span>}
+            {schedule.run_count > 0 && <span> &middot; {schedule.run_count} runs</span>}
+          </div>
+        )}
+      </div>
+
+      {/* For non-owners: show read-only info */}
+      {!isOwner && (
+        <div style={{ padding: 24, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>{"\u{1F512}"}</div>
+          <p style={{ color: "#666", fontSize: 14 }}>
+            This notebook is owned by another user. You can view its schedule and status above.
+          </p>
+          <p style={{ color: "#999", fontSize: 12, marginTop: 8 }}>
+            Clone it to your workspace to get your own editable copy.
+          </p>
+        </div>
+      )}
+
+      {/* SDK quick reference (owner only) */}
+      {isOwner && (
+        <div style={{ padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+          <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>SDK Quick Reference</h3>
+          <pre style={{ background: "#f7f7f7", padding: 12, borderRadius: 6, fontSize: 12, overflow: "auto", lineHeight: 1.6, margin: 0 }}>
+{`from iot_stack import connect
 client = connect()
 
-client.tables()              # list tables
-df = client.query_table("t") # query into DataFrame
-client.files.list()          # list org files`}
-        </pre>
-      </div>
+client.tables()                    # list tables
+df = client.query_table("name")   # query → DataFrame
+client.files.list()                # org files
+client.notify("Title", message="") # send notification`}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

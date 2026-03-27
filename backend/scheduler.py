@@ -46,9 +46,12 @@ def ensure_task_logs_table(conn):
                 message TEXT,
                 duration_ms INTEGER,
                 error TEXT,
+                config_version INTEGER DEFAULT 0,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
+        # Add config_version if table already exists without it
+        cur.execute("ALTER TABLE task_logs ADD COLUMN IF NOT EXISTS config_version INTEGER DEFAULT 0")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_task_logs_page ON task_logs (page_id, created_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_task_logs_org ON task_logs (org_id, created_at DESC)")
     conn.commit()
@@ -70,12 +73,12 @@ def release_advisory_lock(conn):
         pass
 
 
-def log_task_start(conn, page_id, org_id) -> int:
+def log_task_start(conn, page_id, org_id, config_version=0) -> int:
     """Log task execution start. Returns log ID."""
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO task_logs (page_id, org_id, status) VALUES (%s, %s, 'running') RETURNING id",
-            [page_id, org_id]
+            "INSERT INTO task_logs (page_id, org_id, status, config_version) VALUES (%s, %s, 'running', %s) RETURNING id",
+            [page_id, org_id, config_version]
         )
         log_id = cur.fetchone()[0]
     conn.commit()
@@ -274,9 +277,10 @@ async def run_scheduler():
                         except (ValueError, TypeError):
                             pass
 
-                    logger.info(f"Running: {task['page_name']} ({task['page_type']}) [{task['cron']}]")
+                    config_ver = task["config"].get("_version", 0)
+                    logger.info(f"Running: {task['page_name']} ({task['page_type']}) [{task['cron']}] v{config_ver}")
                     start_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-                    log_id = log_task_start(conn, task["page_id"], task["org_id"])
+                    log_id = log_task_start(conn, task["page_id"], task["org_id"], config_ver)
 
                     try:
                         success, message = await execute_task(task)
