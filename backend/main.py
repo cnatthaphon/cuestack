@@ -1,4 +1,6 @@
 import os
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,10 +11,20 @@ from pipelines import (
     create_ingest_pipeline, create_query_pipeline,
     create_summary_pipeline,
 )
+from scheduler import run_scheduler
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
 
-app = FastAPI(title="IoT Stack — Pipeline Service", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app):
+    # Start scheduler as background task
+    task = asyncio.create_task(run_scheduler())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="IoT Stack — Pipeline Service", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
