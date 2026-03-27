@@ -125,8 +125,8 @@ export default function PersonalDashboard() {
   const updateConfig = (idx, key, val) => {
     setWidgets(widgets.map((w, i) => i === idx ? { ...w, config: { ...w.config, [key]: val } } : w));
   };
-  const setWidth = (idx, width) => {
-    setWidgets(widgets.map((w, i) => i === idx ? { ...w, width } : w));
+  const setWidgetSize = (idx, colSpan, rowSpan) => {
+    setWidgets(widgets.map((w, i) => i === idx ? { ...w, colSpan: colSpan || w.colSpan || 1, rowSpan: rowSpan || w.rowSpan || 1 } : w));
   };
 
   const getTableCols = (name) => {
@@ -218,21 +218,34 @@ export default function PersonalDashboard() {
       )}
 
       {/* Widget grid */}
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${layout.columns || 2}, 1fr)`, gap: 12 }}>
-        {widgets.map((w, i) => (
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${layout.columns || 2}, 1fr)`, gap: 12, gridAutoRows: "minmax(120px, auto)" }}>
+        {widgets.map((w, i) => {
+          const cs = w.colSpan || (w.width === "full" ? layout.columns || 2 : 1);
+          const rs = w.rowSpan || 1;
+          return (
           <div key={i} onClick={() => editing && setEditIdx(i)} style={{
             background: "#fff", borderRadius: 8, padding: editing ? 12 : 16,
             border: editing && editIdx === i ? "2px solid #0070f3" : "1px solid #e2e8f0",
-            gridColumn: w.width === "full" ? "1 / -1" : "auto",
-            cursor: editing ? "pointer" : "default", minHeight: editing ? 60 : 80,
+            gridColumn: `span ${Math.min(cs, layout.columns || 2)}`,
+            gridRow: `span ${rs}`,
+            cursor: editing ? "pointer" : "default", minHeight: 80,
+            position: "relative", overflow: "hidden",
           }}>
             {editing && (
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <span style={{ fontSize: 11, color: "#999" }}>{WIDGET_TYPES.find((t) => t.id === w.type)?.icon} {WIDGET_TYPES.find((t) => t.id === w.type)?.label}</span>
-                <div style={{ display: "flex", gap: 2 }}>
-                  <select value={w.width || "auto"} onChange={(e) => setWidth(i, e.target.value)} style={{ padding: 1, fontSize: 10, border: "1px solid #ddd", borderRadius: 2 }}>
-                    <option value="auto">1col</option><option value="full">Full</option>
-                  </select>
+                <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                  {/* Size controls */}
+                  <span style={{ fontSize: 9, color: "#999" }}>W:</span>
+                  {[1, 2, 3, 4].filter((n) => n <= (layout.columns || 2)).map((n) => (
+                    <button key={`w${n}`} onClick={(e) => { e.stopPropagation(); setWidgetSize(i, n, rs); }}
+                      style={{ ...sizeBtn, background: cs === n ? "#0070f3" : "#f0f0f0", color: cs === n ? "#fff" : "#666" }}>{n}</button>
+                  ))}
+                  <span style={{ fontSize: 9, color: "#999", marginLeft: 4 }}>H:</span>
+                  {[1, 2, 3].map((n) => (
+                    <button key={`h${n}`} onClick={(e) => { e.stopPropagation(); setWidgetSize(i, cs, n); }}
+                      style={{ ...sizeBtn, background: rs === n ? "#0070f3" : "#f0f0f0", color: rs === n ? "#fff" : "#666" }}>{n}</button>
+                  ))}
                   <button onClick={(e) => { e.stopPropagation(); moveWidget(i, -1); }} style={miniBtn}>&uarr;</button>
                   <button onClick={(e) => { e.stopPropagation(); moveWidget(i, 1); }} style={miniBtn}>&darr;</button>
                   <button onClick={(e) => { e.stopPropagation(); removeWidget(i); }} style={{ ...miniBtn, color: "#e53e3e" }}>x</button>
@@ -245,7 +258,8 @@ export default function PersonalDashboard() {
               <WidgetView widget={w} data={widgetData[i]?.data} />
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {widgets.length === 0 && (
@@ -330,4 +344,5 @@ function WidgetView({ widget, data }) {
 const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13 };
 const btnGray = { padding: "8px 16px", background: "#f0f0f0", color: "#333", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 13 };
 const miniBtn = { padding: "1px 5px", background: "none", border: "1px solid #ddd", borderRadius: 2, cursor: "pointer", fontSize: 10, color: "#666" };
+const sizeBtn = { padding: "1px 5px", border: "none", borderRadius: 2, cursor: "pointer", fontSize: 9, fontWeight: 700, minWidth: 16, textAlign: "center" };
 const cfgInput = { display: "block", width: "100%", padding: 4, border: "1px solid #ddd", borderRadius: 3, fontSize: 12, marginBottom: 4, boxSizing: "border-box" };
