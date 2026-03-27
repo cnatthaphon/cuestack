@@ -84,7 +84,7 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/nginx-health"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/nginx-health || exit 1"]
       interval: 15s
       timeout: 3s
       retries: 3
