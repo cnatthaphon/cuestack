@@ -163,8 +163,46 @@ function OrgShell({ children }) {
           )}
         </div>
 
-        {/* Nav Sections */}
+        {/* Nav Content */}
         <div style={{ flex: 1, padding: "4px 0", overflowY: "auto" }}>
+
+          {/* Dashboard Drive — top of nav like Google Drive */}
+          <div style={{ padding: "2px 0", borderBottom: "1px solid #2a2a4a" }}>
+            {!collapsed && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px 2px" }}>
+                <button onClick={() => setDashExpanded(!dashExpanded)} style={{ background: "none", border: "none", color: "#aaa", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase", letterSpacing: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontSize: 8 }}>{dashExpanded ? "\u25BC" : "\u25B6"}</span> Dashboards
+                </button>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button onClick={async () => {
+                    const name = prompt("Folder name:");
+                    if (!name) return;
+                    await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
+                    refresh();
+                  }} style={plusBtn} title="New Folder">{"\u{1F4C1}"}</button>
+                  <button onClick={async () => {
+                    const name = prompt("Dashboard name:");
+                    if (!name) return;
+                    const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+                    if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
+                  }} style={plusBtn} title="New Dashboard">+</button>
+                </div>
+              </div>
+            )}
+            {dashExpanded && !collapsed && (
+              <DashboardTree items={myDashboards || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
+            )}
+            {collapsed && (
+              <button onClick={async () => {
+                const name = prompt("Dashboard name:");
+                if (!name) return;
+                const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+                if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
+              }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 14, padding: "6px 0" }} title="New Dashboard">{"\u{1F4CA}"}</button>
+            )}
+          </div>
+
+          {/* Nav Sections */}
           {NAV_SECTIONS.map((section, si) => {
             const items = filterItems(section.items);
             if (items.length === 0) return null;
@@ -208,41 +246,7 @@ function OrgShell({ children }) {
           )}
         </div>
 
-        {/* Dashboard Drive — top section like Google Drive */}
-        <div style={{ borderTop: "1px solid #2a2a4a", padding: "4px 0" }}>
-          {!collapsed && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 16px 2px" }}>
-              <button onClick={() => setDashExpanded(!dashExpanded)} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase", letterSpacing: 1, display: "flex", alignItems: "center", gap: 4 }}>
-                <span style={{ fontSize: 8 }}>{dashExpanded ? "\u25BC" : "\u25B6"}</span> Dashboards
-              </button>
-              <div style={{ display: "flex", gap: 4 }}>
-                <button onClick={async () => {
-                  const name = prompt("Folder name:");
-                  if (!name) return;
-                  await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
-                  refresh();
-                }} style={plusBtn} title="New Folder">{"\u{1F4C1}"}</button>
-                <button onClick={async () => {
-                  const name = prompt("Dashboard name:");
-                  if (!name) return;
-                  const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-                  if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
-                }} style={plusBtn} title="New Dashboard">+</button>
-              </div>
-            </div>
-          )}
-          {dashExpanded && !collapsed && (
-            <DashboardTree items={myDashboards || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
-          )}
-          {collapsed && (
-            <button onClick={async () => {
-              const name = prompt("Dashboard name:");
-              if (!name) return;
-              const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-              if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
-            }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 14, padding: "6px 0" }} title="New Dashboard">{"\u{1F4CA}"}</button>
-          )}
-        </div>
+        {/* (Dashboard Drive moved to top of nav) */}
 
         {/* Nav Footer — org info */}
         <div style={{ padding: collapsed ? "12px 8px" : "12px 16px", borderTop: "1px solid #2a2a4a" }}>
