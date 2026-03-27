@@ -61,7 +61,7 @@ export async function GET(request) {
 
   // My pages — full tree
   const result = await query(
-    "SELECT id, name, slug, icon, page_type, entry_type, parent_id, status, visibility, sort_order, permission_id FROM user_pages WHERE org_id = $1 AND user_id = $2 ORDER BY entry_type DESC, sort_order, name",
+    `SELECT id, name, slug, icon, page_type, entry_type, parent_id, status, visibility, sort_order, permission_id, (config ? 'schedule') as has_schedule FROM user_pages WHERE org_id = $1 AND user_id = $2 ORDER BY entry_type DESC, sort_order, name`,
     [user.org_id, user.id]
   );
   return NextResponse.json({ pages: result.rows });
