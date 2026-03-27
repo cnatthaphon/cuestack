@@ -35,13 +35,14 @@ export default function PersonalDashboard() {
   }, [params.id]);
 
   const loadDashboard = async () => {
-    const res = await fetch(`/api/my-dashboards/${params.id}`);
+    const res = await fetch(`/api/pages/${params.id}`);
     if (!res.ok) { router.push("/"); return; }
     const d = await res.json();
-    const db = d.dashboard;
+    const db = d.page;
     setDash(db);
-    const w = typeof db.widgets === "string" ? JSON.parse(db.widgets) : (db.widgets || []);
-    const l = typeof db.layout === "string" ? JSON.parse(db.layout) : (db.layout || { columns: 2 });
+    const cfg = typeof db.config === "string" ? JSON.parse(db.config) : (db.config || {});
+    const w = cfg.widgets || [];
+    const l = cfg.layout || { columns: 2 };
     setWidgets(w);
     setLayout(l);
     loadWidgetData(w);
@@ -63,9 +64,9 @@ export default function PersonalDashboard() {
 
   const save = async () => {
     setSaving(true);
-    await fetch(`/api/my-dashboards/${params.id}`, {
+    await fetch(`/api/pages/${params.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ widgets, layout }),
+      body: JSON.stringify({ config: { widgets, layout } }),
     });
     setSaving(false);
     loadWidgetData(widgets);
@@ -74,25 +75,25 @@ export default function PersonalDashboard() {
 
   const deleteDash = async () => {
     if (!confirm("Delete this dashboard?")) return;
-    await fetch(`/api/my-dashboards/${params.id}`, { method: "DELETE" });
+    await fetch(`/api/pages/${params.id}`, { method: "DELETE" });
     refresh();
     router.push("/");
   };
 
   const cloneDash = async () => {
-    const res = await fetch(`/api/my-dashboards/${params.id}`, {
+    const res = await fetch(`/api/pages/${params.id}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "clone" }),
     });
     if (res.ok) {
       const d = await res.json();
       refresh();
-      router.push(`/my/${d.dashboard.id}`);
+      router.push(`/my/${d.page.id}`);
     }
   };
 
   const updateVisibility = async (visibility) => {
-    await fetch(`/api/my-dashboards/${params.id}`, {
+    await fetch(`/api/pages/${params.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ visibility }),
     });
@@ -100,7 +101,7 @@ export default function PersonalDashboard() {
   };
 
   const updateSharing = async (sharedWith) => {
-    await fetch(`/api/my-dashboards/${params.id}`, {
+    await fetch(`/api/pages/${params.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shared_with: sharedWith }),
     });

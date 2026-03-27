@@ -43,7 +43,28 @@ function OrgShell({ children }) {
   const [dragOverTarget, setDragOverTarget] = useState(null);
   const [dashExpanded, setDashExpanded] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState({});
+  const [autoExpanded, setAutoExpanded] = useState(false);
   const pathname = usePathname();
+
+  // Auto-expand folder containing the current page on first load
+  if (!autoExpanded && myPages && myPages.length > 0 && pathname.startsWith("/my/")) {
+    const pageId = pathname.split("/my/")[1];
+    const page = myPages.find((p) => p.id === pageId);
+    if (page && page.parent_id) {
+      // Expand all ancestor folders
+      const toExpand = {};
+      let current = page.parent_id;
+      while (current) {
+        toExpand[current] = true;
+        const parent = myPages.find((p) => p.id === current);
+        current = parent?.parent_id || null;
+      }
+      if (Object.keys(toExpand).length > 0) {
+        setExpandedFolders((f) => ({ ...f, ...toExpand }));
+      }
+    }
+    setAutoExpanded(true);
+  }
 
   if (loading) {
     return <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", color: "#666" }}>Loading...</div>;
