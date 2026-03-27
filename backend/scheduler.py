@@ -174,18 +174,25 @@ def get_scheduled_tasks(conn) -> list:
 
 
 def update_task_run(conn, page_id: str, config: dict, success: bool, message: str = ""):
-    """Update last_run and status in the page config."""
+    """Update only the schedule key in config — never overwrites other config (widgets, blocks, etc.).
+    Uses JSONB merge so concurrent user edits to other config keys are safe."""
     now = datetime.now(timezone.utc).isoformat()
-    config["schedule"]["last_run"] = now
-    config["schedule"]["last_status"] = "success" if success else "error"
+    run_count = config["schedule"].get("run_count", 0) + 1
+    schedule_update = {
+        "last_run": now,
+        "last_status": "success" if success else "error",
+        "run_count": run_count,
+        "cron": config["schedule"]["cron"],
+        "enabled": config["schedule"].get("enabled", True),
+    }
     if message:
-        config["schedule"]["last_message"] = message[:500]
-    config["schedule"]["run_count"] = config["schedule"].get("run_count", 0) + 1
+        schedule_update["last_message"] = message[:500]
 
     with conn.cursor() as cur:
+        # jsonb_set merges only the schedule key — other config keys untouched
         cur.execute(
-            "UPDATE user_pages SET config = %s, updated_at = NOW() WHERE id = %s",
-            [json.dumps(config), page_id],
+            "UPDATE user_pages SET config = jsonb_set(config, '{schedule}', %s::jsonb), updated_at = NOW() WHERE id = %s",
+            [json.dumps(schedule_update), page_id],
         )
     conn.commit()
 
