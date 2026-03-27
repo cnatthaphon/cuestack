@@ -31,7 +31,8 @@ export async function middleware(request) {
   const isOrgPage = pathname === "/" ||
     pathname.startsWith("/-/") ||
     pathname.startsWith("/d/") ||
-    pathname.startsWith("/a/");
+    pathname.startsWith("/a/") ||
+    pathname.startsWith("/my/");
 
   // Protected pages — redirect to login
   if ((isOrgPage || pathname === "/super") && !user) {
@@ -70,6 +71,7 @@ export const config = {
     "/-/:path*",
     "/d/:path*",
     "/a/:path*",
+    "/my/:path*",
     "/public/:path*",
   ],
 };
