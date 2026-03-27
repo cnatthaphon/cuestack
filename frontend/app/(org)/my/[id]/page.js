@@ -6,7 +6,7 @@ import { useUser } from "../../../../lib/user-context.js";
 
 // ─── Page shell (shared across all page types) ───────────────────────────────
 export default function PageViewer() {
-  const { user, refresh } = useUser();
+  const { user, refresh, hasPermission } = useUser();
   const params = useParams();
   const router = useRouter();
   const [page, setPage] = useState(null);
@@ -67,6 +67,7 @@ export default function PageViewer() {
 
   if (!user || !page) return <div style={{ padding: 32, color: "#666" }}>Loading...</div>;
   const isOwner = page.user_id === user.id;
+  const canSchedule = isOwner && hasPermission("pages.schedule");
 
   // Render based on page_type
   const renderers = {
@@ -98,7 +99,7 @@ export default function PageViewer() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {!isOwner && <button onClick={clonePage} style={btnGray}>Clone</button>}
-          {isOwner && <button onClick={() => { setShowSchedule(!showSchedule); setShowShare(false); }} style={btnGray}>{"\u23F0"} Schedule</button>}
+          {canSchedule && <button onClick={() => { setShowSchedule(!showSchedule); setShowShare(false); }} style={btnGray}>{"\u23F0"} Schedule</button>}
           {isOwner && <button onClick={() => { setShowShare(!showShare); setShowSchedule(false); }} style={btnGray}>Share</button>}
           {isOwner && <button onClick={deletePage} style={{ ...btnGray, color: "#e53e3e" }}>Delete</button>}
         </div>

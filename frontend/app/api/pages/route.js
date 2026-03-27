@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../lib/auth.js";
 import { query } from "../../../lib/db.js";
+import { hasPermission as checkPerm } from "../../../lib/permissions.js";
 
 // GET — list pages (tree for nav, or by view)
 export async function GET(request) {
@@ -67,10 +68,13 @@ export async function GET(request) {
   return NextResponse.json({ pages: result.rows });
 }
 
-// POST — create page or folder
+// POST — create page or folder (requires pages.create)
 export async function POST(request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const canCreate = user.is_super_admin || await checkPerm(user, "pages.create");
+  if (!canCreate) return NextResponse.json({ error: "Permission denied: pages.create required" }, { status: 403 });
 
   const { name, icon, parent_id, entry_type, page_type, slug } = await request.json();
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });

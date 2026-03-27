@@ -25,6 +25,8 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const canManage = hasPermission("tasks.manage");
+
   useEffect(() => { loadTasks(); }, []);
 
   const loadTasks = async () => {
@@ -34,6 +36,25 @@ export default function TasksPage() {
       setTasks(d.tasks || []);
     }
     setLoading(false);
+  };
+
+  const toggleTask = async (pageId, schedule, enable) => {
+    await fetch(`/api/tasks`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page_id: pageId, enabled: enable }),
+    });
+    loadTasks();
+  };
+
+  const removeSchedule = async (pageId) => {
+    if (!confirm("Remove schedule from this task?")) return;
+    await fetch(`/api/tasks`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page_id: pageId }),
+    });
+    loadTasks();
   };
 
   if (!user) return null;
@@ -60,14 +81,18 @@ export default function TasksPage() {
     },
     {
       key: "schedule", label: "Status",
-      render: (v) => {
+      render: (v, row) => {
         const enabled = v?.enabled !== false;
         return (
           <span style={{
             fontSize: 11, padding: "2px 8px", borderRadius: 4, fontWeight: 600,
             background: enabled ? "#f0fde8" : "#f7f7f7",
             color: enabled ? "#38a169" : "#999",
-          }}>
+            cursor: canManage ? "pointer" : "default",
+          }}
+          onClick={canManage ? () => toggleTask(row.page_id, v, !enabled) : undefined}
+          title={canManage ? `Click to ${enabled ? "pause" : "resume"}` : ""}
+          >
             {enabled ? "Active" : "Paused"}
           </span>
         );
@@ -85,12 +110,26 @@ export default function TasksPage() {
     { key: "updated_at", label: "Updated", render: (v) => <DateTimeCell value={v} /> },
   ];
 
+  // Add actions column if user can manage
+  if (canManage) {
+    columns.push({
+      key: "page_id", label: "",
+      render: (v, row) => (
+        <div style={{ display: "flex", gap: 4 }}>
+          <button onClick={() => toggleTask(v, row.schedule, row.schedule?.enabled === false)}
+            style={actionBtn}>{row.schedule?.enabled === false ? "Resume" : "Pause"}</button>
+          <button onClick={() => removeSchedule(v)} style={{ ...actionBtn, color: "#e53e3e" }}>Remove</button>
+        </div>
+      ),
+    });
+  }
+
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div style={{ maxWidth: 1100 }}>
       <div style={{ marginBottom: 16 }}>
         <h1 style={{ margin: "0 0 4px" }}>Scheduled Tasks</h1>
         <p style={{ color: "#666", fontSize: 13, margin: 0 }}>
-          All scheduled items across the organization. Add a schedule from any page in your workspace.
+          All scheduled items across the organization.{canManage ? " You can pause, resume, or remove any schedule." : ""}
         </p>
       </div>
 
@@ -106,13 +145,18 @@ export default function TasksPage() {
         <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>How Scheduling Works</h3>
         <div style={{ fontSize: 13, color: "#666", lineHeight: 1.8 }}>
           1. Open any notebook, web page, or visual flow in your workspace<br />
-          2. Click the <strong>Schedule</strong> button in the page header<br />
+          2. Click the <strong>Schedule</strong> button in the page header (requires <code>pages.schedule</code> permission)<br />
           3. Set a cron schedule (e.g., every hour, daily at 8 AM)<br />
           4. The system runs your page automatically on schedule<br />
           <br />
-          <strong>Supported page types:</strong> Notebooks (execute all cells), HTML/JS (trigger run endpoint), Visual flows (execute pipeline)
+          <strong>Permissions:</strong><br />
+          <code>pages.schedule</code> — add/edit schedules on your own pages<br />
+          <code>tasks.view</code> — view this page<br />
+          <code>tasks.manage</code> — pause/resume/remove any schedule
         </div>
       </div>
     </div>
   );
 }
+
+const actionBtn = { padding: "3px 10px", background: "none", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 11, color: "#666" };

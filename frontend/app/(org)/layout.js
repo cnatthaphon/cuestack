@@ -15,8 +15,8 @@ const NAV_SECTIONS = [
       { href: "/-/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
       { href: "/-/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
       { href: "/-/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
-      { href: "/-/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
-      { href: "/-/tasks", label: "Tasks", icon: "\u23F0", permission: null, feature: null },
+      { href: "/-/services", label: "Services", icon: "\u2699", permission: "services.manage", feature: "python_services" },
+      { href: "/-/tasks", label: "Tasks", icon: "\u23F0", permission: "tasks.view", feature: null },
     ],
   },
   {
@@ -39,13 +39,14 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, myPages, sharedPages, loading, logout, hasPermission, refresh } = useUser();
+  const { user, org, myPages, sharedPages, loading, logout, hasPermission, hasFeature, refresh } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const [dragOverTarget, setDragOverTarget] = useState(null);
   const [dashExpanded, setDashExpanded] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState({});
   const [autoExpanded, setAutoExpanded] = useState(false);
   const pathname = usePathname();
+  const canCreate = hasPermission("pages.create");
 
   // Auto-expand folder containing the current page on first load
   if (!autoExpanded && myPages && myPages.length > 0 && pathname.startsWith("/my/")) {
@@ -128,47 +129,49 @@ function OrgShell({ children }) {
         {/* Nav Content */}
         <div style={{ flex: 1, padding: "4px 0", overflowY: "auto" }}>
 
-          {/* Dashboard Drive — top of nav like Google Drive */}
+          {/* Workspace — permission-gated page creation */}
           <div style={{ padding: "2px 0", borderBottom: "1px solid #2a2a4a" }}>
             {!collapsed && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px 2px" }}>
                 <button onClick={() => setDashExpanded(!dashExpanded)} style={{ background: "none", border: "none", color: "#aaa", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase", letterSpacing: 1, display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ fontSize: 8 }}>{dashExpanded ? "\u25BC" : "\u25B6"}</span> Workspace
                 </button>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button onClick={async () => {
-                    const name = prompt("Folder name:");
-                    if (!name) return;
-                    await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
-                    refresh();
-                  }} style={plusBtn} title="New Folder">{"\u{1F4C1}"}</button>
-                  <select onChange={async (e) => {
-                    const pt = e.target.value; e.target.value = "";
-                    if (!pt) return;
-                    const labels = { dashboard: "Dashboard", html: "Web Page", visual: "Visual Flow", notebook: "Notebook" };
-                    const name = prompt(`New ${labels[pt]} name:`);
-                    if (!name) return;
-                    const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, page_type: pt }) });
-                    if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.page.id}`; }
-                  }} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 11 }} title="New Page">
-                    <option value="">+</option>
-                    <option value="dashboard">{"\u{1F4CA}"} Dashboard</option>
-                    <option value="html">{"\u{1F310}"} Web Page</option>
-                    <option value="visual">{"\u{1F9E9}"} Visual Flow</option>
-                    <option value="notebook">{"\u{1F4D3}"} Notebook</option>
-                  </select>
-                </div>
+                {canCreate && (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={async () => {
+                      const name = prompt("Folder name:");
+                      if (!name) return;
+                      await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
+                      refresh();
+                    }} style={plusBtn} title="New Folder">{"\u{1F4C1}"}</button>
+                    <select onChange={async (e) => {
+                      const pt = e.target.value; e.target.value = "";
+                      if (!pt) return;
+                      const labels = { dashboard: "Dashboard", html: "Web Page", visual: "Visual Flow", notebook: "Notebook" };
+                      const name = prompt(`New ${labels[pt]} name:`);
+                      if (!name) return;
+                      const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, page_type: pt }) });
+                      if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.page.id}`; }
+                    }} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 11 }} title="New Page">
+                      <option value="">+</option>
+                      <option value="dashboard">{"\u{1F4CA}"} Dashboard</option>
+                      {hasFeature("app_builder") && <option value="html">{"\u{1F310}"} Web Page</option>}
+                      {hasFeature("app_builder") && <option value="visual">{"\u{1F9E9}"} Visual Flow</option>}
+                      {hasFeature("notebooks") && hasPermission("notebooks.use") && <option value="notebook">{"\u{1F4D3}"} Notebook</option>}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
             {dashExpanded && !collapsed && (
               <PageTree items={myPages || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} />
             )}
-            {collapsed && (
+            {collapsed && canCreate && (
               <button onClick={async () => {
                 const name = prompt("Dashboard name:");
                 if (!name) return;
                 const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-                if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
+                if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.page.id}`; }
               }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 14, padding: "6px 0" }} title="New Dashboard">{"\u{1F4CA}"}</button>
             )}
           </div>
