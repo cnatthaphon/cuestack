@@ -9,10 +9,10 @@ export function UserProvider({ children }) {
 
   const loadData = async () => {
     try {
-      const [meRes, navRes, myDashRes] = await Promise.all([
+      const [meRes, navRes, pagesRes] = await Promise.all([
         fetch("/api/auth/me").then((r) => r.json()),
         fetch("/api/nav-groups").then((r) => r.ok ? r.json() : { groups: [], dashboards: [], apps: [] }),
-        fetch("/api/my-dashboards").then((r) => r.ok ? r.json() : { dashboards: [] }),
+        fetch("/api/pages").then((r) => r.ok ? r.json() : { pages: [] }),
       ]);
       if (!meRes.user) { window.location.href = "/login"; return null; }
       if (meRes.user.is_super_admin) { window.location.href = "/super"; return null; }
@@ -20,7 +20,7 @@ export function UserProvider({ children }) {
         user: meRes.user,
         org: meRes.org,
         navData: navRes,
-        myDashboards: myDashRes.dashboards || [],
+        myPages: pagesRes.pages || [],
         loading: false,
       };
     } catch {

@@ -100,27 +100,32 @@ export async function initDB() {
   await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_name ON org_file_entries (org_id, parent_id, name)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_file_entries_owner ON org_file_entries (org_id, created_by)`);
 
-  // Personal dashboards (per-user, not org apps)
+  // Unified pages — all user content in one tree (like Google Drive)
+  // page_type: dashboard, html, visual, notebook
+  // entry_type: folder, page
   await query(`
-    CREATE TABLE IF NOT EXISTS user_dashboards (
+    CREATE TABLE IF NOT EXISTS user_pages (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
       name VARCHAR(100) NOT NULL,
+      slug VARCHAR(100),
       icon VARCHAR(10) DEFAULT '\u{1F4CA}',
-      widgets JSONB DEFAULT '[]',
-      layout JSONB DEFAULT '{"columns":2}',
+      page_type VARCHAR(20) NOT NULL DEFAULT 'dashboard',
+      entry_type VARCHAR(10) NOT NULL DEFAULT 'page',
+      parent_id UUID REFERENCES user_pages(id) ON DELETE SET NULL,
+      config JSONB DEFAULT '{}',
+      status VARCHAR(20) DEFAULT 'draft',
       visibility VARCHAR(10) DEFAULT 'private',
       shared_with JSONB DEFAULT '[]',
+      permission_id VARCHAR(100),
       sort_order INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  await query(`ALTER TABLE user_dashboards ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES user_dashboards(id) ON DELETE SET NULL`);
-  await query(`ALTER TABLE user_dashboards ADD COLUMN IF NOT EXISTS entry_type VARCHAR(10) DEFAULT 'dashboard'`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_user_dashboards_user ON user_dashboards (org_id, user_id)`);
-  await query(`CREATE INDEX IF NOT EXISTS idx_user_dashboards_parent ON user_dashboards (user_id, parent_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_user_pages_user ON user_pages (org_id, user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_user_pages_parent ON user_pages (user_id, parent_id)`);
 
   // User profile fields
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);

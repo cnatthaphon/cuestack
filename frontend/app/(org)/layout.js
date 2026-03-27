@@ -6,23 +6,13 @@ import Link from "next/link";
 import { UserProvider, useUser } from "../../lib/user-context.js";
 import TopBar from "../../lib/components/top-bar.js";
 
-// Nav organized into sections
-// System pages under /-/ prefix (reserved, never conflicts with user content)
-// Published content: /d/[slug] (dashboards), /a/[slug] (apps)
-// Public content: /public/[org]/d/[slug], /public/[org]/a/[slug]
+// Nav sections — system pages under /-/ prefix
+// Workspace (personal pages) rendered separately as tree at top
 const NAV_SECTIONS = [
   {
     label: null,
     items: [
-      { href: "/", label: "Dashboard", icon: "\u25A6", permission: null, feature: null },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
-      { href: "/-/apps", label: "Apps", icon: "\u{1F4F1}", permission: null, feature: "app_builder" },
-      { href: "/-/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: null, feature: "notebooks" },
-      { href: "/-/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
+      { href: "/", label: "Home", icon: "\u25A6", permission: null, feature: null },
     ],
   },
   {
@@ -31,6 +21,7 @@ const NAV_SECTIONS = [
       { href: "/-/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
       { href: "/-/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
       { href: "/-/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
+      { href: "/-/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
     ],
   },
   {
@@ -53,7 +44,7 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, navData, myDashboards, loading, logout, hasPermission, refresh } = useUser();
+  const { user, org, navData, myPages, loading, logout, hasPermission, refresh } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [dashExpanded, setDashExpanded] = useState(true);
@@ -76,12 +67,12 @@ function OrgShell({ children }) {
 
   // Build published content nav from navData
   const navGroups = navData?.groups || [];
-  const pubDashboards = (navData?.dashboards || []).filter((d) => !d.permission_id || hasPermission(d.permission_id));
+  const pubWorkspace = (navData?.dashboards || []).filter((d) => !d.permission_id || hasPermission(d.permission_id));
   const pubApps = (navData?.apps || []).filter((a) => !a.permission_id || hasPermission(a.permission_id));
 
   // Group items by nav_group
   const groupedItems = {};
-  for (const d of pubDashboards) {
+  for (const d of pubWorkspace) {
     const g = d.nav_group || "";
     if (!groupedItems[g]) groupedItems[g] = [];
     groupedItems[g].push({ href: `/d/${d.slug}`, label: d.name, icon: "\u{1F4CA}", order: d.nav_order || 0 });
@@ -171,32 +162,41 @@ function OrgShell({ children }) {
             {!collapsed && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px 2px" }}>
                 <button onClick={() => setDashExpanded(!dashExpanded)} style={{ background: "none", border: "none", color: "#aaa", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase", letterSpacing: 1, display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ fontSize: 8 }}>{dashExpanded ? "\u25BC" : "\u25B6"}</span> Dashboards
+                  <span style={{ fontSize: 8 }}>{dashExpanded ? "\u25BC" : "\u25B6"}</span> Workspace
                 </button>
                 <div style={{ display: "flex", gap: 4 }}>
                   <button onClick={async () => {
                     const name = prompt("Folder name:");
                     if (!name) return;
-                    await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
+                    await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
                     refresh();
                   }} style={plusBtn} title="New Folder">{"\u{1F4C1}"}</button>
-                  <button onClick={async () => {
-                    const name = prompt("Dashboard name:");
+                  <select onChange={async (e) => {
+                    const pt = e.target.value; e.target.value = "";
+                    if (!pt) return;
+                    const labels = { dashboard: "Dashboard", html: "Web Page", visual: "Visual Flow", notebook: "Notebook" };
+                    const name = prompt(`New ${labels[pt]} name:`);
                     if (!name) return;
-                    const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-                    if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
-                  }} style={plusBtn} title="New Dashboard">+</button>
+                    const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, page_type: pt }) });
+                    if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.page.id}`; }
+                  }} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 11 }} title="New Page">
+                    <option value="">+</option>
+                    <option value="dashboard">{"\u{1F4CA}"} Dashboard</option>
+                    <option value="html">{"\u{1F310}"} Web Page</option>
+                    <option value="visual">{"\u{1F9E9}"} Visual Flow</option>
+                    <option value="notebook">{"\u{1F4D3}"} Notebook</option>
+                  </select>
                 </div>
               </div>
             )}
             {dashExpanded && !collapsed && (
-              <DashboardTree items={myDashboards || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
+              <PageTree items={myPages || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
             )}
             {collapsed && (
               <button onClick={async () => {
                 const name = prompt("Dashboard name:");
                 if (!name) return;
-                const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+                const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
                 if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
               }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 14, padding: "6px 0" }} title="New Dashboard">{"\u{1F4CA}"}</button>
             )}
@@ -306,7 +306,7 @@ const sectionLabel = { padding: "12px 16px 4px", fontSize: 10, color: "#555", te
 const plusBtn = { background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 12, padding: "0 2px" };
 
 // Dashboard tree — recursive folder/dashboard structure
-function DashboardTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh }) {
+function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh }) {
   const children = items.filter((i) => (i.parent_id || null) === parentId);
   if (children.length === 0 && depth === 0) {
     return <div style={{ padding: "4px 16px", fontSize: 11, color: "#444" }}>No dashboards yet</div>;
@@ -327,7 +327,7 @@ function DashboardTree({ items, parentId, depth, pathname, expandedFolders, setE
             onDrop={async (e) => {
               const dragId = e.dataTransfer.getData("dash_id");
               if (!dragId || dragId === item.id) return;
-              await fetch(`/api/my-dashboards/${dragId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", parent_id: item.id }) });
+              await fetch(`/api/pages/${dragId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", parent_id: item.id }) });
               refresh();
             }}
             onClick={() => setExpandedFolders((f) => ({ ...f, [item.id]: !f[item.id] }))}
@@ -339,7 +339,7 @@ function DashboardTree({ items, parentId, depth, pathname, expandedFolders, setE
             <span style={{ fontSize: 10, color: "#555" }}>{folderChildren.length}</span>
           </div>
           {isExpanded && (
-            <DashboardTree items={items} parentId={item.id} depth={depth + 1} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
+            <PageTree items={items} parentId={item.id} depth={depth + 1} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
           )}
         </div>
       );
