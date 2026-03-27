@@ -5,7 +5,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 const UserContext = createContext(null);
 
 export function UserProvider({ children }) {
-  const [state, setState] = useState({ user: null, org: null, navData: null, loading: true });
+  const [state, setState] = useState({ user: null, org: null, loading: true });
 
   const loadData = async () => {
     try {

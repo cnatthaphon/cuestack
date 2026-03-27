@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "../../../../../../lib/db.js";
-import { downloadFile, getEntryByPath } from "../../../../../../lib/org-files.js";
 
-// GET — public app by org slug + app slug
+// GET — public app by org slug + page slug
 export async function GET(request, { params }) {
   const { org, slug } = await params;
 
@@ -10,30 +9,20 @@ export async function GET(request, { params }) {
   if (!orgRes.rows[0]) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   const orgId = orgRes.rows[0].id;
 
-  const appRes = await query(
-    "SELECT * FROM org_apps WHERE org_id = $1 AND slug = $2 AND status = 'published'",
+  // Find published page with this slug
+  const pageRes = await query(
+    "SELECT * FROM user_pages WHERE org_id = $1 AND slug = $2 AND status = 'published' AND entry_type = 'page'",
     [orgId, slug]
   );
-  if (!appRes.rows[0]) return NextResponse.json({ error: "App not found" }, { status: 404 });
+  if (!pageRes.rows[0]) return NextResponse.json({ error: "App not found" }, { status: 404 });
 
-  const app = appRes.rows[0];
+  const page = pageRes.rows[0];
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+
   let html = "";
-
-  // For HTML apps, try to load the entrypoint from files
-  if (app.app_type === "html") {
-    try {
-      // Look for the app's files in the org file entries
-      const entry = await getEntryByPath(orgId, `/apps/${app.slug}/${app.entrypoint || "index.html"}`);
-      if (entry) {
-        const { buffer } = await downloadFile(orgId, entry.id);
-        html = buffer.toString("utf-8");
-      }
-    } catch {}
-
-    if (!html) {
-      html = `<!DOCTYPE html><html><body><h1>${app.icon} ${app.name}</h1><p>${app.description || ""}</p></body></html>`;
-    }
+  if (page.page_type === "html") {
+    html = cfg.html || `<!DOCTYPE html><html><body><h1>${page.icon} ${page.name}</h1></body></html>`;
   }
 
-  return NextResponse.json({ app, html });
+  return NextResponse.json({ app: page, html });
 }

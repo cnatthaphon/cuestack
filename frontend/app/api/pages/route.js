@@ -33,6 +33,21 @@ export async function GET(request) {
     return NextResponse.json({ pages: result.rows });
   }
 
+  if (view === "published") {
+    const slug = searchParams.get("slug");
+    const conditions = ["p.org_id = $1", "p.status = 'published'", "p.entry_type = 'page'"];
+    const params = [user.org_id];
+    if (slug) { conditions.push(`p.slug = $${params.length + 1}`); params.push(slug); }
+    const result = await query(
+      `SELECT p.*, u.username as owner_name FROM user_pages p
+       LEFT JOIN users u ON p.user_id = u.id
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY p.name`,
+      params
+    );
+    return NextResponse.json({ pages: result.rows });
+  }
+
   if (view === "public") {
     const result = await query(
       `SELECT p.*, u.username as owner_name FROM user_pages p
