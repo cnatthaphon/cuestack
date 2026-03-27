@@ -117,7 +117,10 @@ export async function initDB() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await query(`ALTER TABLE user_dashboards ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES user_dashboards(id) ON DELETE SET NULL`);
+  await query(`ALTER TABLE user_dashboards ADD COLUMN IF NOT EXISTS entry_type VARCHAR(10) DEFAULT 'dashboard'`);
   await query(`CREATE INDEX IF NOT EXISTS idx_user_dashboards_user ON user_dashboards (org_id, user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_user_dashboards_parent ON user_dashboards (user_id, parent_id)`);
 
   // User profile fields
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)`);

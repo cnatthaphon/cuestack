@@ -56,6 +56,8 @@ function OrgShell({ children }) {
   const { user, org, navData, myDashboards, loading, logout, hasPermission, refresh } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [dashExpanded, setDashExpanded] = useState(true);
+  const [expandedFolders, setExpandedFolders] = useState({});
   const pathname = usePathname();
 
   if (loading) {
@@ -206,18 +208,31 @@ function OrgShell({ children }) {
           )}
         </div>
 
-        {/* Personal Dashboards */}
+        {/* Dashboard Drive — top section like Google Drive */}
         <div style={{ borderTop: "1px solid #2a2a4a", padding: "4px 0" }}>
           {!collapsed && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 16px 4px" }}>
-              <span style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>My Dashboards</span>
-              <button onClick={async () => {
-                const name = prompt("Dashboard name:");
-                if (!name) return;
-                const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-                if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
-              }} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 14, padding: 0 }} title="New Dashboard">+</button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 16px 2px" }}>
+              <button onClick={() => setDashExpanded(!dashExpanded)} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase", letterSpacing: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ fontSize: 8 }}>{dashExpanded ? "\u25BC" : "\u25B6"}</span> Dashboards
+              </button>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={async () => {
+                  const name = prompt("Folder name:");
+                  if (!name) return;
+                  await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
+                  refresh();
+                }} style={plusBtn} title="New Folder">{"\u{1F4C1}"}</button>
+                <button onClick={async () => {
+                  const name = prompt("Dashboard name:");
+                  if (!name) return;
+                  const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+                  if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
+                }} style={plusBtn} title="New Dashboard">+</button>
+              </div>
             </div>
+          )}
+          {dashExpanded && !collapsed && (
+            <DashboardTree items={myDashboards || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
           )}
           {collapsed && (
             <button onClick={async () => {
@@ -225,11 +240,8 @@ function OrgShell({ children }) {
               if (!name) return;
               const res = await fetch("/api/my-dashboards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
               if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.dashboard.id}`; }
-            }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 16, padding: "8px 0" }} title="New Dashboard">+</button>
+            }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 14, padding: "6px 0" }} title="New Dashboard">{"\u{1F4CA}"}</button>
           )}
-          {(myDashboards || []).map((d) => (
-            <NavLink key={d.id} item={{ href: `/my/${d.id}`, label: d.name, icon: d.icon || "\u{1F4CA}" }} pathname={pathname} collapsed={collapsed} />
-          ))}
         </div>
 
         {/* Nav Footer — org info */}
@@ -287,3 +299,63 @@ function NavLink({ item, pathname, collapsed }) {
 }
 
 const sectionLabel = { padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 };
+const plusBtn = { background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 12, padding: "0 2px" };
+
+// Dashboard tree — recursive folder/dashboard structure
+function DashboardTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh }) {
+  const children = items.filter((i) => (i.parent_id || null) === parentId);
+  if (children.length === 0 && depth === 0) {
+    return <div style={{ padding: "4px 16px", fontSize: 11, color: "#444" }}>No dashboards yet</div>;
+  }
+
+  return children.map((item) => {
+    const isFolder = item.entry_type === "folder";
+    const isExpanded = expandedFolders[item.id];
+    const active = pathname === `/my/${item.id}`;
+    const pl = 16 + depth * 14;
+
+    if (isFolder) {
+      const folderChildren = items.filter((i) => i.parent_id === item.id);
+      return (
+        <div key={item.id}>
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={async (e) => {
+              const dragId = e.dataTransfer.getData("dash_id");
+              if (!dragId || dragId === item.id) return;
+              await fetch(`/api/my-dashboards/${dragId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", parent_id: item.id }) });
+              refresh();
+            }}
+            onClick={() => setExpandedFolders((f) => ({ ...f, [item.id]: !f[item.id] }))}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: `5px 12px 5px ${pl}px`, cursor: "pointer", color: "#8a8aa0", fontSize: 13, transition: "background 0.1s" }}
+          >
+            <span style={{ fontSize: 8 }}>{isExpanded ? "\u25BC" : "\u25B6"}</span>
+            <span style={{ fontSize: 13 }}>{item.icon || "\u{1F4C1}"}</span>
+            <span style={{ flex: 1 }}>{item.name}</span>
+            <span style={{ fontSize: 10, color: "#555" }}>{folderChildren.length}</span>
+          </div>
+          {isExpanded && (
+            <DashboardTree items={items} parentId={item.id} depth={depth + 1} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
+          )}
+        </div>
+      );
+    }
+
+    // Dashboard item
+    return (
+      <Link key={item.id} href={`/my/${item.id}`}
+        draggable onDragStart={(e) => e.dataTransfer.setData("dash_id", item.id)}
+        style={{
+          display: "flex", alignItems: "center", gap: 8, padding: `5px 12px 5px ${pl}px`,
+          color: active ? "#fff" : "#8a8aa0", textDecoration: "none", fontSize: 12,
+          background: active ? "rgba(0,112,243,0.2)" : "transparent",
+          borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+          transition: "all 0.1s", cursor: "grab",
+        }}>
+        <span style={{ fontSize: 12 }}>{item.icon || "\u{1F4CA}"}</span>
+        <span>{item.name}</span>
+        {item.visibility !== "private" && <span style={{ fontSize: 9, color: "#555" }}>{item.visibility === "org" ? "\u{1F465}" : "\u{1F310}"}</span>}
+      </Link>
+    );
+  });
+}
