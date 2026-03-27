@@ -10,12 +10,6 @@ import TopBar from "../../lib/components/top-bar.js";
 // Workspace (personal pages) rendered separately as tree at top
 const NAV_SECTIONS = [
   {
-    label: null,
-    items: [
-      { href: "/", label: "Home", icon: "\u25A6", permission: null, feature: null },
-    ],
-  },
-  {
     label: "Data",
     items: [
       { href: "/-/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
@@ -44,7 +38,7 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, navData, myPages, loading, logout, hasPermission, refresh } = useUser();
+  const { user, org, navData, myPages, sharedPages, loading, logout, hasPermission, refresh } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [dashExpanded, setDashExpanded] = useState(true);
@@ -202,6 +196,31 @@ function OrgShell({ children }) {
             )}
           </div>
 
+          {/* Shared with me */}
+          {!collapsed && (sharedPages || []).length > 0 && (
+            <div style={{ padding: "2px 0", borderBottom: "1px solid #2a2a4a" }}>
+              <div style={{ padding: "6px 16px 2px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
+                Shared with me
+              </div>
+              {sharedPages.map((p) => {
+                const icons = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}" };
+                const active = pathname === `/my/${p.id}`;
+                return (
+                  <Link key={p.id} href={`/my/${p.id}`} style={{
+                    display: "flex", alignItems: "center", gap: 8, padding: "5px 16px",
+                    color: active ? "#fff" : "#8a8aa0", textDecoration: "none", fontSize: 12,
+                    background: active ? "rgba(0,112,243,0.2)" : "transparent",
+                    borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+                  }}>
+                    <span style={{ fontSize: 12 }}>{p.icon || icons[p.page_type] || "\u{1F4CA}"}</span>
+                    <span style={{ flex: 1 }}>{p.name}</span>
+                    <span style={{ fontSize: 9, color: "#555" }}>{p.owner_name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+
           {/* Nav Sections */}
           {NAV_SECTIONS.map((section, si) => {
             const items = filterItems(section.items);
@@ -354,7 +373,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
           color: active ? "#fff" : "#8a8aa0", textDecoration: "none", fontSize: 12,
           background: active ? "rgba(0,112,243,0.2)" : "transparent",
           borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
-          transition: "all 0.1s", cursor: "grab",
+          transition: "all 0.1s", cursor: "pointer",
         }}>
         <span style={{ fontSize: 12 }}>{item.icon || "\u{1F4CA}"}</span>
         <span>{item.name}</span>
