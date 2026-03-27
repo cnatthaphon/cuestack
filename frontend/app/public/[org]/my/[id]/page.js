@@ -3,21 +3,26 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
-export default function PublicPersonalDashboard() {
+export default function PublicPage() {
   const params = useParams();
-  const [dash, setDash] = useState(null);
+  const [page, setPage] = useState(null);
   const [widgetData, setWidgetData] = useState({});
   const [error, setError] = useState("");
 
   useEffect(() => {
     fetch(`/api/public/${params.org}/my-dashboard/${params.id}`)
       .then((r) => { if (!r.ok) throw new Error("Not found"); return r.json(); })
-      .then((d) => { setDash(d.dashboard); loadWidgets(d.dashboard); })
+      .then((d) => {
+        const p = d.page;
+        setPage(p);
+        if (p.page_type === "dashboard") loadWidgets(p);
+      })
       .catch((e) => setError(e.message));
   }, [params.org, params.id]);
 
-  const loadWidgets = async (db) => {
-    const w = typeof db.widgets === "string" ? JSON.parse(db.widgets) : (db.widgets || []);
+  const loadWidgets = async (p) => {
+    const cfg = typeof p.config === "string" ? JSON.parse(p.config) : (p.config || {});
+    const w = cfg.widgets || [];
     const data = {};
     for (let i = 0; i < w.length; i++) {
       try {
@@ -32,14 +37,32 @@ export default function PublicPersonalDashboard() {
   };
 
   if (error) return <div style={{ padding: 40, fontFamily: "system-ui", color: "#e53e3e" }}>{error}</div>;
-  if (!dash) return <div style={{ padding: 40, fontFamily: "system-ui", color: "#666" }}>Loading...</div>;
+  if (!page) return <div style={{ padding: 40, fontFamily: "system-ui", color: "#666" }}>Loading...</div>;
 
-  const widgets = typeof dash.widgets === "string" ? JSON.parse(dash.widgets) : (dash.widgets || []);
-  const layout = typeof dash.layout === "string" ? JSON.parse(dash.layout) : (dash.layout || {});
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+
+  // HTML page — render in iframe
+  if (page.page_type === "html") {
+    const html = cfg.html || "";
+    const srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;font-family:system-ui}</style></head><body>${html}</body></html>`;
+    return (
+      <div style={{ fontFamily: "system-ui", maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ padding: "16px 32px", borderBottom: "1px solid #e2e8f0" }}>
+          <h1 style={{ margin: 0, fontSize: 20 }}>{page.icon} {page.name}</h1>
+        </div>
+        <iframe srcDoc={srcdoc} style={{ width: "100%", height: "calc(100vh - 80px)", border: "none" }} sandbox="allow-scripts" title={page.name} />
+        <p style={{ textAlign: "center", color: "#999", fontSize: 12, padding: 16 }}>Powered by IoT Stack</p>
+      </div>
+    );
+  }
+
+  // Dashboard — render widgets
+  const widgets = cfg.widgets || [];
+  const layout = cfg.layout || {};
 
   return (
     <div style={{ padding: 32, fontFamily: "system-ui", maxWidth: 1200, margin: "0 auto" }}>
-      <h1 style={{ margin: "0 0 8px" }}>{dash.icon} {dash.name}</h1>
+      <h1 style={{ margin: "0 0 8px" }}>{page.icon} {page.name}</h1>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${layout.columns || 2}, 1fr)`, gap: 16, gridAutoRows: "minmax(120px, auto)" }}>
         {widgets.map((w, i) => (
           <div key={i} style={{
