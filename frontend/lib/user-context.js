@@ -9,9 +9,8 @@ export function UserProvider({ children }) {
 
   const loadData = async () => {
     try {
-      const [meRes, navRes, pagesRes, sharedRes] = await Promise.all([
+      const [meRes, pagesRes, sharedRes] = await Promise.all([
         fetch("/api/auth/me").then((r) => r.json()),
-        fetch("/api/nav-groups").then((r) => r.ok ? r.json() : { groups: [], dashboards: [], apps: [] }),
         fetch("/api/pages").then((r) => r.ok ? r.json() : { pages: [] }),
         fetch("/api/pages?view=shared").then((r) => r.ok ? r.json() : { pages: [] }),
       ]);
@@ -20,7 +19,6 @@ export function UserProvider({ children }) {
       return {
         user: meRes.user,
         org: meRes.org,
-        navData: navRes,
         myPages: pagesRes.pages || [],
         sharedPages: sharedRes.pages || [],
         loading: false,
