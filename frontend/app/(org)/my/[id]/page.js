@@ -11,6 +11,7 @@ export default function PageViewer() {
   const router = useRouter();
   const [page, setPage] = useState(null);
   const [showShare, setShowShare] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
   const [orgUsers, setOrgUsers] = useState([]);
 
   useEffect(() => {
@@ -89,13 +90,24 @@ export default function PageViewer() {
           <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: page.visibility === "org" ? "#e8f4ff" : page.visibility === "public" ? "#f0fde8" : "#f7f7f7", color: page.visibility === "org" ? "#0070f3" : page.visibility === "public" ? "#38a169" : "#999" }}>
             {page.visibility}
           </span>
+          {hasSchedule(page) && (
+            <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "#fff3e0", color: "#e65100" }} title="Scheduled">
+              {"\u23F0"} {getScheduleLabel(page)}
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {!isOwner && <button onClick={clonePage} style={btnGray}>Clone</button>}
-          {isOwner && <button onClick={() => setShowShare(!showShare)} style={btnGray}>Share</button>}
+          {isOwner && <button onClick={() => { setShowSchedule(!showSchedule); setShowShare(false); }} style={btnGray}>{"\u23F0"} Schedule</button>}
+          {isOwner && <button onClick={() => { setShowShare(!showShare); setShowSchedule(false); }} style={btnGray}>Share</button>}
           {isOwner && <button onClick={deletePage} style={{ ...btnGray, color: "#e53e3e" }}>Delete</button>}
         </div>
       </div>
+
+      {/* Schedule dialog */}
+      {showSchedule && isOwner && (
+        <ScheduleDialog page={page} saveConfig={saveConfig} onReload={loadPage} onClose={() => setShowSchedule(false)} />
+      )}
 
       {/* Share dialog */}
       {showShare && isOwner && (
@@ -143,6 +155,123 @@ function ShareDialog({ page, user, orgUsers, onVisibility, onShare, onClose }) {
         })}
       </div>
       <button onClick={onClose} style={btnGray}>Done</button>
+    </div>
+  );
+}
+
+// ─── Schedule helpers ─────────────────────────────────────────────────────────
+function hasSchedule(page) {
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+  return !!cfg.schedule?.cron;
+}
+
+const CRON_PRESETS = [
+  { label: "Every 5 min", value: "*/5 * * * *" },
+  { label: "Every 15 min", value: "*/15 * * * *" },
+  { label: "Every 30 min", value: "*/30 * * * *" },
+  { label: "Every hour", value: "0 * * * *" },
+  { label: "Every 6 hours", value: "0 */6 * * *" },
+  { label: "Daily at midnight", value: "0 0 * * *" },
+  { label: "Daily at 8 AM", value: "0 8 * * *" },
+  { label: "Weekly (Monday)", value: "0 0 * * 1" },
+];
+
+function getScheduleLabel(page) {
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+  const cron = cfg.schedule?.cron;
+  if (!cron) return "";
+  const preset = CRON_PRESETS.find((p) => p.value === cron);
+  return preset ? preset.label : cron;
+}
+
+// ─── Schedule dialog ──────────────────────────────────────────────────────────
+function ScheduleDialog({ page, saveConfig, onReload, onClose }) {
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+  const existing = cfg.schedule || {};
+  const [cron, setCron] = useState(existing.cron || "");
+  const [enabled, setEnabled] = useState(existing.enabled !== false);
+  const [customCron, setCustomCron] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const isPreset = CRON_PRESETS.some((p) => p.value === cron);
+
+  const save = async () => {
+    setSaving(true);
+    const newConfig = { ...cfg, schedule: cron ? { cron, enabled, updated_at: new Date().toISOString() } : undefined };
+    if (!cron) delete newConfig.schedule;
+    await saveConfig(newConfig);
+    setSaving(false);
+    onReload();
+    onClose();
+  };
+
+  const remove = async () => {
+    setSaving(true);
+    const newConfig = { ...cfg };
+    delete newConfig.schedule;
+    await saveConfig(newConfig);
+    setSaving(false);
+    onReload();
+    onClose();
+  };
+
+  return (
+    <div style={{ marginBottom: 16, padding: 16, background: "#fff", borderRadius: 8, border: "2px solid #e65100" }}>
+      <h3 style={{ margin: "0 0 12px", fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+        {"\u23F0"} Schedule Task
+      </h3>
+
+      <p style={{ fontSize: 12, color: "#666", margin: "0 0 12px" }}>
+        Run this {page.page_type} automatically on a schedule.
+      </p>
+
+      {/* Preset buttons */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+        {CRON_PRESETS.map((p) => (
+          <button key={p.value} onClick={() => { setCron(p.value); setCustomCron(""); }} style={{
+            padding: "6px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer",
+            border: cron === p.value ? "2px solid #e65100" : "1px solid #ddd",
+            background: cron === p.value ? "#fff3e0" : "#fff", fontWeight: cron === p.value ? 600 : 400,
+          }}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Custom cron */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+        <input
+          placeholder="Custom cron: * * * * *"
+          value={!isPreset ? cron : customCron}
+          onChange={(e) => { setCustomCron(e.target.value); setCron(e.target.value); }}
+          style={{ flex: 1, padding: 8, border: "1px solid #ddd", borderRadius: 4, fontSize: 13, fontFamily: "monospace" }}
+        />
+        <a href="https://crontab.guru/" target="_blank" rel="noopener" style={{ fontSize: 11, color: "#0070f3" }}>crontab.guru</a>
+      </div>
+
+      {/* Enable/disable toggle */}
+      {cron && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, cursor: "pointer" }}>
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Schedule enabled
+        </label>
+      )}
+
+      {/* Current schedule info */}
+      {existing.cron && (
+        <div style={{ fontSize: 12, color: "#666", marginBottom: 12, padding: 8, background: "#f7f7f7", borderRadius: 4 }}>
+          Current: <code>{existing.cron}</code>
+          {existing.last_run && <span> &middot; Last run: {new Date(existing.last_run).toLocaleString()}</span>}
+          {existing.next_run && <span> &middot; Next: {new Date(existing.next_run).toLocaleString()}</span>}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={save} disabled={saving} style={btnBlue}>{saving ? "Saving..." : cron ? "Save Schedule" : "Clear Schedule"}</button>
+        {existing.cron && <button onClick={remove} disabled={saving} style={{ ...btnGray, color: "#e53e3e" }}>Remove Schedule</button>}
+        <button onClick={onClose} style={btnGray}>Cancel</button>
+      </div>
     </div>
   );
 }

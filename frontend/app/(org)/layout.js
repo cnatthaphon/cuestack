@@ -16,6 +16,7 @@ const NAV_SECTIONS = [
       { href: "/-/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
       { href: "/-/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
       { href: "/-/services", label: "Services", icon: "\u2699", permission: null, feature: "python_services" },
+      { href: "/-/tasks", label: "Tasks", icon: "\u23F0", permission: null, feature: null },
     ],
   },
   {
@@ -273,6 +274,10 @@ function NavLink({ item, pathname, collapsed }) {
 const sectionLabel = { padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 };
 const plusBtn = { background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 12, padding: "0 2px" };
 
+function hasPageSchedule(item) {
+  return item.has_schedule === true;
+}
+
 // Page tree — recursive folder/page structure with drag indicators
 function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh, dragOverTarget, onDragOverItem, onDragLeaveItem }) {
   const children = items.filter((i) => (i.parent_id || null) === parentId);
@@ -341,6 +346,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
         <span style={{ fontSize: 12 }}>{item.icon || PAGE_ICONS[item.page_type] || "\u{1F4CA}"}</span>
         <span style={{ flex: 1 }}>{item.name}</span>
         {item.visibility !== "private" && <span style={{ fontSize: 9, color: "#555" }}>{item.visibility === "org" ? "\u{1F465}" : "\u{1F310}"}</span>}
+        {hasPageSchedule(item) && <span style={{ fontSize: 9 }} title="Scheduled">{"\u23F0"}</span>}
       </Link>
     );
   });
