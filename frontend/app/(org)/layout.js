@@ -38,9 +38,9 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, navData, myPages, sharedPages, loading, logout, hasPermission, refresh } = useUser();
+  const { user, org, myPages, sharedPages, loading, logout, hasPermission, refresh } = useUser();
   const [collapsed, setCollapsed] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [dragOverTarget, setDragOverTarget] = useState(null);
   const [dashExpanded, setDashExpanded] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState({});
   const pathname = usePathname();
@@ -57,54 +57,9 @@ function OrgShell({ children }) {
     return true;
   });
 
-  const toggleGroup = (name) => setCollapsedGroups((g) => ({ ...g, [name]: !g[name] }));
-
-  // Build published content nav from navData
-  const navGroups = navData?.groups || [];
-  const pubWorkspace = (navData?.dashboards || []).filter((d) => !d.permission_id || hasPermission(d.permission_id));
-  const pubApps = (navData?.apps || []).filter((a) => !a.permission_id || hasPermission(a.permission_id));
-
-  // Group items by nav_group
-  const groupedItems = {};
-  for (const d of pubWorkspace) {
-    const g = d.nav_group || "";
-    if (!groupedItems[g]) groupedItems[g] = [];
-    groupedItems[g].push({ href: `/d/${d.slug}`, label: d.name, icon: "\u{1F4CA}", order: d.nav_order || 0 });
-  }
-  for (const a of pubApps) {
-    const g = a.nav_group || "";
-    if (!groupedItems[g]) groupedItems[g] = [];
-    groupedItems[g].push({ href: `/a/${a.slug}`, label: a.name, icon: a.icon || "\u{1F4F1}", order: a.nav_order || 0 });
-  }
-
-  // Sort items within each group
-  for (const g of Object.keys(groupedItems)) {
-    groupedItems[g].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
-  }
-
-  // Build ordered list of groups (defined groups first, then ungrouped)
-  const orderedGroups = [
-    ...navGroups.map((g) => ({ name: g.name, icon: g.icon, items: groupedItems[g.name] || [] })),
-  ];
-  // Add ungrouped items
-  const ungrouped = groupedItems[""] || [];
-  const definedGroupNames = new Set(navGroups.map((g) => g.name));
-  // Add items from groups not in org_nav_groups (shouldn't happen but safety)
-  for (const [gName, items] of Object.entries(groupedItems)) {
-    if (gName && !definedGroupNames.has(gName)) {
-      orderedGroups.push({ name: gName, icon: "", items });
-    }
-  }
-
-  // Legacy compat — keep appNav and dashNav for old code
-  const appNav = pubApps.map((app) => ({
-    href: `/a/${app.slug}`,
-    label: app.name,
-    icon: app.icon || "\u{1F4F1}",
-      permission: app.permission_id,
-      feature: null,
-      isApp: true,
-    }));
+  // Drag indicator for workspace tree
+  const onDragOverItem = (targetId) => setDragOverTarget(targetId);
+  const onDragLeaveItem = () => setDragOverTarget(null);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -184,7 +139,7 @@ function OrgShell({ children }) {
               </div>
             )}
             {dashExpanded && !collapsed && (
-              <PageTree items={myPages || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
+              <PageTree items={myPages || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} />
             )}
             {collapsed && (
               <button onClick={async () => {
@@ -238,34 +193,7 @@ function OrgShell({ children }) {
             );
           })}
 
-          {/* Published content — grouped by nav_group */}
-          {orderedGroups.map((group) => {
-            if (group.items.length === 0) return null;
-            const isGroupCollapsed = collapsedGroups[group.name];
-            return (
-              <div key={group.name}>
-                {!collapsed && (
-                  <div onClick={() => toggleGroup(group.name)} style={{ ...sectionLabel, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>{group.icon} {group.name}</span>
-                    <span style={{ fontSize: 10 }}>{isGroupCollapsed ? "\u25B6" : "\u25BC"}</span>
-                  </div>
-                )}
-                {collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
-                {!isGroupCollapsed && group.items.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
-              </div>
-            );
-          })}
-
-          {/* Ungrouped published items */}
-          {ungrouped.length > 0 && (
-            <div>
-              {!collapsed && orderedGroups.length > 0 && <div style={sectionLabel}>Other</div>}
-              {ungrouped.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
-            </div>
-          )}
         </div>
-
-        {/* (Dashboard Drive moved to top of nav) */}
 
         {/* Nav Footer — org info */}
         <div style={{ padding: collapsed ? "12px 8px" : "12px 16px", borderTop: "1px solid #2a2a4a" }}>
@@ -324,33 +252,44 @@ function NavLink({ item, pathname, collapsed }) {
 const sectionLabel = { padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 };
 const plusBtn = { background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 12, padding: "0 2px" };
 
-// Dashboard tree — recursive folder/dashboard structure
-function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh }) {
+// Page tree — recursive folder/page structure with drag indicators
+function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh, dragOverTarget, onDragOverItem, onDragLeaveItem }) {
   const children = items.filter((i) => (i.parent_id || null) === parentId);
   if (children.length === 0 && depth === 0) {
-    return <div style={{ padding: "4px 16px", fontSize: 11, color: "#444" }}>No dashboards yet</div>;
+    return <div style={{ padding: "6px 16px", fontSize: 11, color: "#555" }}>Click + to create a page</div>;
   }
+
+  const PAGE_ICONS = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}" };
 
   return children.map((item) => {
     const isFolder = item.entry_type === "folder";
     const isExpanded = expandedFolders[item.id];
     const active = pathname === `/my/${item.id}`;
     const pl = 16 + depth * 14;
+    const isDragOver = dragOverTarget === item.id;
 
     if (isFolder) {
       const folderChildren = items.filter((i) => i.parent_id === item.id);
       return (
         <div key={item.id}>
           <div
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => { e.preventDefault(); onDragOverItem?.(item.id); }}
+            onDragLeave={() => onDragLeaveItem?.()}
             onDrop={async (e) => {
-              const dragId = e.dataTransfer.getData("dash_id");
+              e.preventDefault(); onDragLeaveItem?.();
+              const dragId = e.dataTransfer.getData("page_id");
               if (!dragId || dragId === item.id) return;
               await fetch(`/api/pages/${dragId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", parent_id: item.id }) });
               refresh();
             }}
             onClick={() => setExpandedFolders((f) => ({ ...f, [item.id]: !f[item.id] }))}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: `5px 12px 5px ${pl}px`, cursor: "pointer", color: "#8a8aa0", fontSize: 13, transition: "background 0.1s" }}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, padding: `5px 12px 5px ${pl}px`,
+              cursor: "pointer", color: "#8a8aa0", fontSize: 13,
+              background: isDragOver ? "rgba(0,112,243,0.15)" : "transparent",
+              borderTop: isDragOver ? "2px solid #0070f3" : "2px solid transparent",
+              transition: "background 0.1s",
+            }}
           >
             <span style={{ fontSize: 8 }}>{isExpanded ? "\u25BC" : "\u25B6"}</span>
             <span style={{ fontSize: 13 }}>{item.icon || "\u{1F4C1}"}</span>
@@ -358,25 +297,28 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
             <span style={{ fontSize: 10, color: "#555" }}>{folderChildren.length}</span>
           </div>
           {isExpanded && (
-            <PageTree items={items} parentId={item.id} depth={depth + 1} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} />
+            <PageTree items={items} parentId={item.id} depth={depth + 1} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} />
           )}
         </div>
       );
     }
 
-    // Dashboard item
+    // Page item
     return (
       <Link key={item.id} href={`/my/${item.id}`}
-        draggable onDragStart={(e) => e.dataTransfer.setData("dash_id", item.id)}
+        draggable onDragStart={(e) => e.dataTransfer.setData("page_id", item.id)}
+        onDragOver={(e) => { e.preventDefault(); onDragOverItem?.(item.id); }}
+        onDragLeave={() => onDragLeaveItem?.()}
         style={{
           display: "flex", alignItems: "center", gap: 8, padding: `5px 12px 5px ${pl}px`,
           color: active ? "#fff" : "#8a8aa0", textDecoration: "none", fontSize: 12,
-          background: active ? "rgba(0,112,243,0.2)" : "transparent",
+          background: active ? "rgba(0,112,243,0.2)" : isDragOver ? "rgba(0,112,243,0.1)" : "transparent",
           borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+          borderTop: isDragOver ? "2px solid #0070f3" : "2px solid transparent",
           transition: "all 0.1s", cursor: "pointer",
         }}>
-        <span style={{ fontSize: 12 }}>{item.icon || "\u{1F4CA}"}</span>
-        <span>{item.name}</span>
+        <span style={{ fontSize: 12 }}>{item.icon || PAGE_ICONS[item.page_type] || "\u{1F4CA}"}</span>
+        <span style={{ flex: 1 }}>{item.name}</span>
         {item.visibility !== "private" && <span style={{ fontSize: 9, color: "#555" }}>{item.visibility === "org" ? "\u{1F465}" : "\u{1F310}"}</span>}
       </Link>
     );
