@@ -24,10 +24,24 @@ export default function TasksPage() {
   const { user, hasPermission } = useUser();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   const canManage = hasPermission("tasks.manage");
 
   useEffect(() => { loadTasks(); }, []);
+
+  const loadLogs = async (task) => {
+    setSelectedTask(task);
+    setLogsLoading(true);
+    const res = await fetch(`/api/tasks/${task.page_id}?limit=20`);
+    if (res.ok) {
+      const d = await res.json();
+      setLogs(d.logs || []);
+    }
+    setLogsLoading(false);
+  };
 
   const loadTasks = async () => {
     const res = await fetch("/api/tasks");
@@ -63,11 +77,12 @@ export default function TasksPage() {
     {
       key: "page_name", label: "Task",
       render: (v, row) => (
-        <Link href={`/my/${row.page_id}`} style={{ color: "#0070f3", textDecoration: "none", display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span>{row.page_icon}</span>
-          <span>{v}</span>
+          <Link href={`/my/${row.page_id}`} style={{ color: "#0070f3", textDecoration: "none" }}>{v}</Link>
           <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#f0f0f0", color: "#666" }}>{row.page_type}</span>
-        </Link>
+          <button onClick={() => loadLogs(row)} style={{ fontSize: 10, padding: "1px 6px", background: "none", border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", color: "#666" }}>logs</button>
+        </div>
       ),
     },
     {
@@ -141,6 +156,11 @@ export default function TasksPage() {
         emptyMessage="No scheduled tasks. Open a page in your workspace and click Schedule to add one."
       />
 
+      {/* Execution logs panel */}
+      {selectedTask && (
+        <TaskLogs task={selectedTask} logs={logs} loading={logsLoading} onClose={() => setSelectedTask(null)} />
+      )}
+
       <div style={{ marginTop: 24, padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>How Scheduling Works</h3>
         <div style={{ fontSize: 13, color: "#666", lineHeight: 1.8 }}>
@@ -159,4 +179,56 @@ export default function TasksPage() {
   );
 }
 
+function TaskLogs({ task, logs, loading, onClose }) {
+  return (
+    <div style={{ marginTop: 16, padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>
+          {task.page_icon} {task.page_name} — Execution Logs
+        </h3>
+        <button onClick={onClose} style={{ background: "none", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", padding: "2px 8px", fontSize: 12 }}>Close</button>
+      </div>
+      {loading ? (
+        <div style={{ color: "#999", fontSize: 13 }}>Loading logs...</div>
+      ) : logs.length === 0 ? (
+        <div style={{ color: "#999", fontSize: 13, padding: 16, textAlign: "center" }}>No execution logs yet.</div>
+      ) : (
+        <div style={{ overflow: "auto", maxHeight: 400 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Time</th>
+                <th style={thStyle}>Status</th>
+                <th style={thStyle}>Duration</th>
+                <th style={thStyle}>Message</th>
+                <th style={thStyle}>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log) => (
+                <tr key={log.id}>
+                  <td style={tdStyle}>{new Date(log.created_at).toLocaleString()}</td>
+                  <td style={tdStyle}>
+                    <span style={{
+                      fontSize: 10, padding: "1px 6px", borderRadius: 3, fontWeight: 600,
+                      background: log.status === "success" ? "#f0fde8" : log.status === "running" ? "#e8f4ff" : "#fef2f2",
+                      color: log.status === "success" ? "#38a169" : log.status === "running" ? "#0070f3" : "#e53e3e",
+                    }}>{log.status}</span>
+                  </td>
+                  <td style={tdStyle}>{log.duration_ms != null ? `${log.duration_ms}ms` : "—"}</td>
+                  <td style={tdStyle}>{log.message || "—"}</td>
+                  <td style={{ ...tdStyle, color: "#e53e3e", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={log.error || ""}>{log.error || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const thStyle = { border: "1px solid #eee", padding: "6px 8px", background: "#f9fafb", textAlign: "left", fontSize: 11, whiteSpace: "nowrap" };
+const tdStyle = { border: "1px solid #eee", padding: "4px 8px" };
 const actionBtn = { padding: "3px 10px", background: "none", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 11, color: "#666" };
