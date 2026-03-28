@@ -64,41 +64,48 @@ export async function POST(request) {
     status: "active",
   });
 
-  // Create org workspace + example notebook via Jupyter API
-  try {
-    const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
-    const dirName = `org_${orgShort}`;
+  // Create org workspace + notebook file via Jupyter API
+  const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
+  const dirName = `org_${orgShort}`;
+  const nbFileName = `${sessionName}.ipynb`;
+  const nbPath = `${dirName}/${nbFileName}`;
 
+  try {
+    // Create org directory
     await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "directory" }),
     });
 
-    const checkRes = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}/getting_started.ipynb`);
+    // Create the specific notebook if it doesn't exist
+    const checkRes = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}`);
     if (checkRes.status === 404) {
-      await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}/getting_started.ipynb`, {
+      await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "notebook", content: createStarterNotebook(sdkToken) }),
       });
     }
 
-    // Also create an example notebook
-    const exCheckRes = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}/examples.ipynb`);
-    if (exCheckRes.status === 404) {
-      await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}/examples.ipynb`, {
+    // Also create getting_started if it doesn't exist
+    const gsRes = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}/getting_started.ipynb`);
+    if (gsRes.status === 404) {
+      await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}/getting_started.ipynb`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "notebook", content: createExampleNotebook(sdkToken) }),
+        body: JSON.stringify({ type: "notebook", content: createStarterNotebook(sdkToken) }),
       });
     }
   } catch (e) {
     console.error("Jupyter workspace setup:", e.message);
   }
 
+  // URL points to the specific notebook file in JupyterLab
+  const notebookUrl = `/jupyter/lab/tree/${nbPath}`;
+
   return NextResponse.json({
-    url: "/jupyter/lab",
+    url: notebookUrl,
     session: sessionName,
     status: "active",
     sdk_token: sdkToken,
