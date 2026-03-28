@@ -206,7 +206,7 @@ def real_table_name(org_id: str, table_name: str) -> str:
     return f"org_{short}_{table_name}"
 
 
-def execute_flow_blocks(conn, org_id: str, blocks: list) -> tuple[bool, str]:
+def execute_flow_blocks(conn, org_id: str, blocks: list, user_id=None) -> tuple[bool, str]:
     """Execute visual flow blocks directly via SQL. Returns (success, message)."""
     data = []
     messages = []
@@ -323,11 +323,11 @@ def execute_flow_blocks(conn, org_id: str, blocks: list) -> tuple[bool, str]:
 
         elif btype == "notify":
             title = config.get("title", "")
-            if title and task.get("user_id"):
+            if title and user_id:
                 with conn.cursor() as cur:
                     cur.execute(
                         "INSERT INTO notifications (org_id, user_id, title, message, type, source) VALUES (%s, %s, %s, %s, %s, 'scheduler')",
-                        [org_id, task["user_id"], title, config.get("message", ""), config.get("type", "info")]
+                        [org_id, user_id, title, config.get("message", ""), config.get("type", "info")]
                     )
                 conn.commit()
                 messages.append(f"notify: {title}")
@@ -347,7 +347,7 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
         blocks = config.get("blocks", [])
         if not blocks:
             return False, "No blocks configured"
-        return execute_flow_blocks(conn, task["org_id"], blocks)
+        return execute_flow_blocks(conn, task["org_id"], blocks, user_id=task.get("user_id"))
 
     elif page_type == "notebook":
         # Notebook execution via Jupyter API
