@@ -118,6 +118,41 @@ async function executeFlow(orgId, userId, blocks) {
         }
       }
 
+      else if (type === "generate") {
+        const count = Math.min(parseInt(config?.count) || 1, 100);
+        const fields = config?.fields || {};
+        const generated = [];
+        for (let g = 0; g < count; g++) {
+          const row = {};
+          for (const [fname, fspec] of Object.entries(fields)) {
+            if (typeof fspec === "object" && fspec.type === "float") {
+              row[fname] = Math.round((Math.random() * ((fspec.max || 100) - (fspec.min || 0)) + (fspec.min || 0)) * 10) / 10;
+            } else if (typeof fspec === "object" && fspec.type === "int") {
+              row[fname] = Math.floor(Math.random() * ((fspec.max || 100) - (fspec.min || 0)) + (fspec.min || 0));
+            } else if (typeof fspec === "object" && fspec.type === "choice") {
+              const opts = fspec.options || ["unknown"];
+              row[fname] = opts[Math.floor(Math.random() * opts.length)];
+            } else {
+              row[fname] = fspec;
+            }
+          }
+          generated.push(row);
+        }
+        data = generated;
+        results.push({ block: "Generate", message: `${data.length} rows generated` });
+      }
+
+      else if (type === "insert") {
+        if (!config?.table) { results.push({ block: "Insert", error: "No table selected" }); continue; }
+        if (data.length === 0) { results.push({ block: "Insert", error: "No data to insert" }); continue; }
+        try {
+          const inserted = await insertData(orgId, config.table, data);
+          results.push({ block: "Insert", message: `${inserted} rows inserted into ${config.table}` });
+        } catch (e) {
+          results.push({ block: "Insert", error: e.message });
+        }
+      }
+
       else if (type === "output") {
         results.push({ block: "Output", message: `${data.length} rows as ${config?.format || "table"}`, rows: data });
       }
