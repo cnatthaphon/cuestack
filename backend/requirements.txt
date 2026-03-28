@@ -6,3 +6,5 @@ pydantic==2.10.4
 python-jose[cryptography]==3.3.0
 paho-mqtt==2.1.0
 protobuf==5.29.3
+numpy==2.2.3
+scipy==1.15.2
