@@ -109,6 +109,11 @@ export default function PageViewer() {
           )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={async () => {
+            await fetch("/api/pins", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "pin", page_id: page.id, scope: "personal" }) });
+            refresh();
+          }} style={{ ...btnGray, padding: "8px 10px" }} title="Pin to top">{"\u2B50"}</button>
           {!isOwner && <button onClick={clonePage} style={btnGray}>Clone</button>}
           {canSchedule && <button onClick={() => { setShowSchedule(!showSchedule); setShowShare(false); }} style={btnGray}>{"\u23F0"} Schedule</button>}
           {isOwner && <button onClick={() => { setShowShare(!showShare); setShowSchedule(false); }} style={btnGray}>Share</button>}
