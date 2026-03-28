@@ -692,7 +692,13 @@ function NotebookRenderer({ page, isOwner }) {
     });
     if (!res.ok) { setError((await res.json()).error); setLoading(false); return; }
     const data = await res.json();
-    setJupyterUrl(data.url);
+    // Jupyter is proxied through nginx (:8080), not Next.js (:3000)
+    // If user is on port 3000, redirect through 8080
+    let url = data.url;
+    if (window.location.port === "3000") {
+      url = `http://${window.location.hostname}:8080${data.url}`;
+    }
+    setJupyterUrl(url);
     setShowJupyter(true);
     setLoading(false);
   };
