@@ -1,0 +1,217 @@
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f172a; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; padding: 20px; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #64748b; margin-bottom: 20px; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #94a3b8; margin-bottom: 20px; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status .dot.on { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+  .status .dot.off { background: #ef4444; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel { background: #1e293b; border-radius: 10px; padding: 16px; border: 1px solid #334155; }
+  .panel h2 { font-size: 14px; margin-bottom: 12px; color: #f1f5f9; }
+  .cmd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .cmd-btn { padding: 12px; background: #334155; border: 1px solid #475569; border-radius: 8px; color: #e2e8f0; cursor: pointer; font-size: 13px; text-align: left; transition: all 0.15s; }
+  .cmd-btn:hover { background: #3b82f6; border-color: #3b82f6; }
+  .cmd-btn .icon { font-size: 18px; margin-bottom: 4px; }
+  .cmd-btn .name { font-weight: 600; }
+  .cmd-btn .desc { font-size: 10px; color: #94a3b8; }
+  .cmd-btn:hover .desc { color: #bfdbfe; }
+  .custom-cmd { display: flex; gap: 8px; margin-top: 12px; }
+  .custom-cmd input { flex: 1; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-family: monospace; font-size: 12px; }
+  .custom-cmd button { padding: 8px 16px; background: #3b82f6; border: none; border-radius: 6px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .custom-cmd button:hover { background: #2563eb; }
+  .log { max-height: 400px; overflow-y: auto; }
+  .log-entry { padding: 6px 0; border-bottom: 1px solid #0f172a; font-size: 12px; }
+  .log-entry .time { color: #475569; font-family: monospace; font-size: 10px; }
+  .log-entry .dir { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin: 0 6px; }
+  .log-entry .dir.sent { background: #1e3a5f; color: #60a5fa; }
+  .log-entry .dir.recv { background: #14532d; color: #4ade80; }
+  .log-entry .msg { color: #cbd5e1; }
+  .log-entry .device { color: #a78bfa; font-weight: 600; }
+  .stats { display: flex; gap: 16px; margin-bottom: 12px; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 24px; font-weight: 700; }
+  .stat .lbl { font-size: 10px; color: #64748b; text-transform: uppercase; }
+  .stat .num.sent { color: #60a5fa; }
+  .stat .num.recv { color: #4ade80; }
+  .stat .num.fail { color: #f87171; }
+</style>
+
+<h1>Device Command Center</h1>
+<p class="subtitle">Send commands to devices via MQTT. Devices respond with ACK (name + datetime).</p>
+
+<div class="status">
+  <span class="dot off" id="status-dot"></span>
+  <span id="status-text">Connecting...</span>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="num sent" id="sent-count">0</div><div class="lbl">Sent</div></div>
+  <div class="stat"><div class="num recv" id="recv-count">0</div><div class="lbl">ACKs</div></div>
+  <div class="stat"><div class="num" id="latency" style="color:#f59e0b">--</div><div class="lbl">Avg Latency</div></div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>Quick Commands</h2>
+    <div class="cmd-grid">
+      <div class="cmd-btn" onclick="sendCommand('ping', '')">
+        <div class="icon">&#x1F3D3;</div>
+        <div class="name">Ping</div>
+        <div class="desc">Check if device is alive</div>
+      </div>
+      <div class="cmd-btn" onclick="sendCommand('status', '')">
+        <div class="icon">&#x1F4CA;</div>
+        <div class="name">Status</div>
+        <div class="desc">Request device status</div>
+      </div>
+      <div class="cmd-btn" onclick="sendCommand('restart', '')">
+        <div class="icon">&#x1F504;</div>
+        <div class="name">Restart</div>
+        <div class="desc">Restart the service</div>
+      </div>
+      <div class="cmd-btn" onclick="sendCommand('set_interval', '2')">
+        <div class="icon">&#x23F1;</div>
+        <div class="name">Set Interval</div>
+        <div class="desc">Change to 2s interval</div>
+      </div>
+      <div class="cmd-btn" onclick="sendCommand('calibrate', '')">
+        <div class="icon">&#x1F527;</div>
+        <div class="name">Calibrate</div>
+        <div class="desc">Run sensor calibration</div>
+      </div>
+      <div class="cmd-btn" onclick="sendCommand('identify', '')">
+        <div class="icon">&#x1F4A1;</div>
+        <div class="name">Identify</div>
+        <div class="desc">Flash device LED</div>
+      </div>
+    </div>
+
+    <h2 style="margin-top:16px">Custom Command</h2>
+    <div class="custom-cmd">
+      <input id="cmd-input" placeholder="Command name..." />
+      <input id="payload-input" placeholder="Payload (optional)" />
+      <button onclick="sendCustom()">Send</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Communication Log</h2>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+let sdk = null;
+let sentCount = 0;
+let recvCount = 0;
+let latencies = [];
+let pendingCommands = {}; // command_id -> {sent_at, command}
+
+function genId() {
+  return 'cmd_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+}
+
+function addLog(direction, text, extra) {
+  const log = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  const time = new Date().toLocaleTimeString();
+  const dirClass = direction === 'sent' ? 'sent' : 'recv';
+  const dirLabel = direction === 'sent' ? 'CMD' : 'ACK';
+  entry.innerHTML = `<div class="time">${time}</div><span class="dir ${dirClass}">${dirLabel}</span><span class="msg">${text}</span>${extra ? `<div style="font-size:10px;color:#475569;margin-top:2px">${extra}</div>` : ''}`;
+  log.insertBefore(entry, log.firstChild);
+  while (log.children.length > 100) log.removeChild(log.lastChild);
+}
+
+function updateStats() {
+  document.getElementById('sent-count').textContent = sentCount;
+  document.getElementById('recv-count').textContent = recvCount;
+  if (latencies.length > 0) {
+    const avg = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+    document.getElementById('latency').textContent = avg < 1000 ? `${Math.round(avg)}ms` : `${(avg / 1000).toFixed(1)}s`;
+  }
+}
+
+async function sendCommand(command, payload) {
+  if (!sdk) return;
+
+  const commandId = genId();
+  const sentAt = Date.now();
+  pendingCommands[commandId] = { sent_at: sentAt, command };
+
+  // Publish command via HTTP to the command channel
+  // The MQTT bridge will forward this, and the sensor simulator listens on commands topic
+  const data = {
+    command_id: commandId,
+    command: command,
+    payload: payload || '',
+    timestamp: Math.floor(Date.now() / 1000),
+  };
+
+  try {
+    await sdk.publish('commands/sim-weather-01', data);
+    sentCount++;
+    addLog('sent', `<strong>${command}</strong>${payload ? ` (${payload})` : ''}`, `ID: ${commandId}`);
+    updateStats();
+  } catch (e) {
+    addLog('sent', `FAILED: ${command} — ${e.message}`, '');
+  }
+}
+
+function sendCustom() {
+  const cmd = document.getElementById('cmd-input').value.trim();
+  const payload = document.getElementById('payload-input').value.trim();
+  if (!cmd) return;
+  sendCommand(cmd, payload);
+  document.getElementById('cmd-input').value = '';
+  document.getElementById('payload-input').value = '';
+}
+
+function handleAck(data) {
+  recvCount++;
+  const commandId = data.command_id;
+  const deviceName = data.device_name || data.device_id || 'Unknown';
+  const message = data.message || data.status || 'ok';
+
+  // Calculate latency
+  if (pendingCommands[commandId]) {
+    const latency = Date.now() - pendingCommands[commandId].sent_at;
+    latencies.push(latency);
+    if (latencies.length > 50) latencies.shift();
+    delete pendingCommands[commandId];
+    addLog('recv', `<span class="device">${deviceName}</span>: ${message}`, `Latency: ${latency}ms`);
+  } else {
+    addLog('recv', `<span class="device">${deviceName}</span>: ${message}`, '');
+  }
+  updateStats();
+}
+
+// Handle Enter key
+document.getElementById('cmd-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendCustom();
+});
+document.getElementById('payload-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendCustom();
+});
+
+async function start() {
+  try {
+    sdk = await IoTStack.init();
+    document.getElementById('status-dot').className = 'dot on';
+    document.getElementById('status-text').textContent = 'Connected';
+
+    // Subscribe to ACK channels (both protobuf-decoded and JSON)
+    sdk.subscribe('ack/sim-weather-01', (data) => handleAck(data));
+    sdk.subscribe('ack/sim-weather-01_json', (data) => handleAck(data));
+
+    addLog('recv', 'Connected — listening for device ACKs', '');
+  } catch (e) {
+    document.getElementById('status-text').textContent = 'Error: ' + e.message;
+    addLog('recv', 'Connection error: ' + e.message, '');
+  }
+}
+
+start();
+</script>
