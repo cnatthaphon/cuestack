@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../lib/auth.js";
 import { query } from "../../../lib/db.js";
 import { getConfig, setConfig } from "../../../lib/org-config.js";
+import { hasPermission } from "../../../lib/permissions.js";
 
 const MAX_PERSONAL_PINS = 7;
 const MAX_ORG_PINS = 10;
@@ -55,7 +56,7 @@ export async function POST(request) {
 
   if (scope === "org") {
     // Org pins — requires org.settings permission
-    if (!user.is_super_admin && !user.permissions?.includes("org.settings")) {
+    if (!user.is_super_admin && !(await hasPermission(user, "org.settings"))) {
       return NextResponse.json({ error: "Permission denied" }, { status: 403 });
     }
     const current = await getConfig(user.org_id, "org_pins", "default");
