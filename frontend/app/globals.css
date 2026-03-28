@@ -1,14 +1,23 @@
 * { box-sizing: border-box; }
 
+/* Thin scrollbars everywhere */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-nav ::-webkit-scrollbar-thumb { background: #334155; }
+/* Dark scrollbars inside nav */
+nav ::-webkit-scrollbar { width: 4px; }
+nav ::-webkit-scrollbar-track { background: transparent; }
+nav ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
 nav ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
+/* Firefox */
 html {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
+}
+nav {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
 }
