@@ -77,7 +77,7 @@ export default function PageViewer() {
   const SCHEDULABLE = ["notebook", "visual", "python"];
   const SERVICEABLE = ["python", "visual"];
   const canSchedule = isOwner && hasPermission("pages.schedule") && SCHEDULABLE.includes(page.page_type);
-  const canService = isOwner && SERVICEABLE.includes(page.page_type);
+  const canService = isOwner && hasPermission("services.manage") && SERVICEABLE.includes(page.page_type);
   const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
   const isService = cfg.is_service === true;
 

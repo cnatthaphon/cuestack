@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../../lib/auth.js";
 import { query } from "../../../../lib/db.js";
+import { hasPermission as checkPerm } from "../../../../lib/permissions.js";
 
 // GET — get page
 export async function GET(request, { params }) {
@@ -40,7 +41,19 @@ export async function PATCH(request, { params }) {
   for (const field of ["name", "icon", "slug", "status", "visibility", "sort_order"]) {
     if (body[field] !== undefined) { updates.push(`${field} = $${i}`); values.push(body[field]); i++; }
   }
-  if (body.config !== undefined) { updates.push(`config = $${i}`); values.push(JSON.stringify(body.config)); i++; }
+  if (body.config !== undefined) {
+    // Permission gate: toggling is_service requires services.manage
+    if (body.config.is_service !== undefined) {
+      const canManageServices = user.is_super_admin || await checkPerm(user, "services.manage");
+      if (!canManageServices) return NextResponse.json({ error: "Permission denied: services.manage required" }, { status: 403 });
+    }
+    // Permission gate: setting schedule requires pages.schedule
+    if (body.config.schedule !== undefined) {
+      const canSchedule = user.is_super_admin || await checkPerm(user, "pages.schedule");
+      if (!canSchedule) return NextResponse.json({ error: "Permission denied: pages.schedule required" }, { status: 403 });
+    }
+    updates.push(`config = $${i}`); values.push(JSON.stringify(body.config)); i++;
+  }
   if (body.shared_with !== undefined) { updates.push(`shared_with = $${i}`); values.push(JSON.stringify(body.shared_with)); i++; }
   if (body.parent_id !== undefined) { updates.push(`parent_id = $${i}`); values.push(body.parent_id || null); i++; }
 
