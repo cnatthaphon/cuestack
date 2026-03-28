@@ -2,11 +2,12 @@
 MQTT Bridge — subscribes to Mosquitto broker, forwards messages to channel system.
 
 Supports:
+- Protobuf payloads (SensorData wire format via proto_codec)
 - JSON payloads (auto-parsed)
-- Protobuf payloads (decoded via schema registry)
-- Binary payloads (base64 encoded)
+- Binary payloads (base64 encoded fallback)
 
-Topic mapping: MQTT topic "org/{org_short}/sensors/temp" → channel "sensors/temp"
+Topic mapping: MQTT topic "org/{org_short}/sensors/temp" -> channel "sensors/temp"
+Also registers device heartbeats in org_devices table.
 """
 
 import asyncio
@@ -14,8 +15,10 @@ import json
 import logging
 import os
 import base64
-import struct
 from datetime import datetime, timezone
+
+from proto_codec import decode_sensor_data
+from mqtt_auth import register_device_heartbeat
 
 logger = logging.getLogger("mqtt_bridge")
 logger.setLevel(logging.INFO)
@@ -26,49 +29,29 @@ logger.addHandler(handler)
 MQTT_BROKER = os.getenv("MQTT_BROKER", "mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 
-# Simple protobuf-like decoder for sensor data
-# Format: SensorData { float temperature, float humidity, float pressure, uint32 timestamp }
-# Packed as: 4 floats + 1 uint32 = 20 bytes
-SENSOR_STRUCT = struct.Struct("<fffI")  # little-endian: 3 floats + 1 uint32
-
-
-def decode_sensor_protobuf(payload: bytes) -> dict | None:
-    """Decode binary sensor data (simple packed struct).
-    For real protobuf, use generated proto classes."""
-    try:
-        if len(payload) >= SENSOR_STRUCT.size:
-            temp, hum, pres, ts = SENSOR_STRUCT.unpack_from(payload)
-            return {
-                "temperature": round(temp, 2),
-                "humidity": round(hum, 2),
-                "pressure": round(pres, 2),
-                "timestamp": ts,
-                "_decoded": "protobuf",
-            }
-    except Exception:
-        pass
-    return None
-
 
 def decode_payload(payload: bytes) -> dict:
-    """Try to decode MQTT payload: JSON first, then protobuf, then raw."""
+    """Try to decode MQTT payload: protobuf first, then JSON, then raw."""
+    # Try protobuf (SensorData)
+    decoded = decode_sensor_data(payload)
+    if decoded and (decoded.get("temperature") != 0 or decoded.get("humidity") != 0):
+        decoded["_format"] = "protobuf"
+        return decoded
+
     # Try JSON
     try:
-        return json.loads(payload.decode("utf-8"))
+        data = json.loads(payload.decode("utf-8"))
+        data["_format"] = "json"
+        return data
     except (json.JSONDecodeError, UnicodeDecodeError):
         pass
-
-    # Try protobuf/binary struct
-    decoded = decode_sensor_protobuf(payload)
-    if decoded:
-        return decoded
 
     # Fallback: base64 raw
     return {"_raw": base64.b64encode(payload).decode(), "_format": "binary"}
 
 
 def parse_topic(topic: str) -> tuple[str | None, str | None]:
-    """Parse MQTT topic: org/{org_short}/channel/path → (org_short, channel_name)"""
+    """Parse MQTT topic: org/{org_short}/channel/path -> (org_short, channel_name)"""
     parts = topic.split("/", 2)
     if len(parts) >= 3 and parts[0] == "org":
         return parts[1], "/".join(parts[2:])
@@ -89,7 +72,7 @@ async def run_mqtt_bridge():
 
     DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")
 
-    # Map org_short → org_id
+    # Map org_short -> org_id
     org_cache = {}
 
     def resolve_org(org_short: str) -> str | None:
@@ -109,17 +92,18 @@ async def run_mqtt_bridge():
         return None
 
     loop = asyncio.get_event_loop()
+    message_count = 0
 
     def on_connect(client, userdata, flags, rc, properties=None):
         if rc == 0:
             logger.info(f"Connected to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}")
-            # Subscribe to all org topics
             client.subscribe("org/#")
             logger.info("Subscribed to org/#")
         else:
             logger.error(f"MQTT connect failed: rc={rc}")
 
     def on_message(client, userdata, msg):
+        nonlocal message_count
         try:
             org_short, channel_name = parse_topic(msg.topic)
             if not org_short or not channel_name:
@@ -133,9 +117,21 @@ async def run_mqtt_bridge():
             data["_topic"] = msg.topic
             data["_received_at"] = datetime.now(timezone.utc).isoformat()
 
-            # Bridge to channel system (fire-and-forget async)
+            # Register device heartbeat if device_id present
+            device_id = data.get("device_id")
+            if device_id:
+                register_device_heartbeat(
+                    org_id=org_id,
+                    device_id=device_id,
+                    device_name=device_id,
+                )
+
+            # Bridge to channel system
             asyncio.run_coroutine_threadsafe(ch.publish(org_id, channel_name, data), loop)
-            logger.debug(f"Bridged: {msg.topic} → {channel_name} ({len(msg.payload)} bytes)")
+            message_count += 1
+
+            if message_count % 60 == 0:
+                logger.info(f"Bridged {message_count} messages total")
 
         except Exception as e:
             logger.error(f"Bridge error: {e}")
@@ -150,16 +146,8 @@ async def run_mqtt_bridge():
             client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
             client.loop_start()
             logger.info("MQTT bridge started")
-            # Keep running
             while True:
                 await asyncio.sleep(60)
         except Exception as e:
             logger.warning(f"MQTT connection failed: {e}, retrying in 10s...")
             await asyncio.sleep(10)
-
-
-def encode_sensor_protobuf(temperature: float, humidity: float, pressure: float, timestamp: int = 0) -> bytes:
-    """Encode sensor data to binary protobuf format (for testing)."""
-    if timestamp == 0:
-        timestamp = int(datetime.now(timezone.utc).timestamp())
-    return SENSOR_STRUCT.pack(temperature, humidity, pressure, timestamp)

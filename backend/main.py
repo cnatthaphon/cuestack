@@ -17,6 +17,27 @@ from service_manager import run_service_manager
 import channels as ch
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
+MQTT_BROKER = os.getenv("MQTT_BROKER", "mqtt")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+
+# MQTT client for publishing commands from HTTP/WebSocket to MQTT broker
+_mqtt_publisher = None
+
+def get_mqtt_publisher():
+    """Lazy-init MQTT publisher for forwarding commands to devices."""
+    global _mqtt_publisher
+    if _mqtt_publisher is None:
+        try:
+            import paho.mqtt.client as mqtt_client
+            _mqtt_publisher = mqtt_client.Client(
+                mqtt_client.CallbackAPIVersion.VERSION2,
+                client_id="iot-stack-cmd-publisher"
+            )
+            _mqtt_publisher.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+            _mqtt_publisher.loop_start()
+        except Exception:
+            pass
+    return _mqtt_publisher
 
 
 @asynccontextmanager
@@ -213,6 +234,16 @@ async def ws_channels(websocket: WebSocket):
                 data = msg.get("data", {})
                 if channel and org_id:
                     count = await ch.publish(org_id, channel, data)
+                    # Forward to MQTT broker for device-subscribed channels
+                    try:
+                        org_short = org_id.replace("-", "")[:8]
+                        mqtt_topic = f"org/{org_short}/{channel}"
+                        publisher = get_mqtt_publisher()
+                        if publisher:
+                            import json as _json
+                            publisher.publish(mqtt_topic, _json.dumps(data))
+                    except Exception:
+                        pass
                     await websocket.send_json({"published": channel, "subscribers": count})
 
     except WebSocketDisconnect:
@@ -255,6 +286,18 @@ async def channel_publish(body: PublishRequest, request: Request):
         raise HTTPException(status_code=401, detail="Authentication required")
 
     count = await ch.publish(org_id, body.channel, body.data)
+
+    # Also forward to MQTT broker so MQTT-subscribed devices receive commands
+    try:
+        org_short = org_id.replace("-", "")[:8]
+        mqtt_topic = f"org/{org_short}/{body.channel}"
+        publisher = get_mqtt_publisher()
+        if publisher:
+            import json as _json
+            publisher.publish(mqtt_topic, _json.dumps(body.data))
+    except Exception:
+        pass  # Best-effort MQTT forwarding
+
     return {"ok": True, "channel": body.channel, "subscribers": count}
 
 
