@@ -6,10 +6,10 @@ import { SignJWT } from "jose";
 
 const JUPYTER_INTERNAL = "http://jupyter:8888";
 const SECRET = new TextEncoder().encode(
-  process.env.SECRET_KEY || "dev-secret-change-in-prod"
+  process.env.SECRET_KEY || "dev-only-not-for-production"
 );
 
-// GET — list notebook sessions
+// GET — list active Jupyter sessions + notebook workspace pages
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -18,17 +18,28 @@ export async function GET() {
   const enabled = await hasFeature(user.org_id, "notebooks");
   if (!enabled) return NextResponse.json({ error: "Notebooks not enabled" }, { status: 403 });
 
-  const jupyterUrl = "/jupyter/lab";
-  const sessions = await getConfigsByCategory(user.org_id, "notebook_session");
+  // Query Jupyter for active kernel sessions
+  let activeSessions = [];
+  try {
+    const res = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/sessions`);
+    if (res.ok) {
+      const sessions = await res.json();
+      activeSessions = sessions.map((s) => ({
+        id: s.id,
+        name: s.notebook?.name || s.name || "unknown",
+        path: s.notebook?.path || s.path || "",
+        kernel_status: s.kernel?.execution_state || "unknown",
+        kernel_id: s.kernel?.id || "",
+        started_at: s.kernel?.last_activity || null,
+      }));
+    }
+  } catch {
+    // Jupyter might be down — that's ok
+  }
 
   return NextResponse.json({
-    url: jupyterUrl,
+    sessions: activeSessions,
     org_id: user.org_id,
-    sessions: sessions.map((s) => ({
-      key: s.key,
-      ...s.value,
-      updated_at: s.updated_at,
-    })),
   });
 }
 
