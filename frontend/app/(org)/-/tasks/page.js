@@ -86,7 +86,7 @@ export default function TasksPage() {
       ),
     },
     {
-      key: "schedule", label: "Schedule",
+      key: "schedule_cron", label: "Schedule", dataKey: "schedule",
       render: (v) => (
         <div>
           <div style={{ fontSize: 13 }}>{cronLabel(v?.cron || "")}</div>
@@ -95,7 +95,7 @@ export default function TasksPage() {
       ),
     },
     {
-      key: "schedule", label: "Status",
+      key: "schedule_status", label: "Status", dataKey: "schedule",
       render: (v, row) => {
         const enabled = v?.enabled !== false;
         return (
@@ -115,11 +115,11 @@ export default function TasksPage() {
     },
     { key: "owner_name", label: "Owner" },
     {
-      key: "schedule", label: "Last Run",
+      key: "schedule_last", label: "Last Run", dataKey: "schedule",
       render: (v) => v?.last_run ? <DateTimeCell value={v.last_run} /> : <span style={{ color: "#ccc" }}>Never</span>,
     },
     {
-      key: "schedule", label: "Next Run",
+      key: "schedule_next", label: "Next Run", dataKey: "schedule",
       render: (v) => v?.next_run ? <DateTimeCell value={v.next_run} /> : <span style={{ color: "#ccc" }}>---</span>,
     },
     { key: "updated_at", label: "Updated", render: (v) => <DateTimeCell value={v} /> },
