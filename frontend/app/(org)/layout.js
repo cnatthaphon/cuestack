@@ -26,7 +26,7 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: "Admin",
+    label: "System",
     items: [
       { href: "/-/users", label: "Users", icon: "\u{1F465}", permission: "users.view", feature: null },
       { href: "/-/roles", label: "Roles", icon: "\u{1F6E1}", permission: "roles.manage", feature: null },
