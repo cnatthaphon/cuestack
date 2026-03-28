@@ -197,6 +197,118 @@ export async function queryData(orgId, tableName, { limit = 100, offset = 0, ord
   return result.rows;
 }
 
+// --- Advanced query (server-side filter/sort/paginate → SQL) ---
+
+const FILTER_OPS = {
+  "eq": "=", "neq": "!=", "gt": ">", "lt": "<", "gte": ">=", "lte": "<=",
+  "contains": "ILIKE", "starts": "ILIKE", "ends": "ILIKE",
+  "null": "IS NULL", "notnull": "IS NOT NULL",
+};
+
+export async function queryDataAdvanced(orgId, tableName, { limit = 50, offset = 0, order_by, order_dir, filters = [] } = {}) {
+  const table = await query("SELECT columns FROM org_tables WHERE org_id = $1 AND name = $2", [orgId, tableName]);
+  if (!table.rows[0]) throw new Error(`Table "${tableName}" not found`);
+
+  const realName = realTableName(orgId, tableName);
+  const columns = table.rows[0].columns;
+  const validCols = new Set(["id", "created_at", ...columns.map((c) => c.name)]);
+  const colNames = columns.map((c) => `"${c.name}"`).join(", ");
+
+  // Build WHERE clauses from filters (parameterized — no SQL injection)
+  const whereParts = ["org_id = $1"];
+  const params = [orgId];
+  let pi = 2;
+
+  for (const f of filters) {
+    if (!f.column || !validCols.has(f.column)) continue;
+    const op = FILTER_OPS[f.op] || "=";
+    const col = `"${f.column}"`;
+
+    if (f.op === "null") { whereParts.push(`${col} IS NULL`); continue; }
+    if (f.op === "notnull") { whereParts.push(`${col} IS NOT NULL`); continue; }
+    if (f.op === "contains") { whereParts.push(`${col}::text ILIKE $${pi}`); params.push(`%${f.value}%`); pi++; continue; }
+    if (f.op === "starts") { whereParts.push(`${col}::text ILIKE $${pi}`); params.push(`${f.value}%`); pi++; continue; }
+    if (f.op === "ends") { whereParts.push(`${col}::text ILIKE $${pi}`); params.push(`%${f.value}`); pi++; continue; }
+
+    whereParts.push(`${col} ${op} $${pi}`);
+    params.push(f.value);
+    pi++;
+  }
+
+  const whereSQL = whereParts.join(" AND ");
+
+  // Order
+  let orderSQL = "created_at DESC";
+  if (order_by && validCols.has(order_by)) {
+    orderSQL = `"${order_by}" ${order_dir === "ASC" ? "ASC" : "DESC"} NULLS LAST`;
+  }
+
+  const safeLimit = Math.min(Math.max(1, parseInt(limit) || 50), 1000);
+  const safeOffset = Math.max(0, parseInt(offset) || 0);
+
+  // Count total (for pagination)
+  const countResult = await query(`SELECT COUNT(*) as total FROM "${realName}" WHERE ${whereSQL}`, params);
+  const total = parseInt(countResult.rows[0].total);
+
+  // Fetch page
+  const dataResult = await query(
+    `SELECT id, ${colNames}, created_at FROM "${realName}" WHERE ${whereSQL} ORDER BY ${orderSQL} LIMIT $${pi} OFFSET $${pi + 1}`,
+    [...params, safeLimit, safeOffset]
+  );
+
+  return { rows: dataResult.rows, total, limit: safeLimit, offset: safeOffset };
+}
+
+// --- Update record ---
+
+export async function updateRecord(orgId, tableName, recordId, data) {
+  const table = await query("SELECT columns FROM org_tables WHERE org_id = $1 AND name = $2", [orgId, tableName]);
+  if (!table.rows[0]) throw new Error(`Table "${tableName}" not found`);
+
+  const realName = realTableName(orgId, tableName);
+  const columns = table.rows[0].columns;
+  const validCols = new Set(columns.map((c) => c.name));
+
+  const updates = [];
+  const params = [recordId, orgId];
+  let pi = 3;
+
+  for (const [key, value] of Object.entries(data)) {
+    if (!validCols.has(key)) continue;
+    updates.push(`"${key}" = $${pi}`);
+    params.push(value);
+    pi++;
+  }
+
+  if (updates.length === 0) throw new Error("No valid columns to update");
+
+  await query(`UPDATE "${realName}" SET ${updates.join(", ")} WHERE id = $1 AND org_id = $2`, params);
+  return true;
+}
+
+// --- Delete records ---
+
+export async function deleteRecords(orgId, tableName, recordIds) {
+  const table = await query("SELECT name FROM org_tables WHERE org_id = $1 AND name = $2", [orgId, tableName]);
+  if (!table.rows[0]) throw new Error(`Table "${tableName}" not found`);
+
+  const realName = realTableName(orgId, tableName);
+  const ids = Array.isArray(recordIds) ? recordIds : [recordIds];
+
+  const result = await query(
+    `DELETE FROM "${realName}" WHERE org_id = $1 AND id = ANY($2::bigint[])`,
+    [orgId, ids]
+  );
+  return result.rowCount;
+}
+
+// --- Get table info by ID ---
+
+export async function getTableById(orgId, tableId) {
+  const result = await query("SELECT * FROM org_tables WHERE id = $1 AND org_id = $2", [tableId, orgId]);
+  return result.rows[0] || null;
+}
+
 // --- API Key management ---
 
 export function generateApiKey() {
