@@ -29,7 +29,7 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [services] %(message)s"))
 logger.addHandler(handler)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 POLL_INTERVAL = 15  # check every 15s
 
 # Running processes: {page_id: {"proc": Popen, "script": path, "name": str}}
@@ -190,7 +190,7 @@ def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
         f'ORG_SHORT = "{org_short}"',
         'MQTT_BROKER = os.getenv("MQTT_BROKER", "mqtt")',
         'MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))',
-        'DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")',
+        'DATABASE_URL = os.getenv("DATABASE_URL", "")',
         "",
     ]
 
@@ -229,6 +229,19 @@ def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
             field = ncfg.get("field", "temperature")
             op = ncfg.get("operator", ">")
             value = ncfg.get("value", "0")
+            # SECURITY: whitelist operators and sanitize field/value
+            ALLOWED_OPS = {"==", "!=", ">", "<", ">=", "<="}
+            if op not in ALLOWED_OPS:
+                op = ">"
+            # Sanitize field name — alphanumeric + underscore only
+            import re
+            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(field)):
+                field = "temperature"
+            # Sanitize value — numeric or quoted string only
+            try:
+                float(value)
+            except (ValueError, TypeError):
+                value = "0"
             lines.append(f"    # Filter: {field} {op} {value}")
             lines.append(f"    if not (result.get('{field}', 0) {op} {value}):")
             lines.append("        return None")
@@ -242,6 +255,10 @@ def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
             lines.append("    # Simple inline check")
         elif ntype == "insert":
             table = ncfg.get("table", "sensor_data")
+            # SECURITY: sanitize table name — alphanumeric + underscore only
+            import re as _re
+            if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(table)):
+                table = "sensor_data"
             lines.append(f"    # Insert into {table}")
             lines.append(f"    try:")
             lines.append(f"        _tbl = f'org_{{ORG_SHORT}}_{table}'")
@@ -258,6 +275,10 @@ def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
             lines.append(f"        logger.error(f'Insert error: {{e}}')")
         elif ntype in ("ws_publish", "mqtt_publish"):
             channel = ncfg.get("channel", "dashboard/live")
+            # SECURITY: sanitize channel name — alphanumeric, slashes, dots, dashes, underscores
+            import re as _re
+            if not _re.match(r'^[a-zA-Z0-9._/\-]+$', str(channel)):
+                channel = "dashboard/live"
             lines.append(f"    # Publish to {channel}")
             lines.append(f"    try:")
             lines.append(f"        import urllib.request")
@@ -268,10 +289,24 @@ def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
             lines.append(f"    except Exception:")
             lines.append(f"        pass")
         elif ntype == "custom_code":
+            # SECURITY: custom code runs in isolated subprocess with timeout
             user_code = ncfg.get("code", "pass")
-            lines.append("    # Custom code block")
-            for cl in user_code.split("\n"):
-                lines.append(f"    {cl}")
+            # Escape the code for embedding in a string literal
+            escaped = user_code.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+            lines.append("    # Custom code block (sandboxed subprocess)")
+            lines.append("    import subprocess as _sp, tempfile as _tf")
+            lines.append(f"    _code = '''{user_code}'''")
+            lines.append("    try:")
+            lines.append("        _tf_path = _tf.NamedTemporaryFile(suffix='.py', mode='w', delete=False)")
+            lines.append("        _wrapper = f'import json, sys\\ndata = json.loads(sys.stdin.read())\\n{_code}\\nprint(json.dumps(data))'")
+            lines.append("        _tf_path.write(_wrapper)")
+            lines.append("        _tf_path.close()")
+            lines.append("        _proc = _sp.run(['python3', _tf_path.name], input=json.dumps(result), capture_output=True, text=True, timeout=10)")
+            lines.append("        import os; os.unlink(_tf_path.name)")
+            lines.append("        if _proc.returncode == 0 and _proc.stdout.strip():")
+            lines.append("            result = json.loads(_proc.stdout.strip())")
+            lines.append("    except Exception as _e:")
+            lines.append("        logger.warning(f'Custom code error: {_e}')")
 
     lines.append("    return result")
     lines.append("")

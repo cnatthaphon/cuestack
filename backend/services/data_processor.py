@@ -35,7 +35,7 @@ logger = logging.getLogger()
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 ORG_ID = os.getenv("ORG_ID", "")
 SERVICE_NAME = os.getenv("SERVICE_NAME", "data-processor")
 DEVICE_ID = os.getenv("DEVICE_ID", "proc-weather-01")

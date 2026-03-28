@@ -22,7 +22,7 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s [scheduler] %(message)s"))
 logger.addHandler(handler)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 JUPYTER_URL = os.getenv("JUPYTER_URL", "http://jupyter:8888")
 POLL_INTERVAL = int(os.getenv("SCHEDULER_POLL_INTERVAL", "60"))
 

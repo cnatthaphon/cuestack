@@ -18,7 +18,7 @@ import psycopg2
 import psycopg2.extras
 
 logger = logging.getLogger("mqtt_auth")
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 
 def validate_device_token(token: str) -> dict | None:

@@ -2,7 +2,7 @@ import pg from "pg";
 
 const pool = new pg.Pool({
   connectionString:
-    process.env.DATABASE_URL || "postgresql://iot:iot123@db:5432/iotstack",
+    process.env.DATABASE_URL,
   max: 10,
 });
 
@@ -374,7 +374,11 @@ export async function initDB() {
 // Can only SELECT org data tables (org_*), org_tables metadata.
 // Cannot access: users, organizations, api_keys, org_configs, permissions, roles, role_permissions
 export async function initJupyterUser() {
-  const jupyterPass = process.env.JUPYTER_DB_PASSWORD || "jupyter_readonly_123";
+  const jupyterPass = process.env.JUPYTER_DB_PASSWORD;
+  if (!jupyterPass) {
+    console.warn("JUPYTER_DB_PASSWORD not set, skipping Jupyter user setup");
+    return;
+  }
   try {
     // Create user if not exists
     const check = await query("SELECT 1 FROM pg_roles WHERE rolname = 'jupyter_user'");

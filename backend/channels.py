@@ -24,7 +24,7 @@ import psycopg2.extras
 
 logger = logging.getLogger("channels")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # In-memory subscriber registry: channel_key → set of WebSocket connections
 _subscribers: dict[str, set] = defaultdict(set)
