@@ -598,12 +598,14 @@ const canView = await IoTStack.can("app.my_app");
 
 // ─── Visual flow renderer (placeholder) ──────────────────────────────────────
 const BLOCK_TYPES = [
-  { id: "data_source", label: "Data Source", icon: "\u{1F4BE}", color: "#0070f3", fields: ["table", "limit", "order_by"] },
-  { id: "filter", label: "Filter", icon: "\u{1F50D}", color: "#7c3aed", fields: ["column", "operator", "value"] },
-  { id: "transform", label: "Transform", icon: "\u2699", color: "#059669", fields: ["operation", "column", "output_column"] },
-  { id: "aggregate", label: "Aggregate", icon: "\u{1F4CA}", color: "#d97706", fields: ["group_by", "aggregation", "column"] },
-  { id: "output", label: "Output", icon: "\u{1F4E4}", color: "#dc2626", fields: ["format", "destination"] },
-  { id: "notify", label: "Notify", icon: "\u{1F514}", color: "#ec4899", fields: ["title", "message", "type"] },
+  { id: "data_source", label: "Data Source", icon: "\u{1F4BE}", color: "#0070f3" },
+  { id: "generate", label: "Generate Data", icon: "\u{1F3B2}", color: "#8b5cf6" },
+  { id: "filter", label: "Filter", icon: "\u{1F50D}", color: "#7c3aed" },
+  { id: "transform", label: "Transform", icon: "\u2699", color: "#059669" },
+  { id: "aggregate", label: "Aggregate", icon: "\u{1F4CA}", color: "#d97706" },
+  { id: "insert", label: "Insert to DB", icon: "\u{1F4E5}", color: "#16a34a" },
+  { id: "output", label: "Output", icon: "\u{1F4E4}", color: "#dc2626" },
+  { id: "notify", label: "Notify", icon: "\u{1F514}", color: "#ec4899" },
 ];
 
 const OPERATORS = ["=", "!=", ">", "<", ">=", "<=", "contains", "is null", "is not null"];
@@ -747,6 +749,8 @@ function VisualRenderer({ page, isOwner, saveConfig }) {
                       {block.type === "filter" && block.config?.column ? `${block.config.column} ${block.config.operator || "="} ${block.config.value || ""}` : ""}
                       {block.type === "aggregate" && block.config?.aggregation ? `${block.config.aggregation}(${block.config.column || "*"})` : ""}
                       {block.type === "transform" && block.config?.operation ? `${block.config.operation}(${block.config.column || ""})` : ""}
+                      {block.type === "generate" ? `${block.config?.count || 1} rows` : ""}
+                      {block.type === "insert" && block.config?.table ? `→ ${block.config.table}` : ""}
                       {block.type === "output" ? block.config?.format || "table" : ""}
                       {block.type === "notify" ? block.config?.title || "notification" : ""}
                     </span>
@@ -799,6 +803,20 @@ function VisualRenderer({ page, isOwner, saveConfig }) {
                         {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
                       <input placeholder="Group by" value={block.config?.group_by || ""} onChange={(e) => updateBlockConfig(i, "group_by", e.target.value)} style={{ ...cfgInput, gridColumn: "span 2" }} />
+                    </>}
+                    {block.type === "generate" && <>
+                      <input type="number" placeholder="Count" value={block.config?.count || ""} onChange={(e) => updateBlockConfig(i, "count", parseInt(e.target.value) || 1)} style={cfgInput} />
+                      <span style={{ fontSize: 10, color: "#999", padding: 4 }}>Configure fields as JSON below</span>
+                      <textarea placeholder='{"temperature":{"type":"float","min":27,"max":36},"humidity":{"type":"float","min":55,"max":95},"description":{"type":"choice","options":["clear sky","clouds","rain"]}}'
+                        value={typeof block.config?.fields === "object" ? JSON.stringify(block.config.fields) : (block.config?.fields || "")}
+                        onChange={(e) => { try { updateBlockConfig(i, "fields", JSON.parse(e.target.value)); } catch {} }}
+                        style={{ ...cfgInput, gridColumn: "span 2", fontFamily: "monospace", fontSize: 10, minHeight: 60 }} />
+                    </>}
+                    {block.type === "insert" && <>
+                      <select value={block.config?.table || ""} onChange={(e) => updateBlockConfig(i, "table", e.target.value)} style={{ ...cfgInput, gridColumn: "span 2" }}>
+                        <option value="">Insert into table...</option>
+                        {tables.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+                      </select>
                     </>}
                     {block.type === "output" && <>
                       <select value={block.config?.format || "table"} onChange={(e) => updateBlockConfig(i, "format", e.target.value)} style={{ ...cfgInput, gridColumn: "span 2" }}>

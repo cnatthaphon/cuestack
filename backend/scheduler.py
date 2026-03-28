@@ -200,39 +200,172 @@ def update_task_run(conn, page_id: str, config: dict, success: bool, message: st
     conn.commit()
 
 
-async def execute_notebook(task: dict) -> tuple[bool, str]:
-    """Execute a notebook via Jupyter API."""
-    import urllib.request
-    import urllib.error
-
-    org_short = task["org_id"].replace("-", "")[:8]
-    dir_name = f"org_{org_short}"
-    nb_name = (task["slug"] or task["page_name"].lower().replace(" ", "_")) + ".ipynb"
-    path = f"{dir_name}/{nb_name}"
-
-    try:
-        req = urllib.request.Request(f"{JUPYTER_URL}/jupyter/api/contents/{path}")
-        urllib.request.urlopen(req, timeout=10)
-    except urllib.error.HTTPError:
-        return False, f"Notebook not found: {path}"
-    except Exception as e:
-        return False, f"Jupyter unreachable: {e}"
-
-    logger.info(f"  Notebook ready: {path}")
-    return True, f"Notebook verified: {path}"
+def real_table_name(org_id: str, table_name: str) -> str:
+    """Same logic as frontend org-tables.js — org-prefixed table name."""
+    short = org_id.replace("-", "")[:8]
+    return f"org_{short}_{table_name}"
 
 
-async def execute_task(task: dict) -> tuple[bool, str]:
+def execute_flow_blocks(conn, org_id: str, blocks: list) -> tuple[bool, str]:
+    """Execute visual flow blocks directly via SQL. Returns (success, message)."""
+    data = []
+    messages = []
+
+    for block in blocks:
+        btype = block.get("type")
+        config = block.get("config", {})
+
+        if btype == "data_source":
+            table_name = config.get("table")
+            if not table_name:
+                messages.append("data_source: no table")
+                continue
+            real_name = real_table_name(org_id, table_name)
+            limit = min(int(config.get("limit", 100)), 1000)
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(f'SELECT * FROM "{real_name}" WHERE org_id = %s ORDER BY created_at DESC LIMIT %s', [org_id, limit])
+                data = cur.fetchall()
+            messages.append(f"data_source: {len(data)} rows from {table_name}")
+
+        elif btype == "filter":
+            col = config.get("column")
+            op = config.get("operator", "=")
+            val = config.get("value", "")
+            if not col:
+                continue
+            before = len(data)
+            filtered = []
+            for row in data:
+                rv = row.get(col)
+                try:
+                    if op == "=" and str(rv) == str(val): filtered.append(row)
+                    elif op == "!=" and str(rv) != str(val): filtered.append(row)
+                    elif op == ">" and float(rv or 0) > float(val): filtered.append(row)
+                    elif op == "<" and float(rv or 0) < float(val): filtered.append(row)
+                    elif op == ">=" and float(rv or 0) >= float(val): filtered.append(row)
+                    elif op == "<=" and float(rv or 0) <= float(val): filtered.append(row)
+                    elif op == "contains" and str(val) in str(rv or ""): filtered.append(row)
+                    elif op == "is not null" and rv is not None: filtered.append(row)
+                except (ValueError, TypeError):
+                    pass
+            data = filtered
+            messages.append(f"filter: {before} → {len(data)} ({col} {op} {val})")
+
+        elif btype == "aggregate":
+            agg = config.get("aggregation", "count")
+            col = config.get("column")
+            vals = [float(r.get(col, 0) or 0) for r in data] if col else []
+            result = 0
+            if agg == "count": result = len(data)
+            elif agg == "sum" and vals: result = sum(vals)
+            elif agg == "avg" and vals: result = sum(vals) / len(vals)
+            elif agg == "min" and vals: result = min(vals)
+            elif agg == "max" and vals: result = max(vals)
+            messages.append(f"aggregate: {agg}({col or '*'}) = {round(result, 2)}")
+
+        elif btype == "insert":
+            # Insert generated data into a table
+            table_name = config.get("table")
+            if not table_name or not data:
+                messages.append(f"insert: no table or no data")
+                continue
+            real_name = real_table_name(org_id, table_name)
+            # Get table columns
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT columns FROM org_tables WHERE org_id = %s AND name = %s", [org_id, table_name])
+                tbl = cur.fetchone()
+            if not tbl:
+                messages.append(f"insert: table {table_name} not found")
+                continue
+            cols_def = tbl["columns"] if isinstance(tbl["columns"], list) else json.loads(tbl["columns"])
+            col_names = [c["name"] for c in cols_def]
+            inserted = 0
+            for row in data:
+                vals = {}
+                for cn in col_names:
+                    if cn in row:
+                        vals[cn] = row[cn]
+                if not vals:
+                    continue
+                cols_sql = ", ".join(f'"{k}"' for k in vals.keys())
+                placeholders = ", ".join(["%s"] * len(vals))
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f'INSERT INTO "{real_name}" (org_id, {cols_sql}) VALUES (%s, {placeholders})',
+                        [org_id, *vals.values()]
+                    )
+                inserted += 1
+            conn.commit()
+            messages.append(f"insert: {inserted} rows into {table_name}")
+
+        elif btype == "generate":
+            # Generate simulated data based on config
+            import random
+            count = int(config.get("count", 1))
+            fields = config.get("fields", {})
+            generated = []
+            for _ in range(count):
+                row = {}
+                for fname, fspec in fields.items():
+                    if isinstance(fspec, dict):
+                        ftype = fspec.get("type", "float")
+                        if ftype == "float":
+                            row[fname] = round(random.uniform(fspec.get("min", 0), fspec.get("max", 100)), 1)
+                        elif ftype == "int":
+                            row[fname] = random.randint(int(fspec.get("min", 0)), int(fspec.get("max", 100)))
+                        elif ftype == "choice":
+                            row[fname] = random.choice(fspec.get("options", ["unknown"]))
+                    else:
+                        row[fname] = fspec
+                generated.append(row)
+            data = generated
+            messages.append(f"generate: {len(data)} rows")
+
+        elif btype == "notify":
+            title = config.get("title", "")
+            if title and task.get("user_id"):
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO notifications (org_id, user_id, title, message, type, source) VALUES (%s, %s, %s, %s, %s, 'scheduler')",
+                        [org_id, task["user_id"], title, config.get("message", ""), config.get("type", "info")]
+                    )
+                conn.commit()
+                messages.append(f"notify: {title}")
+
+        elif btype == "output":
+            messages.append(f"output: {len(data)} rows")
+
+    return True, " | ".join(messages) if messages else "No blocks executed"
+
+
+async def execute_task(conn, task: dict) -> tuple[bool, str]:
     """Execute a scheduled task based on page type."""
     page_type = task["page_type"]
-    if page_type == "notebook":
-        return await execute_notebook(task)
-    elif page_type == "html":
-        return True, "HTML page triggered"
-    elif page_type == "visual":
-        return True, "Visual flow triggered"
+    config = task["config"]
+
+    if page_type == "visual":
+        blocks = config.get("blocks", [])
+        if not blocks:
+            return False, "No blocks configured"
+        return execute_flow_blocks(conn, task["org_id"], blocks)
+
+    elif page_type == "notebook":
+        # Notebook execution via Jupyter API
+        import urllib.request
+        import urllib.error
+        org_short = task["org_id"].replace("-", "")[:8]
+        dir_name = f"org_{org_short}"
+        nb_name = (task["slug"] or task["page_name"].lower().replace(" ", "_")) + ".ipynb"
+        path = f"{dir_name}/{nb_name}"
+        try:
+            req = urllib.request.Request(f"{JUPYTER_URL}/jupyter/api/contents/{path}")
+            urllib.request.urlopen(req, timeout=10)
+            return True, f"Notebook verified: {path}"
+        except Exception as e:
+            return False, f"Notebook error: {e}"
+
     else:
-        return True, f"Page type {page_type} executed"
+        return True, f"Page type {page_type} — no executor configured"
 
 
 async def run_scheduler():
@@ -283,7 +416,7 @@ async def run_scheduler():
                     log_id = log_task_start(conn, task["page_id"], task["org_id"], config_ver)
 
                     try:
-                        success, message = await execute_task(task)
+                        success, message = await execute_task(conn, task)
                         duration = int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms
                         update_task_run(conn, task["page_id"], task["config"], success, message)
                         log_task_end(conn, log_id, success, message, duration)
