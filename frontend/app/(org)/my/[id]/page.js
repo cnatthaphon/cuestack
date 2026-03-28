@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useUser } from "../../../../lib/user-context.js";
+import FlowCanvas from "../../../../lib/components/flow-canvas.js";
 
 // ─── Page shell (shared across all page types) ───────────────────────────────
 export default function PageViewer() {
@@ -596,7 +597,7 @@ const canView = await IoTStack.can("app.my_app");
   </script>
 </div>`;
 
-// ─── Visual flow renderer (placeholder) ──────────────────────────────────────
+// ─── Visual flow renderer (canvas-based) ─────────────────────────────────────
 const BLOCK_TYPES = [
   { id: "data_source", label: "Data Source", icon: "\u{1F4BE}", color: "#0070f3" },
   { id: "generate", label: "Generate Data", icon: "\u{1F3B2}", color: "#8b5cf6" },
@@ -615,31 +616,28 @@ const OUTPUT_FORMATS = ["table", "json", "csv", "chart"];
 
 function VisualRenderer({ page, isOwner, saveConfig }) {
   const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
-  const [blocks, setBlocks] = useState(cfg.blocks || []);
-  const [editing, setEditing] = useState(false);
-  const [editIdx, setEditIdx] = useState(null);
   const [tables, setTables] = useState([]);
-  const [saving, setSaving] = useState(false);
   const [runResult, setRunResult] = useState(null);
   const [running, setRunning] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/tables").then((r) => r.ok ? r.json() : { tables: [] }).then((d) => setTables(d.tables || []));
   }, []);
 
-  const save = async () => {
+  const handleSave = async (nodes, edges) => {
     setSaving(true);
-    await saveConfig({ ...cfg, blocks });
+    await saveConfig({ ...cfg, nodes, edges });
     setSaving(false);
   };
 
-  const run = async () => {
+  const handleRun = async (blockList) => {
     setRunning(true);
     setRunResult(null);
     try {
       const res = await fetch("/api/flow", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blocks }),
+        body: JSON.stringify({ blocks: blockList }),
       });
       const data = await res.json();
       setRunResult(data);
@@ -649,230 +647,20 @@ function VisualRenderer({ page, isOwner, saveConfig }) {
     setRunning(false);
   };
 
-  const addBlock = (typeId) => {
-    const bt = BLOCK_TYPES.find((t) => t.id === typeId);
-    const config = {};
-    if (typeId === "data_source") config.limit = 100;
-    if (typeId === "filter") config.operator = "=";
-    if (typeId === "aggregate") config.aggregation = "count";
-    if (typeId === "output") config.format = "table";
-    if (typeId === "notify") config.type = "info";
-    setBlocks([...blocks, { type: typeId, config }]);
-    setEditIdx(blocks.length);
-    setEditing(true);
-  };
-
-  const removeBlock = (idx) => {
-    setBlocks(blocks.filter((_, i) => i !== idx));
-    setEditIdx(null);
-  };
-
-  const moveBlock = (idx, dir) => {
-    const ni = idx + dir;
-    if (ni < 0 || ni >= blocks.length) return;
-    const c = [...blocks]; [c[idx], c[ni]] = [c[ni], c[idx]]; setBlocks(c); setEditIdx(ni);
-  };
-
-  const updateBlockConfig = (idx, key, val) => {
-    setBlocks(blocks.map((b, i) => i === idx ? { ...b, config: { ...b.config, [key]: val } } : b));
-  };
-
-  const getTableCols = (name) => {
-    const t = tables.find((t) => t.name === name);
-    if (!t) return [];
-    const c = typeof t.columns === "string" ? JSON.parse(t.columns) : (t.columns || []);
-    return ["id", ...c.map((col) => col.name), "created_at"];
-  };
-
-  // Find the source table from the first data_source block
-  const sourceTable = blocks.find((b) => b.type === "data_source")?.config?.table;
-  const sourceCols = sourceTable ? getTableCols(sourceTable) : [];
-
   return (
-    <>
-      {/* Toolbar */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
-        {isOwner && (
-          editing
-            ? <>
-                <button onClick={() => { save(); setEditing(false); setEditIdx(null); }} disabled={saving} style={btnBlue}>{saving ? "Saving..." : "Save"}</button>
-                <button onClick={() => { setEditing(false); setEditIdx(null); }} style={btnGray}>Cancel</button>
-              </>
-            : <button onClick={() => setEditing(true)} style={btnBlue}>Edit Flow</button>
-        )}
-        <button onClick={run} disabled={running || blocks.length === 0} style={{ ...btnGray, color: "#059669", borderColor: "#059669" }}>
-          {running ? "Running..." : "\u25B6 Run"}
-        </button>
-        <span style={{ fontSize: 12, color: "#999", marginLeft: "auto" }}>{blocks.length} block{blocks.length !== 1 ? "s" : ""}</span>
-      </div>
-
-      {/* Add block bar */}
-      {editing && (
-        <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
-          {BLOCK_TYPES.map((t) => (
-            <button key={t.id} onClick={() => addBlock(t.id)} style={{
-              padding: "6px 12px", background: "#fff", border: `1px solid ${t.color}33`, borderRadius: 4,
-              cursor: "pointer", fontSize: 12, color: t.color,
-            }}>
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Flow pipeline visualization */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-        {blocks.map((block, i) => {
-          const bt = BLOCK_TYPES.find((t) => t.id === block.type) || BLOCK_TYPES[0];
-          const isEdit = editing && editIdx === i;
-          return (
-            <div key={i}>
-              {/* Connector line */}
-              {i > 0 && (
-                <div style={{ display: "flex", justifyContent: "center", height: 24 }}>
-                  <div style={{ width: 2, height: "100%", background: "#ddd" }} />
-                </div>
-              )}
-              {/* Block */}
-              <div onClick={() => editing && setEditIdx(i)} style={{
-                background: "#fff", borderRadius: 8, padding: 12,
-                border: isEdit ? `2px solid ${bt.color}` : "1px solid #e2e8f0",
-                cursor: editing ? "pointer" : "default",
-                borderLeft: `4px solid ${bt.color}`,
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>{bt.icon}</span>
-                    <strong style={{ fontSize: 13, color: bt.color }}>{bt.label}</strong>
-                    <span style={{ fontSize: 11, color: "#999" }}>
-                      {block.type === "data_source" && block.config?.table ? `from ${block.config.table}` : ""}
-                      {block.type === "filter" && block.config?.column ? `${block.config.column} ${block.config.operator || "="} ${block.config.value || ""}` : ""}
-                      {block.type === "aggregate" && block.config?.aggregation ? `${block.config.aggregation}(${block.config.column || "*"})` : ""}
-                      {block.type === "transform" && block.config?.operation ? `${block.config.operation}(${block.config.column || ""})` : ""}
-                      {block.type === "generate" ? `${block.config?.count || 1} rows` : ""}
-                      {block.type === "insert" && block.config?.table ? `→ ${block.config.table}` : ""}
-                      {block.type === "output" ? block.config?.format || "table" : ""}
-                      {block.type === "notify" ? block.config?.title || "notification" : ""}
-                    </span>
-                  </div>
-                  {editing && (
-                    <div style={{ display: "flex", gap: 2 }}>
-                      <button onClick={(e) => { e.stopPropagation(); moveBlock(i, -1); }} style={miniBtn}>&uarr;</button>
-                      <button onClick={(e) => { e.stopPropagation(); moveBlock(i, 1); }} style={miniBtn}>&darr;</button>
-                      <button onClick={(e) => { e.stopPropagation(); removeBlock(i); }} style={{ ...miniBtn, color: "#e53e3e" }}>x</button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Block config (when selected) */}
-                {isEdit && (
-                  <div style={{ marginTop: 8, fontSize: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                    {block.type === "data_source" && <>
-                      <select value={block.config?.table || ""} onChange={(e) => updateBlockConfig(i, "table", e.target.value)} style={cfgInput}>
-                        <option value="">Select table...</option>
-                        {tables.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
-                      </select>
-                      <input type="number" placeholder="Limit" value={block.config?.limit || ""} onChange={(e) => updateBlockConfig(i, "limit", parseInt(e.target.value) || 100)} style={cfgInput} />
-                    </>}
-                    {block.type === "filter" && <>
-                      <select value={block.config?.column || ""} onChange={(e) => updateBlockConfig(i, "column", e.target.value)} style={cfgInput}>
-                        <option value="">Column...</option>
-                        {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <select value={block.config?.operator || "="} onChange={(e) => updateBlockConfig(i, "operator", e.target.value)} style={cfgInput}>
-                        {OPERATORS.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                      <input placeholder="Value" value={block.config?.value || ""} onChange={(e) => updateBlockConfig(i, "value", e.target.value)} style={{ ...cfgInput, gridColumn: "span 2" }} />
-                    </>}
-                    {block.type === "transform" && <>
-                      <select value={block.config?.operation || ""} onChange={(e) => updateBlockConfig(i, "operation", e.target.value)} style={cfgInput}>
-                        <option value="">Operation...</option>
-                        {TRANSFORMS.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <select value={block.config?.column || ""} onChange={(e) => updateBlockConfig(i, "column", e.target.value)} style={cfgInput}>
-                        <option value="">Column...</option>
-                        {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </>}
-                    {block.type === "aggregate" && <>
-                      <select value={block.config?.aggregation || "count"} onChange={(e) => updateBlockConfig(i, "aggregation", e.target.value)} style={cfgInput}>
-                        {AGGREGATIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-                      </select>
-                      <select value={block.config?.column || ""} onChange={(e) => updateBlockConfig(i, "column", e.target.value)} style={cfgInput}>
-                        <option value="">Column...</option>
-                        {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <input placeholder="Group by" value={block.config?.group_by || ""} onChange={(e) => updateBlockConfig(i, "group_by", e.target.value)} style={{ ...cfgInput, gridColumn: "span 2" }} />
-                    </>}
-                    {block.type === "generate" && <>
-                      <input type="number" placeholder="Count" value={block.config?.count || ""} onChange={(e) => updateBlockConfig(i, "count", parseInt(e.target.value) || 1)} style={cfgInput} />
-                      <span style={{ fontSize: 10, color: "#999", padding: 4 }}>Configure fields as JSON below</span>
-                      <textarea placeholder='{"temperature":{"type":"float","min":27,"max":36},"humidity":{"type":"float","min":55,"max":95},"description":{"type":"choice","options":["clear sky","clouds","rain"]}}'
-                        value={typeof block.config?.fields === "object" ? JSON.stringify(block.config.fields) : (block.config?.fields || "")}
-                        onChange={(e) => { try { updateBlockConfig(i, "fields", JSON.parse(e.target.value)); } catch {} }}
-                        style={{ ...cfgInput, gridColumn: "span 2", fontFamily: "monospace", fontSize: 10, minHeight: 60 }} />
-                    </>}
-                    {block.type === "insert" && <>
-                      <select value={block.config?.table || ""} onChange={(e) => updateBlockConfig(i, "table", e.target.value)} style={{ ...cfgInput, gridColumn: "span 2" }}>
-                        <option value="">Insert into table...</option>
-                        {tables.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
-                      </select>
-                    </>}
-                    {block.type === "output" && <>
-                      <select value={block.config?.format || "table"} onChange={(e) => updateBlockConfig(i, "format", e.target.value)} style={{ ...cfgInput, gridColumn: "span 2" }}>
-                        {OUTPUT_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
-                      </select>
-                    </>}
-                    {block.type === "notify" && <>
-                      <input placeholder="Title" value={block.config?.title || ""} onChange={(e) => updateBlockConfig(i, "title", e.target.value)} style={cfgInput} />
-                      <select value={block.config?.type || "info"} onChange={(e) => updateBlockConfig(i, "type", e.target.value)} style={cfgInput}>
-                        {["info", "success", "warning", "error"].map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <input placeholder="Message" value={block.config?.message || ""} onChange={(e) => updateBlockConfig(i, "message", e.target.value)} style={{ ...cfgInput, gridColumn: "span 2" }} />
-                    </>}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {blocks.length === 0 && (
-        <div style={{ padding: 40, background: "#fff", borderRadius: 8, border: editing ? "2px dashed #7c3aed" : "1px solid #e2e8f0", textAlign: "center", color: "#999" }}>
-          {editing ? "Click a block type above to start building your flow" : "Empty flow. Click Edit Flow to add blocks."}
-        </div>
-      )}
-
-      {/* Run results */}
-      {runResult && (
-        <div style={{ marginTop: 16, padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-          <h3 style={{ margin: "0 0 8px", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
-            Results
-            {runResult.error ? <span style={{ color: "#e53e3e", fontWeight: 400, fontSize: 12 }}>{runResult.error}</span> : null}
-          </h3>
-          {runResult.results && runResult.results.map((r, i) => (
-            <div key={i} style={{ marginBottom: 8, padding: 8, background: "#f7f7f7", borderRadius: 4, fontSize: 12 }}>
-              <strong>{r.block}:</strong>{" "}
-              {r.error ? <span style={{ color: "#e53e3e" }}>{r.error}</span> : null}
-              {r.rows ? <span>{r.rows.length} rows</span> : null}
-              {r.value !== undefined ? <span>{JSON.stringify(r.value)}</span> : null}
-              {r.message ? <span style={{ color: "#059669" }}>{r.message}</span> : null}
-            </div>
-          ))}
-          {runResult.data && (
-            <div style={{ overflow: "auto", maxHeight: 300, fontSize: 11 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{Object.keys(runResult.data[0] || {}).map((k) => <th key={k} style={{ border: "1px solid #eee", padding: 4, background: "#f9fafb" }}>{k}</th>)}</tr></thead>
-                <tbody>{(runResult.data || []).slice(0, 50).map((r, i) => <tr key={i}>{Object.values(r).map((v, j) => <td key={j} style={{ border: "1px solid #eee", padding: 4 }}>{v != null ? String(v) : ""}</td>)}</tr>)}</tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-    </>
+    <FlowCanvas
+      nodes={cfg.nodes || []}
+      edges={cfg.edges || []}
+      tables={tables}
+      onSave={isOwner ? handleSave : undefined}
+      onRun={handleRun}
+      runResult={runResult}
+      readOnly={!isOwner}
+    />
   );
 }
+
+// Old linear block editor removed — FlowCanvas handles everything now
 
 // ─── Notebook renderer (Jupyter iframe) ──────────────────────────────────────
 function NotebookRenderer({ page, isOwner }) {

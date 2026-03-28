@@ -217,6 +217,30 @@ def update_task_run(conn, page_id: str, config: dict, success: bool, message: st
     conn.commit()
 
 
+def topological_sort(nodes: list, edges: list) -> list:
+    """Convert canvas graph to execution-ordered block list."""
+    in_deg = {n["id"]: 0 for n in nodes}
+    adj = {n["id"]: [] for n in nodes}
+    for e in edges:
+        if e.get("from") in adj:
+            adj[e["from"]].append(e["to"])
+        if e.get("to") in in_deg:
+            in_deg[e["to"]] += 1
+
+    queue = [nid for nid, deg in in_deg.items() if deg == 0]
+    order = []
+    while queue:
+        cur = queue.pop(0)
+        order.append(cur)
+        for nxt in adj.get(cur, []):
+            in_deg[nxt] -= 1
+            if in_deg[nxt] == 0:
+                queue.append(nxt)
+
+    node_map = {n["id"]: n for n in nodes}
+    return [{"type": node_map[nid]["type"], "config": node_map[nid].get("config", {})} for nid in order if nid in node_map]
+
+
 def real_table_name(org_id: str, table_name: str) -> str:
     """Same logic as frontend org-tables.js — org-prefixed table name."""
     short = org_id.replace("-", "")[:8]
@@ -361,7 +385,14 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
     config = task["config"]
 
     if page_type == "visual":
-        blocks = config.get("blocks", [])
+        # Support both formats: canvas (nodes+edges) and legacy (blocks list)
+        nodes = config.get("nodes", [])
+        edges = config.get("edges", [])
+        if nodes:
+            # Canvas format — topological sort to get execution order
+            blocks = topological_sort(nodes, edges)
+        else:
+            blocks = config.get("blocks", [])
         if not blocks:
             return False, "No blocks configured"
         return execute_flow_blocks(conn, task["org_id"], blocks, user_id=task.get("user_id"))
