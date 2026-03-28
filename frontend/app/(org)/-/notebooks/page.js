@@ -84,11 +84,10 @@ export default function NotebooksPage() {
   const columns = [
     { key: "key", label: "Notebook" },
     { key: "username", label: "Created By" },
-    { key: "status", label: "Status", render: (v) => (
+    { key: "status", label: "Status", render: () => (
       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, fontWeight: 600,
-        background: v === "active" ? "#f0fde8" : "#f7f7f7",
-        color: v === "active" ? "#38a169" : "#999",
-      }}>{v}</span>
+        background: "#e8f4ff", color: "#0070f3",
+      }}>available</span>
     )},
     { key: "updated_at", label: "Last Active", render: (v) => <DateTimeCell value={v} /> },
   ];
@@ -120,15 +119,9 @@ export default function NotebooksPage() {
       />
       {error && <p style={{ color: "#e53e3e", margin: "8px 0 0", fontSize: 13 }}>{error}</p>}
 
-      <div style={{ marginTop: 24, padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-        <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Quick Start</h3>
-        <pre style={{ background: "#f7f7f7", padding: 12, borderRadius: 6, fontSize: 12, overflow: "auto", lineHeight: 1.6, margin: 0 }}>
-{`# Auto-injected: query(), tables(), files(), db
-tables()                    # list your org's tables
-df = query("SELECT ...")    # query into DataFrame
-files()                     # list org file storage`}
-        </pre>
-      </div>
+      <p style={{ marginTop: 16, fontSize: 12, color: "#94a3b8", textAlign: "center" }}>
+        Notebooks include pre-injected SDK helpers. See <a href="/-/sdk" style={{ color: "#3b82f6" }}>SDK Documentation</a> for code examples.
+      </p>
     </div>
   );
 }

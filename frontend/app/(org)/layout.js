@@ -23,6 +23,7 @@ const NAV_SECTIONS = [
       { href: "/-/tasks", label: "Tasks", icon: "\u23F0", permission: "tasks.view", feature: null },
       { href: "/-/services", label: "Services", icon: "\u2699", permission: "services.manage", feature: "python_services" },
       { href: "/-/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: "notebooks.use", feature: "notebooks" },
+      { href: "/-/sdk", label: "SDK Docs", icon: "\u{1F4D6}", permission: null, feature: null },
     ],
   },
   {
