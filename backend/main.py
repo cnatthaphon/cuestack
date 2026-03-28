@@ -16,7 +16,11 @@ from mqtt_bridge import run_mqtt_bridge
 from service_manager import run_service_manager
 import channels as ch
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    import warnings
+    warnings.warn("SECRET_KEY not set — using dev default. DO NOT use in production.", stacklevel=1)
+    SECRET_KEY = "dev-only-not-for-production"
 MQTT_BROKER = os.getenv("MQTT_BROKER", "mqtt")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 
@@ -59,7 +63,7 @@ app.add_middleware(
     allow_origins=[os.getenv("CORS_ORIGIN", "http://localhost:8080")],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-Channel-Token", "Cookie"],
 )
 
 
@@ -89,7 +93,7 @@ def health():
     checks = {"service": "ok", "database": "unknown", "scheduler": "running"}
     try:
         import psycopg2
-        conn = psycopg2.connect(os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack"))
+        conn = psycopg2.connect(os.getenv("DATABASE_URL", ""))
         cur = conn.cursor()
         cur.execute("SELECT 1")
         conn.close()

@@ -82,7 +82,10 @@ export async function createOrgTable(orgId, { name, db_type, columns, descriptio
       } else if (col.type === "timestamp" || col.type === "date") {
         if (dv === "now" || dv === "NOW()") def += " DEFAULT NOW()";
       } else {
-        def += ` DEFAULT '${String(dv).replace(/'/g, "''")}'`;
+        // SECURITY: DDL defaults can't use parameterized queries.
+        // Sanitize: escape quotes + limit length to prevent abuse.
+        const sanitized = String(dv).slice(0, 200).replace(/'/g, "''").replace(/\\/g, "");
+        def += ` DEFAULT '${sanitized}'`;
       }
     }
     colDefs.push(def);

@@ -3,9 +3,11 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { query } from "./db.js";
 
-const SECRET = new TextEncoder().encode(
-  process.env.SECRET_KEY || "dev-secret-change-in-prod"
-);
+const _secretKey = process.env.SECRET_KEY;
+if (!_secretKey && process.env.NODE_ENV === "production") {
+  throw new Error("FATAL: SECRET_KEY environment variable is required in production");
+}
+const SECRET = new TextEncoder().encode(_secretKey || "dev-only-not-for-production");
 const COOKIE_NAME = "iot-session";
 const TOKEN_EXPIRY = "24h";
 const BCRYPT_ROUNDS = 12;
@@ -132,6 +134,8 @@ export async function seedData() {
   const { seedPermissions, createDefaultRoles, getAdminRoleId } = await import("./permissions.js");
   const { assignPlanFeatures } = await import("./features.js");
 
+  // Skip seeding in production unless explicitly enabled
+  if (process.env.NODE_ENV === "production" && process.env.SEED_DATA !== "true") return;
   if (process.env.SEED_DATA === "false") return;
 
   // Seed all permissions

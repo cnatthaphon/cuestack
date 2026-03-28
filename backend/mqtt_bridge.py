@@ -70,7 +70,7 @@ async def run_mqtt_bridge():
     import psycopg2
     import psycopg2.extras
 
-    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
 
     # Map org_short -> org_id
     org_cache = {}
