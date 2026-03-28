@@ -297,6 +297,41 @@ export async function initDB() {
       expires_at TIMESTAMPTZ
     )
   `);
+
+  // Real-time channels (unified MQTT topics / WebSocket channels)
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_channels (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(200) NOT NULL,
+      description VARCHAR(500),
+      channel_type VARCHAR(20) DEFAULT 'data',
+      config JSONB DEFAULT '{}',
+      is_active BOOLEAN DEFAULT true,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      message_count BIGINT DEFAULT 0,
+      last_message_at TIMESTAMPTZ,
+      UNIQUE(org_id, name)
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_channels_org ON org_channels (org_id, is_active)`);
+
+  // Channel tokens (publish/subscribe credentials for devices/apps)
+  await query(`
+    CREATE TABLE IF NOT EXISTS channel_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      token_hash VARCHAR(255) NOT NULL,
+      token_prefix VARCHAR(20) NOT NULL,
+      permissions JSONB DEFAULT '[]',
+      is_active BOOLEAN DEFAULT true,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ
+    )
+  `);
 }
 
 // Create restricted user for Jupyter notebooks

@@ -15,6 +15,7 @@ const NAV_SECTIONS = [
       { href: "/-/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
       { href: "/-/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
       { href: "/-/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
+      { href: "/-/channels", label: "Channels", icon: "\u{1F4E1}", permission: "db.view", feature: null },
       { href: "/-/services", label: "Services", icon: "\u2699", permission: "services.manage", feature: "python_services" },
       { href: "/-/tasks", label: "Tasks", icon: "\u23F0", permission: "tasks.view", feature: null },
     ],
