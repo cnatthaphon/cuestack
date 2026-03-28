@@ -96,7 +96,8 @@ window.IoTStack = {
   subscribe(channel, callback) {
     if (!this._ws) {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      this._ws = new WebSocket(`${protocol}//${window.location.host}/ws/channels`);
+      const host = window.location.port === '3000' ? window.location.hostname + ':8080' : window.location.host;
+      this._ws = new WebSocket(`${protocol}//${host}/ws/channels`);
       this._ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
