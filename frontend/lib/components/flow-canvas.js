@@ -6,11 +6,15 @@ import { useState, useRef, useCallback, useEffect } from "react";
 const NODE_TYPES = [
   { id: "data_source", label: "Data Source", icon: "\u{1F4BE}", color: "#0070f3", inputs: 0, outputs: 1, category: "Input" },
   { id: "generate", label: "Generate", icon: "\u{1F3B2}", color: "#8b5cf6", inputs: 0, outputs: 1, category: "Input" },
+  { id: "mqtt_subscribe", label: "MQTT Subscribe", icon: "\u{1F4E1}", color: "#0891b2", inputs: 0, outputs: 1, category: "Input" },
   { id: "filter", label: "Filter", icon: "\u{1F50D}", color: "#7c3aed", inputs: 1, outputs: 1, category: "Process" },
   { id: "transform", label: "Transform", icon: "\u2699", color: "#059669", inputs: 1, outputs: 1, category: "Process" },
+  { id: "decode_protobuf", label: "Decode Protobuf", icon: "\u{1F510}", color: "#4f46e5", inputs: 1, outputs: 1, category: "Process" },
   { id: "aggregate", label: "Aggregate", icon: "\u{1F4CA}", color: "#d97706", inputs: 1, outputs: 1, category: "Process" },
   { id: "join", label: "Join", icon: "\u{1F517}", color: "#06b6d4", inputs: 2, outputs: 1, category: "Process" },
   { id: "insert", label: "Insert to DB", icon: "\u{1F4E5}", color: "#16a34a", inputs: 1, outputs: 0, category: "Output" },
+  { id: "ws_publish", label: "WS Broadcast", icon: "\u{1F4E2}", color: "#ea580c", inputs: 1, outputs: 0, category: "Output" },
+  { id: "mqtt_publish", label: "MQTT Publish", icon: "\u{1F4E4}", color: "#0891b2", inputs: 1, outputs: 0, category: "Output" },
   { id: "output", label: "Output", icon: "\u{1F4E4}", color: "#dc2626", inputs: 1, outputs: 0, category: "Output" },
   { id: "notify", label: "Notify", icon: "\u{1F514}", color: "#ec4899", inputs: 1, outputs: 0, category: "Output" },
 ];
@@ -490,6 +494,51 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
           </Field>
           <Field label="Join Key">
             <input value={cfg.join_key || ""} onChange={(e) => onUpdate("join_key", e.target.value)} placeholder="column name" disabled={readOnly} style={propInput} />
+          </Field>
+        </>}
+
+        {node.type === "mqtt_subscribe" && <>
+          <Field label="Topic">
+            <input value={cfg.topic || ""} onChange={(e) => onUpdate("topic", e.target.value)} placeholder="sensors/weather" disabled={readOnly} style={propInput} />
+          </Field>
+          <Field label="Format">
+            <select value={cfg.format || "json"} onChange={(e) => onUpdate("format", e.target.value)} disabled={readOnly} style={propInput}>
+              <option value="json">JSON</option>
+              <option value="protobuf">Protobuf (binary)</option>
+            </select>
+          </Field>
+        </>}
+
+        {node.type === "decode_protobuf" && <>
+          <Field label="Schema">
+            <select value={cfg.schema || "sensor_data"} onChange={(e) => onUpdate("schema", e.target.value)} disabled={readOnly} style={propInput}>
+              <option value="sensor_data">Sensor Data (temp, humidity, pressure)</option>
+              <option value="custom">Custom (define fields)</option>
+            </select>
+          </Field>
+          {cfg.schema === "custom" && (
+            <Field label="Fields (JSON)">
+              <textarea value={typeof cfg.fields === "object" ? JSON.stringify(cfg.fields) : "{}"} onChange={(e) => { try { onUpdate("fields", JSON.parse(e.target.value)); } catch {} }}
+                disabled={readOnly} style={{ ...propInput, fontFamily: "monospace", fontSize: 10, minHeight: 60 }} />
+            </Field>
+          )}
+        </>}
+
+        {node.type === "ws_publish" && <>
+          <Field label="Channel">
+            <input value={cfg.channel || ""} onChange={(e) => onUpdate("channel", e.target.value)} placeholder="dashboard/live" disabled={readOnly} style={propInput} />
+          </Field>
+        </>}
+
+        {node.type === "mqtt_publish" && <>
+          <Field label="Topic">
+            <input value={cfg.topic || ""} onChange={(e) => onUpdate("topic", e.target.value)} placeholder="devices/ack" disabled={readOnly} style={propInput} />
+          </Field>
+          <Field label="Payload">
+            <select value={cfg.payload_type || "json"} onChange={(e) => onUpdate("payload_type", e.target.value)} disabled={readOnly} style={propInput}>
+              <option value="json">JSON</option>
+              <option value="protobuf">Protobuf</option>
+            </select>
           </Field>
         </>}
       </div>

@@ -317,6 +317,22 @@ export async function initDB() {
   `);
   await query(`CREATE INDEX IF NOT EXISTS idx_channels_org ON org_channels (org_id, is_active)`);
 
+  // Audit log — who did what when (compliance)
+  await query(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id BIGSERIAL PRIMARY KEY,
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      user_id INTEGER,
+      action VARCHAR(50) NOT NULL,
+      resource_type VARCHAR(30),
+      resource_id VARCHAR(100),
+      details JSONB DEFAULT '{}',
+      ip_address VARCHAR(45),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_audit_org ON audit_log (org_id, created_at DESC)`);
+
   // Channel tokens (publish/subscribe credentials for devices/apps)
   await query(`
     CREATE TABLE IF NOT EXISTS channel_tokens (

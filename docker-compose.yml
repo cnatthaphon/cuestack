@@ -22,11 +22,15 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
       JUPYTER_URL: http://jupyter:8888
       SCHEDULER_POLL_INTERVAL: ${SCHEDULER_POLL_INTERVAL:-60}
+      MQTT_BROKER: mqtt
+      MQTT_PORT: 1883
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      mqtt:
+        condition: service_started
     volumes:
       - ./backend:/app
     healthcheck:
@@ -62,6 +66,20 @@ services:
     # Scale: docker compose up --scale frontend=N
     # Stateless — JWT auth works across instances
 
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mqtt_data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/broker/uptime' -C 1 -W 2 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   jupyter:
     build: ./jupyter
     environment:
@@ -93,3 +111,4 @@ volumes:
   pgdata:
   jupyter_workspaces:
   org_files:
+  mqtt_data:

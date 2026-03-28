@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useUser } from "../../../../lib/user-context.js";
 import FlowCanvas from "../../../../lib/components/flow-canvas.js";
@@ -306,6 +306,7 @@ const WIDGET_TYPES = [
   { id: "table", label: "Table", icon: "\u{1F4CB}" },
   { id: "text", label: "Text", icon: "\u{1F4DD}" },
   { id: "pie", label: "Pie", icon: "\u{1F967}" },
+  { id: "live", label: "Live", icon: "\u{1F4E1}" },
 ];
 
 function DashboardRenderer({ page, isOwner, saveConfig }) {
@@ -781,6 +782,17 @@ client.notify("Title", message="") # send notification`}
 function WidgetConfig({ widget, tables, getTableCols, updateConfig }) {
   const { type, config } = widget;
   if (type === "text") return <textarea value={config?.text || ""} onChange={(e) => updateConfig("text", e.target.value)} style={{ width: "100%", padding: 6, border: "1px solid #ddd", borderRadius: 4, fontSize: 12, minHeight: 50, boxSizing: "border-box" }} />;
+  if (type === "live") return (
+    <div style={{ fontSize: 12 }}>
+      <input placeholder="Channel name" value={config?.channel || ""} onChange={(e) => updateConfig("channel", e.target.value)} style={cfgInput} />
+      <input placeholder="Data field to display" value={config?.field || ""} onChange={(e) => updateConfig("field", e.target.value)} style={cfgInput} />
+      <select value={config?.display || "value"} onChange={(e) => updateConfig("display", e.target.value)} style={cfgInput}>
+        <option value="value">Latest Value</option>
+        <option value="chart">Live Chart</option>
+        <option value="log">Message Log</option>
+      </select>
+    </div>
+  );
   return (
     <div style={{ fontSize: 12 }}>
       <input placeholder="Title/Label" value={config?.title || config?.label || ""} onChange={(e) => updateConfig(type === "stat" ? "label" : "title", e.target.value)} style={cfgInput} />
@@ -816,9 +828,11 @@ function WidgetConfig({ widget, tables, getTableCols, updateConfig }) {
 }
 
 function WidgetView({ widget, data }) {
+  const { type, config } = widget;
+  // Live widget — WebSocket subscription
+  if (type === "live") return <LiveWidget config={config} />;
   if (!data) return <div style={{ color: "#ccc", fontSize: 13 }}>Loading...</div>;
   if (data.error) return <div style={{ color: "#e53e3e", fontSize: 12 }}>{data.error}</div>;
-  const { type, config } = widget;
   if (type === "stat") return <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#666", textTransform: "uppercase" }}>{data.label}</div><div style={{ fontSize: 32, fontWeight: 700 }}>{data.value ?? "\u2014"}</div></div>;
   if (type === "text") return <div style={{ fontSize: 14, lineHeight: 1.6 }}>{config?.text || ""}</div>;
   if (type === "table") return (
@@ -849,6 +863,93 @@ function WidgetView({ widget, data }) {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Live widget (WebSocket subscription) ─────────────────────────────────────
+function LiveWidget({ config }) {
+  const [value, setValue] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef(null);
+
+  useEffect(() => {
+    if (!config?.channel) return;
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/channels`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ action: "subscribe", channel: config.channel }));
+      setConnected(true);
+    };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.data) {
+          const field = config.field || Object.keys(msg.data).find((k) => typeof msg.data[k] === "number");
+          if (field && msg.data[field] !== undefined) {
+            setValue(msg.data[field]);
+            setHistory((prev) => [...prev.slice(-29), { t: new Date().toLocaleTimeString(), v: msg.data[field] }]);
+          }
+        }
+      } catch {}
+    };
+    ws.onclose = () => setConnected(false);
+    return () => ws.close();
+  }, [config?.channel, config?.field]);
+
+  if (!config?.channel) return <div style={{ color: "#999", fontSize: 12 }}>Configure channel name</div>;
+
+  const display = config.display || "value";
+
+  if (display === "chart" && history.length > 0) {
+    const max = Math.max(...history.map((h) => h.v), 1);
+    const h = 80;
+    return (
+      <div>
+        <div style={{ fontSize: 10, color: connected ? "#38a169" : "#999", marginBottom: 4 }}>
+          {connected ? "\u25CF" : "\u25CB"} {config.channel} {config.field ? `(${config.field})` : ""}
+        </div>
+        <svg width="100%" height={h + 15} viewBox={`0 0 ${Math.max(history.length * 12, 100)} ${h + 15}`}>
+          <polyline
+            points={history.map((p, i) => `${i * 12 + 6},${h - (p.v / max) * h}`).join(" ")}
+            fill="none" stroke="#0070f3" strokeWidth={1.5}
+          />
+          {history.length > 0 && (
+            <text x={history.length * 12 - 6} y={h - (history[history.length - 1].v / max) * h - 4}
+              fontSize={9} fill="#0070f3" textAnchor="end">{history[history.length - 1].v}</text>
+          )}
+        </svg>
+      </div>
+    );
+  }
+
+  if (display === "log") {
+    return (
+      <div>
+        <div style={{ fontSize: 10, color: connected ? "#38a169" : "#999", marginBottom: 4 }}>
+          {connected ? "\u25CF" : "\u25CB"} {config.channel}
+        </div>
+        <div style={{ fontSize: 10, fontFamily: "monospace", maxHeight: 120, overflow: "auto" }}>
+          {history.slice(-10).reverse().map((h, i) => (
+            <div key={i} style={{ color: "#666" }}>{h.t}: {h.v}</div>
+          ))}
+          {history.length === 0 && <div style={{ color: "#ccc" }}>Waiting...</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // Default: latest value
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 10, color: connected ? "#38a169" : "#999" }}>
+        {connected ? "\u25CF" : "\u25CB"} {config.channel}
+      </div>
+      <div style={{ fontSize: 32, fontWeight: 700 }}>{value ?? "\u2014"}</div>
+      {config.field && <div style={{ fontSize: 11, color: "#666" }}>{config.field}</div>}
+    </div>
+  );
+}
+
 const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13 };
 const btnGray = { padding: "8px 16px", background: "#f0f0f0", color: "#333", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 13 };
 const miniBtn = { padding: "1px 5px", background: "none", border: "1px solid #ddd", borderRadius: 2, cursor: "pointer", fontSize: 10, color: "#666" };
