@@ -143,6 +143,20 @@ def cron_matches(expr: str, dt: datetime) -> bool:
     )
 
 
+def cron_next_run(expr: str, after: datetime = None) -> str | None:
+    """Calculate next run time for a cron expression. Returns ISO string or None."""
+    if not after:
+        after = datetime.now(timezone.utc)
+    # Start from next minute
+    candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    # Check up to 7 days ahead
+    for _ in range(7 * 24 * 60):
+        if cron_matches(expr, candidate):
+            return candidate.isoformat()
+        candidate += timedelta(minutes=1)
+    return None
+
+
 def get_scheduled_tasks(conn) -> list:
     """Fetch all enabled scheduled tasks from user_pages."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -181,12 +195,15 @@ def update_task_run(conn, page_id: str, config: dict, success: bool, message: st
     Uses JSONB merge so concurrent user edits to other config keys are safe."""
     now = datetime.now(timezone.utc).isoformat()
     run_count = config["schedule"].get("run_count", 0) + 1
+    cron_expr = config["schedule"]["cron"]
+    next_run = cron_next_run(cron_expr)
     schedule_update = {
         "last_run": now,
         "last_status": "success" if success else "error",
         "run_count": run_count,
-        "cron": config["schedule"]["cron"],
+        "cron": cron_expr,
         "enabled": config["schedule"].get("enabled", True),
+        "next_run": next_run,
     }
     if message:
         schedule_update["last_message"] = message[:500]

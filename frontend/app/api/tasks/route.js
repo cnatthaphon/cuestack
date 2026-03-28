@@ -3,6 +3,46 @@ import { getCurrentUser } from "../../../lib/auth.js";
 import { query } from "../../../lib/db.js";
 import { hasPermission } from "../../../lib/permissions.js";
 
+// Compute next run from cron expression (checks next 7 days)
+function cronNextRun(expr) {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+
+  function matchField(field, val) {
+    if (field === "*") return true;
+    for (const part of field.split(",")) {
+      if (part.includes("/")) {
+        const [base, step] = part.split("/");
+        const s = parseInt(step);
+        const start = base === "*" ? 0 : parseInt(base);
+        if ((val - start) % s === 0 && val >= start) return true;
+      } else if (part.includes("-")) {
+        const [lo, hi] = part.split("-");
+        if (val >= parseInt(lo) && val <= parseInt(hi)) return true;
+      } else {
+        if (val === parseInt(part)) return true;
+      }
+    }
+    return false;
+  }
+
+  const now = new Date();
+  let candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() + 1, 0, 0);
+  for (let i = 0; i < 7 * 24 * 60; i++) {
+    if (
+      matchField(parts[0], candidate.getUTCMinutes()) &&
+      matchField(parts[1], candidate.getUTCHours()) &&
+      matchField(parts[2], candidate.getUTCDate()) &&
+      matchField(parts[3], candidate.getUTCMonth() + 1) &&
+      matchField(parts[4], candidate.getUTCDay())  // 0=Sun in JS
+    ) {
+      return candidate.toISOString();
+    }
+    candidate = new Date(candidate.getTime() + 60000);
+  }
+  return null;
+}
+
 // GET — list all scheduled tasks in org
 export async function GET() {
   const user = await getCurrentUser();
@@ -26,6 +66,11 @@ export async function GET() {
     .map((row) => {
       const cfg = typeof row.config === "string" ? JSON.parse(row.config) : (row.config || {});
       if (!cfg.schedule) return null;
+      // Compute next_run if not already set
+      const schedule = { ...cfg.schedule };
+      if (!schedule.next_run && schedule.cron) {
+        schedule.next_run = cronNextRun(schedule.cron);
+      }
       return {
         page_id: row.id,
         page_name: row.name,
@@ -34,7 +79,7 @@ export async function GET() {
         page_status: row.status,
         owner_name: row.owner_name,
         owner_id: row.owner_id,
-        schedule: cfg.schedule,
+        schedule,
         updated_at: row.updated_at,
       };
     })
