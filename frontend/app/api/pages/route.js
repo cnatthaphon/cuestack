@@ -10,6 +10,25 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const view = searchParams.get("view") || "my";
+  const typeFilter = searchParams.get("type"); // filter by page_type (e.g., ?type=notebook)
+
+  // Filtered view by page_type — returns all org pages of that type
+  if (typeFilter) {
+    const VALID_TYPES = ["dashboard", "html", "visual", "notebook", "python"];
+    if (!VALID_TYPES.includes(typeFilter)) {
+      return NextResponse.json({ error: "Invalid type" }, { status: 400 });
+    }
+    const result = await query(
+      `SELECT p.id, p.name, p.slug, p.icon, p.page_type, p.config, p.visibility, p.updated_at,
+              u.username
+       FROM user_pages p
+       LEFT JOIN users u ON p.user_id = u.id
+       WHERE p.org_id = $1 AND p.page_type = $2 AND p.entry_type = 'page'
+       ORDER BY p.updated_at DESC`,
+      [user.org_id, typeFilter]
+    );
+    return NextResponse.json({ pages: result.rows });
+  }
 
   if (view === "shared") {
     const roleIds = await getRoleIds(user.id);
