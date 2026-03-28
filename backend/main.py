@@ -13,6 +13,7 @@ from pipelines import (
 )
 from scheduler import run_scheduler
 from mqtt_bridge import run_mqtt_bridge
+from service_manager import run_service_manager
 import channels as ch
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
@@ -23,9 +24,11 @@ async def lifespan(app):
     # Start background tasks
     scheduler_task = asyncio.create_task(run_scheduler())
     mqtt_task = asyncio.create_task(run_mqtt_bridge())
+    service_task = asyncio.create_task(run_service_manager())
     yield
     scheduler_task.cancel()
     mqtt_task.cancel()
+    service_task.cancel()
 
 
 app = FastAPI(title="IoT Stack — Pipeline Service", version="0.1.0", lifespan=lifespan)
