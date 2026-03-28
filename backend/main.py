@@ -1,7 +1,7 @@
 import os
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from jose import jwt, JWTError
@@ -12,6 +12,7 @@ from pipelines import (
     create_summary_pipeline,
 )
 from scheduler import run_scheduler
+import channels as ch
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
 
@@ -140,3 +141,118 @@ async def pipeline_summary(user=Depends(require_auth)):
     ctx = PipelineContext(org_id=org_id, raw_data={})
     ctx = await pipeline.run(ctx)
     return ctx.response
+
+
+# --- WebSocket channels ---
+
+@app.websocket("/ws/channels")
+async def ws_channels(websocket: WebSocket):
+    """WebSocket endpoint for real-time channel subscription.
+
+    Client sends: {"action": "subscribe", "channel": "sensors/temp", "token": "cht_..."}
+    Server sends: {"channel": "sensors/temp", "data": {...}, "timestamp": "..."}
+    """
+    await websocket.accept()
+    org_id = None
+
+    try:
+        while True:
+            msg = await websocket.receive_json()
+            action = msg.get("action")
+
+            # Authenticate on first message (token or JWT cookie)
+            if not org_id:
+                token = msg.get("token")
+                if token:
+                    auth = ch.authenticate_token(token)
+                    if auth:
+                        org_id = auth["org_id"]
+                    else:
+                        await websocket.send_json({"error": "Invalid token"})
+                        continue
+                else:
+                    # Try JWT from cookie
+                    cookie = websocket.cookies.get("iot-session")
+                    if cookie:
+                        try:
+                            payload = jwt.decode(cookie, SECRET_KEY, algorithms=["HS256"])
+                            org_id = payload.get("org_id")
+                        except JWTError:
+                            pass
+                    if not org_id:
+                        await websocket.send_json({"error": "Authentication required"})
+                        continue
+
+            if action == "subscribe":
+                channel = msg.get("channel")
+                if channel:
+                    valid = ch.get_org_channels(org_id)
+                    if channel in valid:
+                        await ch.subscribe(websocket, org_id, channel)
+                        await websocket.send_json({"subscribed": channel})
+                        # Send recent messages
+                        for m in ch.get_recent(org_id, channel, 10):
+                            await websocket.send_json(m)
+                    else:
+                        await websocket.send_json({"error": f"Channel '{channel}' not found"})
+
+            elif action == "unsubscribe":
+                channel = msg.get("channel")
+                if channel:
+                    await ch.unsubscribe(websocket, org_id, channel)
+                    await websocket.send_json({"unsubscribed": channel})
+
+            elif action == "publish":
+                channel = msg.get("channel")
+                data = msg.get("data", {})
+                if channel and org_id:
+                    count = await ch.publish(org_id, channel, data)
+                    await websocket.send_json({"published": channel, "subscribers": count})
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        pass
+    finally:
+        await ch.disconnect(websocket)
+
+
+# --- Channel publish (HTTP) ---
+
+class PublishRequest(BaseModel):
+    channel: str
+    data: dict
+
+
+@app.post("/api/channels/publish")
+async def channel_publish(body: PublishRequest, request: Request):
+    """Publish data to a channel via HTTP (for devices/scripts)."""
+    # Auth via token header or JWT cookie
+    token = request.headers.get("X-Channel-Token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    org_id = None
+
+    if token and token.startswith("cht_"):
+        auth = ch.authenticate_token(token)
+        if auth:
+            org_id = auth["org_id"]
+    else:
+        # Try JWT
+        cookie = request.cookies.get("iot-session")
+        if cookie:
+            try:
+                payload = jwt.decode(cookie, SECRET_KEY, algorithms=["HS256"])
+                org_id = payload.get("org_id")
+            except JWTError:
+                pass
+
+    if not org_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    count = await ch.publish(org_id, body.channel, body.data)
+    return {"ok": True, "channel": body.channel, "subscribers": count}
+
+
+@app.get("/api/channels/stats")
+async def channel_stats():
+    """Get real-time channel stats."""
+    return ch.get_stats()
