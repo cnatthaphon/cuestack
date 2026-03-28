@@ -122,7 +122,7 @@ export default function DataTable({
                 <th
                   key={col.key}
                   style={{ ...thStyle, width: col.width, cursor: col.sortable !== false ? "pointer" : "default", userSelect: "none" }}
-                  onClick={() => col.sortable !== false && toggleSort(col.key)}
+                  onClick={() => col.sortable !== false && toggleSort(col.dataKey || col.key)}
                 >
                   {col.label}
                   {sortKey === col.key && (
@@ -145,11 +145,14 @@ export default function DataTable({
                     <input type="checkbox" checked={selected.has(row[idKey])} onChange={() => toggleSelect(row[idKey])} />
                   </td>
                 )}
-                {columns.map((col) => (
-                  <td key={col.key} style={tdStyle}>
-                    {col.render ? col.render(row[col.key], row) : (row[col.key] != null ? String(row[col.key]) : "\u2014")}
-                  </td>
-                ))}
+                {columns.map((col) => {
+                  const dk = col.dataKey || col.key;
+                  return (
+                    <td key={col.key} style={tdStyle}>
+                      {col.render ? col.render(row[dk], row) : (row[dk] != null ? String(row[dk]) : "\u2014")}
+                    </td>
+                  );
+                })}
                 {actions && (
                   <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                     {actions(row)}
