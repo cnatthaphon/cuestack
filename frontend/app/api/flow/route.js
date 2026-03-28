@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../lib/auth.js";
-import { queryData } from "../../../lib/org-tables.js";
+import { queryData, insertData } from "../../../lib/org-tables.js";
 import { query } from "../../../lib/db.js";
 
 // POST — execute a visual flow (block pipeline)
