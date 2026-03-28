@@ -1,0 +1,26 @@
+syntax = "proto3";
+package iotstack;
+
+message SensorData {
+  string device_id = 1;
+  float temperature = 2;
+  float humidity = 3;
+  float pressure = 4;
+  uint64 timestamp = 5;
+  map<string, float> extra = 6;
+}
+
+message DeviceCommand {
+  string command_id = 1;
+  string command = 2;
+  string payload = 3;
+  uint64 timestamp = 4;
+}
+
+message CommandAck {
+  string command_id = 1;
+  string device_name = 2;
+  string status = 3;
+  string message = 4;
+  uint64 timestamp = 5;
+}

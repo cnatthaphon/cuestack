@@ -348,6 +348,26 @@ export async function initDB() {
       last_used_at TIMESTAMPTZ
     )
   `);
+
+  // Device registry — tracks MQTT/IoT devices per org
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_devices (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      device_id VARCHAR(100) NOT NULL,
+      name VARCHAR(100) NOT NULL,
+      device_type VARCHAR(50) DEFAULT 'sensor',
+      status VARCHAR(20) DEFAULT 'offline',
+      token_id VARCHAR(100),
+      last_seen_at TIMESTAMPTZ,
+      message_count BIGINT DEFAULT 0,
+      metadata JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, device_id)
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_devices_org ON org_devices (org_id, status)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON org_devices (org_id, last_seen_at DESC)`);
 }
 
 // Create restricted user for Jupyter notebooks
