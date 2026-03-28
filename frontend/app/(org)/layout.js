@@ -6,22 +6,27 @@ import Link from "next/link";
 import { UserProvider, useUser } from "../../lib/user-context.js";
 import TopBar from "../../lib/components/top-bar.js";
 
-// Nav sections — system pages under /-/ prefix
-// Workspace (personal pages) rendered separately as tree at top
+// System pages — grouped by category
 const NAV_SECTIONS = [
   {
     label: "Data",
     items: [
       { href: "/-/databases", label: "Databases", icon: "\u{1F4BE}", permission: "db.view", feature: "databases" },
       { href: "/-/files", label: "Files", icon: "\u{1F4C1}", permission: "files.view", feature: null },
-      { href: "/-/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
       { href: "/-/channels", label: "Channels", icon: "\u{1F4E1}", permission: "db.view", feature: null },
-      { href: "/-/services", label: "Services", icon: "\u2699", permission: "services.manage", feature: "python_services" },
-      { href: "/-/tasks", label: "Tasks", icon: "\u23F0", permission: "tasks.view", feature: null },
+      { href: "/-/api-keys", label: "API Keys", icon: "\u{1F510}", permission: "org.settings", feature: "api" },
     ],
   },
   {
-    label: "Settings",
+    label: "Automation",
+    items: [
+      { href: "/-/tasks", label: "Tasks", icon: "\u23F0", permission: "tasks.view", feature: null },
+      { href: "/-/services", label: "Services", icon: "\u2699", permission: "services.manage", feature: "python_services" },
+      { href: "/-/notebooks", label: "Notebooks", icon: "\u{1F4D3}", permission: "notebooks.use", feature: "notebooks" },
+    ],
+  },
+  {
+    label: "Admin",
     items: [
       { href: "/-/users", label: "Users", icon: "\u{1F465}", permission: "users.view", feature: null },
       { href: "/-/roles", label: "Roles", icon: "\u{1F6E1}", permission: "roles.manage", feature: null },
@@ -54,7 +59,6 @@ function OrgShell({ children }) {
     const pageId = pathname.split("/my/")[1];
     const page = myPages.find((p) => p.id === pageId);
     if (page && page.parent_id) {
-      // Expand all ancestor folders
       const toExpand = {};
       let current = page.parent_id;
       while (current) {
@@ -62,17 +66,12 @@ function OrgShell({ children }) {
         const parent = myPages.find((p) => p.id === current);
         current = parent?.parent_id || null;
       }
-      if (Object.keys(toExpand).length > 0) {
-        setExpandedFolders((f) => ({ ...f, ...toExpand }));
-      }
+      if (Object.keys(toExpand).length > 0) setExpandedFolders((f) => ({ ...f, ...toExpand }));
     }
     setAutoExpanded(true);
   }
 
-  if (loading) {
-    return <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", color: "#666" }}>Loading...</div>;
-  }
-
+  if (loading) return <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", color: "#999", fontFamily: "system-ui" }}>Loading...</div>;
   if (!user) return null;
 
   const filterItems = (items) => items.filter((item) => {
@@ -81,96 +80,67 @@ function OrgShell({ children }) {
     return true;
   });
 
-  // Drag indicator for workspace tree
   const onDragOverItem = (targetId) => setDragOverTarget(targetId);
   const onDragLeaveItem = () => setDragOverTarget(null);
 
+  const navWidth = collapsed ? 52 : 240;
+
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      {/* Left Nav */}
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}>
+      {/* Left Nav — fixed, full height */}
       <nav style={{
-        width: collapsed ? 56 : 220,
-        background: "#1a1a2e",
-        color: "#fff",
-        display: "flex",
-        flexDirection: "column",
-        transition: "width 0.2s ease",
-        flexShrink: 0,
-        position: "fixed",
-        top: 0,
-        left: 0,
-        bottom: 0,
-        zIndex: 10,
-        overflowY: "auto",
+        width: navWidth, background: "#0f172a", color: "#e2e8f0",
+        display: "flex", flexDirection: "column",
+        transition: "width 0.2s ease", flexShrink: 0,
+        position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 10,
         overflowX: "hidden",
       }}>
-        {/* Header */}
-        <div style={{ padding: collapsed ? "16px 8px" : "16px 16px", borderBottom: "1px solid #2a2a4a" }}>
+        {/* Brand */}
+        <div style={{ padding: collapsed ? "14px 8px" : "14px 16px", borderBottom: "1px solid #1e293b", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "space-between" }}>
             {!collapsed && (
-              <Link href="/" style={{ fontWeight: 700, fontSize: 16, color: "#fff", textDecoration: "none" }}>
+              <Link href="/" style={{ fontWeight: 700, fontSize: 15, color: "#f1f5f9", textDecoration: "none", letterSpacing: -0.3 }}>
                 IoT Stack
               </Link>
             )}
-            <button
-              onClick={() => setCollapsed(!collapsed)}
-              style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 14, padding: "2px 6px" }}
-              title={collapsed ? "Expand" : "Collapse"}
-            >
+            <button onClick={() => setCollapsed(!collapsed)}
+              style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}
+              title={collapsed ? "Expand" : "Collapse"}>
               {collapsed ? "\u25B6" : "\u25C0"}
             </button>
           </div>
           {!collapsed && org && (
-            <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
-              {org.name} \u2022 {org.plan}
-            </div>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 3 }}>{org.name}</div>
           )}
         </div>
 
-        {/* Nav Content */}
-        <div style={{ flex: 1, padding: "4px 0", overflowY: "auto" }}>
+        {/* Scrollable nav content */}
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
 
-          {/* Pinned items — org pins + personal pins */}
+          {/* Pinned items */}
           {!collapsed && (pins?.org?.length > 0 || pins?.personal?.length > 0) && (
-            <div style={{ padding: "2px 0", borderBottom: "1px solid #2a2a4a" }}>
-              {pins?.org?.length > 0 && (
-                <>
-                  <div style={{ padding: "6px 16px 2px", fontSize: 9, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
-                    {"\u{1F4CC}"} Org Pinned
-                  </div>
-                  {pins.org.map((p) => (
-                    <PinnedItem key={`org-${p.id}`} page={p} pathname={pathname} isOrg />
-                  ))}
-                </>
-              )}
-              {pins?.personal?.length > 0 && (
-                <>
-                  <div style={{ padding: "6px 16px 2px", fontSize: 9, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
-                    {"\u2B50"} Pinned
-                  </div>
-                  {pins.personal.map((p) => (
-                    <PinnedItem key={`pin-${p.id}`} page={p} pathname={pathname} />
-                  ))}
-                </>
-              )}
+            <div style={{ padding: "6px 0 4px", borderBottom: "1px solid #1e293b" }}>
+              {pins?.org?.map((p) => <PinnedItem key={`o-${p.id}`} page={p} pathname={pathname} isOrg />)}
+              {pins?.personal?.map((p) => <PinnedItem key={`p-${p.id}`} page={p} pathname={pathname} />)}
             </div>
           )}
 
-          {/* Workspace — permission-gated page creation */}
-          <div style={{ padding: "2px 0", borderBottom: "1px solid #2a2a4a" }}>
+          {/* Workspace */}
+          <div style={{ borderBottom: "1px solid #1e293b" }}>
             {!collapsed && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px 2px" }}>
-                <button onClick={() => setDashExpanded(!dashExpanded)} style={{ background: "none", border: "none", color: "#aaa", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase", letterSpacing: 1, display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ fontSize: 8 }}>{dashExpanded ? "\u25BC" : "\u25B6"}</span> Workspace
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px 4px" }}>
+                <button onClick={() => setDashExpanded(!dashExpanded)}
+                  style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 10, padding: 0, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontSize: 7 }}>{dashExpanded ? "\u25BC" : "\u25B6"}</span> Workspace
                 </button>
                 {canCreate && (
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div style={{ display: "flex", gap: 2 }}>
                     <button onClick={async () => {
                       const name = prompt("Folder name:");
                       if (!name) return;
                       await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
                       refresh();
-                    }} style={plusBtn} title="New Folder">{"\u{1F4C1}"}</button>
+                    }} style={iconBtn} title="New Folder">{"\u{1F4C1}"}</button>
                     <select onChange={async (e) => {
                       const pt = e.target.value; e.target.value = "";
                       if (!pt) return;
@@ -179,7 +149,7 @@ function OrgShell({ children }) {
                       if (!name) return;
                       const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, page_type: pt }) });
                       if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.page.id}`; }
-                    }} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 11 }} title="New Page">
+                    }} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 13, padding: 0 }} title="New Page">
                       <option value="">+</option>
                       <option value="dashboard">{"\u{1F4CA}"} Dashboard</option>
                       {hasFeature("app_builder") && <option value="html">{"\u{1F310}"} Web Page</option>}
@@ -191,7 +161,9 @@ function OrgShell({ children }) {
               </div>
             )}
             {dashExpanded && !collapsed && (
-              <PageTree items={myPages || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} />
+              <div style={{ maxHeight: 280, overflowY: "auto", paddingBottom: 4 }}>
+                <PageTree items={myPages || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} />
+              </div>
             )}
             {collapsed && canCreate && (
               <button onClick={async () => {
@@ -199,84 +171,77 @@ function OrgShell({ children }) {
                 if (!name) return;
                 const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
                 if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.page.id}`; }
-              }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 14, padding: "6px 0" }} title="New Dashboard">{"\u{1F4CA}"}</button>
+              }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "8px 0" }} title="New">{"\u{1F4CA}"}</button>
             )}
           </div>
 
           {/* Shared with me */}
           {!collapsed && (sharedPages || []).length > 0 && (
-            <div style={{ padding: "2px 0", borderBottom: "1px solid #2a2a4a" }}>
-              <div style={{ padding: "6px 16px 2px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
-                Shared with me
-              </div>
+            <div style={{ borderBottom: "1px solid #1e293b" }}>
+              <div style={{ padding: "8px 14px 4px", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }}>Shared</div>
               {sharedPages.map((p) => {
                 const icons = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}" };
                 const active = pathname === `/my/${p.id}`;
                 return (
                   <Link key={p.id} href={`/my/${p.id}`} style={{
-                    display: "flex", alignItems: "center", gap: 8, padding: "5px 16px",
-                    color: active ? "#fff" : "#8a8aa0", textDecoration: "none", fontSize: 12,
-                    background: active ? "rgba(0,112,243,0.2)" : "transparent",
-                    borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+                    display: "flex", alignItems: "center", gap: 8, padding: "5px 14px",
+                    color: active ? "#f1f5f9" : "#94a3b8", textDecoration: "none", fontSize: 12,
+                    background: active ? "rgba(59,130,246,0.15)" : "transparent",
+                    borderLeft: active ? "3px solid #3b82f6" : "3px solid transparent",
                   }}>
-                    <span style={{ fontSize: 12 }}>{p.icon || icons[p.page_type] || "\u{1F4CA}"}</span>
-                    <span style={{ flex: 1 }}>{p.name}</span>
-                    <span style={{ fontSize: 9, color: "#555" }}>{p.owner_name}</span>
+                    <span style={{ fontSize: 11 }}>{p.icon || icons[p.page_type] || "\u{1F4CA}"}</span>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                    <span style={{ fontSize: 9, color: "#475569" }}>{p.owner_name}</span>
                   </Link>
                 );
               })}
             </div>
           )}
 
-          {/* Nav Sections */}
+          {/* System nav sections */}
           {NAV_SECTIONS.map((section, si) => {
             const items = filterItems(section.items);
             if (items.length === 0) return null;
             return (
               <div key={si}>
-                {section.label && !collapsed && (
-                  <div style={{ padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
+                {!collapsed && (
+                  <div style={{ padding: "10px 14px 3px", fontSize: 10, color: "#475569", textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }}>
                     {section.label}
                   </div>
                 )}
-                {section.label && collapsed && <div style={{ borderTop: "1px solid #2a2a4a", margin: "4px 12px" }} />}
+                {collapsed && <div style={{ borderTop: "1px solid #1e293b", margin: "4px 10px" }} />}
                 {items.map((item) => <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
               </div>
             );
           })}
-
         </div>
 
-        {/* Nav Footer — org info */}
-        <div style={{ padding: collapsed ? "12px 8px" : "12px 16px", borderTop: "1px solid #2a2a4a" }}>
+        {/* Footer */}
+        <div style={{ padding: collapsed ? "10px 6px" : "10px 14px", borderTop: "1px solid #1e293b", flexShrink: 0 }}>
           {!collapsed && org && (
-            <div style={{ fontSize: 11, color: "#555", textAlign: "center" }}>
-              {org.name} &middot; {org.plan}
+            <div style={{ fontSize: 10, color: "#475569", textAlign: "center" }}>
+              {org.plan} plan
             </div>
           )}
         </div>
       </nav>
 
-      {/* Main Area */}
+      {/* Main content area */}
       <div style={{
-        flex: 1,
-        marginLeft: collapsed ? 56 : 220,
-        display: "flex",
-        flexDirection: "column",
-        minHeight: "100vh",
-        transition: "margin-left 0.2s ease",
+        flex: 1, marginLeft: navWidth, display: "flex", flexDirection: "column",
+        minHeight: "100vh", transition: "margin-left 0.2s ease",
       }}>
-        {/* Top Bar */}
+        {/* Top bar */}
         <header style={{
           display: "flex", justifyContent: "flex-end", alignItems: "center",
-          padding: "8px 24px", background: "#fff", borderBottom: "1px solid #e2e8f0",
-          flexShrink: 0,
+          padding: "6px 20px", background: "#fff", borderBottom: "1px solid #e2e8f0",
+          flexShrink: 0, height: 44,
         }}>
           <TopBar />
         </header>
 
-        {/* Page Content */}
-        <main style={{ flex: 1, padding: 32, background: "#f8f9fa" }}>
+        {/* Page content */}
+        <main style={{ flex: 1, padding: "24px 28px", background: "#f8fafc" }}>
           {children}
         </main>
       </div>
@@ -288,39 +253,36 @@ function NavLink({ item, pathname, collapsed }) {
   const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
   return (
     <Link href={item.href} style={{
-      display: "flex", alignItems: "center", gap: 10, padding: "8px 16px",
-      color: active ? "#fff" : "#8a8aa0",
-      background: active ? "rgba(0,112,243,0.2)" : "transparent",
-      borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
-      textDecoration: "none", fontSize: 13, fontWeight: active ? 600 : 400,
-      transition: "all 0.15s", whiteSpace: "nowrap",
+      display: "flex", alignItems: "center", gap: 10, padding: collapsed ? "7px 0" : "6px 14px",
+      color: active ? "#f1f5f9" : "#94a3b8",
+      background: active ? "rgba(59,130,246,0.15)" : "transparent",
+      borderLeft: active ? "3px solid #3b82f6" : "3px solid transparent",
+      textDecoration: "none", fontSize: 13, fontWeight: active ? 500 : 400,
+      transition: "all 0.1s", whiteSpace: "nowrap", justifyContent: collapsed ? "center" : "flex-start",
     }}>
-      <span style={{ fontSize: 14, width: 22, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
+      <span style={{ fontSize: 14, width: 20, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
       {!collapsed && <span>{item.label}</span>}
     </Link>
   );
 }
 
-const sectionLabel = { padding: "12px 16px 4px", fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1 };
-const plusBtn = { background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 12, padding: "0 2px" };
+const iconBtn = { background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 12, padding: "0 2px" };
 
-function hasPageSchedule(item) {
-  return item.has_schedule === true;
-}
+function hasPageSchedule(item) { return item.has_schedule === true; }
 
 function PinnedItem({ page, pathname, isOrg }) {
   const active = pathname === `/my/${page.id}`;
   const icons = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}" };
   return (
     <Link href={`/my/${page.id}`} style={{
-      display: "flex", alignItems: "center", gap: 8, padding: "4px 16px",
-      color: active ? "#fff" : "#8a8aa0", textDecoration: "none", fontSize: 12,
-      background: active ? "rgba(0,112,243,0.2)" : "transparent",
-      borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+      display: "flex", alignItems: "center", gap: 8, padding: "4px 14px",
+      color: active ? "#f1f5f9" : "#94a3b8", textDecoration: "none", fontSize: 12,
+      background: active ? "rgba(59,130,246,0.15)" : "transparent",
+      borderLeft: active ? "3px solid #3b82f6" : "3px solid transparent",
     }}>
+      <span style={{ fontSize: 10, color: isOrg ? "#f59e0b" : "#fbbf24" }}>{isOrg ? "\u{1F4CC}" : "\u2B50"}</span>
       <span style={{ fontSize: 11 }}>{page.icon || icons[page.page_type] || "\u{1F4CA}"}</span>
-      <span style={{ flex: 1 }}>{page.name}</span>
-      {isOrg && <span style={{ fontSize: 8, color: "#666" }}>{"\u{1F4CC}"}</span>}
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{page.name}</span>
     </Link>
   );
 }
@@ -329,7 +291,7 @@ function PinnedItem({ page, pathname, isOrg }) {
 function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh, dragOverTarget, onDragOverItem, onDragLeaveItem }) {
   const children = items.filter((i) => (i.parent_id || null) === parentId);
   if (children.length === 0 && depth === 0) {
-    return <div style={{ padding: "6px 16px", fontSize: 11, color: "#555" }}>Click + to create a page</div>;
+    return <div style={{ padding: "8px 14px", fontSize: 11, color: "#475569" }}>No pages yet</div>;
   }
 
   const PAGE_ICONS = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}" };
@@ -338,7 +300,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
     const isFolder = item.entry_type === "folder";
     const isExpanded = expandedFolders[item.id];
     const active = pathname === `/my/${item.id}`;
-    const pl = 16 + depth * 14;
+    const pl = 14 + depth * 14;
     const isDragOver = dragOverTarget === item.id;
 
     if (isFolder) {
@@ -357,17 +319,17 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
             }}
             onClick={() => setExpandedFolders((f) => ({ ...f, [item.id]: !f[item.id] }))}
             style={{
-              display: "flex", alignItems: "center", gap: 6, padding: `5px 12px 5px ${pl}px`,
-              cursor: "pointer", color: "#8a8aa0", fontSize: 13,
-              background: isDragOver ? "rgba(0,112,243,0.15)" : "transparent",
-              borderTop: isDragOver ? "2px solid #0070f3" : "2px solid transparent",
+              display: "flex", alignItems: "center", gap: 6, padding: `4px 10px 4px ${pl}px`,
+              cursor: "pointer", color: "#94a3b8", fontSize: 12,
+              background: isDragOver ? "rgba(59,130,246,0.1)" : "transparent",
+              borderTop: isDragOver ? "2px solid #3b82f6" : "2px solid transparent",
               transition: "background 0.1s",
             }}
           >
-            <span style={{ fontSize: 8 }}>{isExpanded ? "\u25BC" : "\u25B6"}</span>
-            <span style={{ fontSize: 13 }}>{item.icon || "\u{1F4C1}"}</span>
+            <span style={{ fontSize: 7 }}>{isExpanded ? "\u25BC" : "\u25B6"}</span>
+            <span style={{ fontSize: 12 }}>{item.icon || "\u{1F4C1}"}</span>
             <span style={{ flex: 1 }}>{item.name}</span>
-            <span style={{ fontSize: 10, color: "#555" }}>{folderChildren.length}</span>
+            <span style={{ fontSize: 9, color: "#475569" }}>{folderChildren.length}</span>
           </div>
           {isExpanded && (
             <PageTree items={items} parentId={item.id} depth={depth + 1} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} />
@@ -376,24 +338,23 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
       );
     }
 
-    // Page item
     return (
       <Link key={item.id} href={`/my/${item.id}`}
         draggable onDragStart={(e) => e.dataTransfer.setData("page_id", item.id)}
         onDragOver={(e) => { e.preventDefault(); onDragOverItem?.(item.id); }}
         onDragLeave={() => onDragLeaveItem?.()}
         style={{
-          display: "flex", alignItems: "center", gap: 8, padding: `5px 12px 5px ${pl}px`,
-          color: active ? "#fff" : "#8a8aa0", textDecoration: "none", fontSize: 12,
-          background: active ? "rgba(0,112,243,0.2)" : isDragOver ? "rgba(0,112,243,0.1)" : "transparent",
-          borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
-          borderTop: isDragOver ? "2px solid #0070f3" : "2px solid transparent",
+          display: "flex", alignItems: "center", gap: 7, padding: `4px 10px 4px ${pl}px`,
+          color: active ? "#f1f5f9" : "#94a3b8", textDecoration: "none", fontSize: 12,
+          background: active ? "rgba(59,130,246,0.15)" : isDragOver ? "rgba(59,130,246,0.08)" : "transparent",
+          borderLeft: active ? "3px solid #3b82f6" : "3px solid transparent",
+          borderTop: isDragOver ? "2px solid #3b82f6" : "2px solid transparent",
           transition: "all 0.1s", cursor: "pointer",
         }}>
-        <span style={{ fontSize: 12 }}>{item.icon || PAGE_ICONS[item.page_type] || "\u{1F4CA}"}</span>
-        <span style={{ flex: 1 }}>{item.name}</span>
-        {item.visibility !== "private" && <span style={{ fontSize: 9, color: "#555" }}>{item.visibility === "org" ? "\u{1F465}" : "\u{1F310}"}</span>}
-        {hasPageSchedule(item) && <span style={{ fontSize: 9 }} title="Scheduled">{"\u23F0"}</span>}
+        <span style={{ fontSize: 11 }}>{item.icon || PAGE_ICONS[item.page_type] || "\u{1F4CA}"}</span>
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
+        {item.visibility !== "private" && <span style={{ fontSize: 8, color: "#475569" }}>{item.visibility === "org" ? "\u{1F465}" : "\u{1F310}"}</span>}
+        {hasPageSchedule(item) && <span style={{ fontSize: 8 }} title="Scheduled">{"\u23F0"}</span>}
       </Link>
     );
   });
