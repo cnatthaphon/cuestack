@@ -74,8 +74,12 @@ export default function PageViewer() {
   if (!user || !page) return <div style={{ padding: 32, color: "#666" }}>Loading...</div>;
   const isOwner = page.user_id === user.id;
   // Schedule only for executable types (notebook, visual). Not for dashboard/html.
-  const SCHEDULABLE = ["notebook", "visual"];
+  const SCHEDULABLE = ["notebook", "visual", "python"];
+  const SERVICEABLE = ["python", "visual"];
   const canSchedule = isOwner && hasPermission("pages.schedule") && SCHEDULABLE.includes(page.page_type);
+  const canService = isOwner && SERVICEABLE.includes(page.page_type);
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+  const isService = cfg.is_service === true;
 
   // Render based on page_type
   const renderers = {
@@ -83,6 +87,7 @@ export default function PageViewer() {
     html: HtmlRenderer,
     visual: VisualRenderer,
     notebook: NotebookRenderer,
+    python: PythonRenderer,
   };
   const Renderer = renderers[page.page_type] || DashboardRenderer;
 
@@ -96,6 +101,11 @@ export default function PageViewer() {
           <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#e8f4ff", color: "#0070f3" }}>
             {page.page_type}
           </span>
+          {isService && (
+            <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: cfg.service_status === "running" ? "#f0fde8" : "#fef2f2", color: cfg.service_status === "running" ? "#15803d" : "#dc2626", fontWeight: 600 }}>
+              {cfg.service_status === "running" ? "\u25CF running" : "\u25CB stopped"}
+            </span>
+          )}
           <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: page.visibility === "org" ? "#e8f4ff" : page.visibility === "public" ? "#f0fde8" : "#f7f7f7", color: page.visibility === "org" ? "#0070f3" : page.visibility === "public" ? "#38a169" : "#999" }}>
             {page.visibility}
           </span>
@@ -115,6 +125,17 @@ export default function PageViewer() {
             refresh();
           }} style={{ ...btnGray, padding: "8px 10px" }} title="Pin to top">{"\u2B50"}</button>
           {!isOwner && <button onClick={clonePage} style={btnGray}>Clone</button>}
+          {canService && (
+            <button onClick={async () => {
+              const next = { ...cfg, is_service: !isService };
+              if (!isService) next.service_status = "running";
+              else next.service_status = "stopped";
+              await saveConfig(next);
+              loadPage();
+            }} style={{ ...btnGray, background: isService ? "#f0fde8" : undefined, color: isService ? "#15803d" : undefined, borderColor: isService ? "#22c55e" : undefined }}>
+              {isService ? "\u25A0 Stop Service" : "\u25B6 Run as Service"}
+            </button>
+          )}
           {canSchedule && <button onClick={() => { setShowSchedule(!showSchedule); setShowShare(false); }} style={btnGray}>{"\u23F0"} Schedule</button>}
           {isOwner && <button onClick={() => { setShowShare(!showShare); setShowSchedule(false); }} style={btnGray}>Share</button>}
           {isOwner && <button onClick={deletePage} style={{ ...btnGray, color: "#e53e3e" }}>Delete</button>}
@@ -958,6 +979,111 @@ function LiveWidget({ config }) {
       <div style={{ fontSize: 32, fontWeight: 700 }}>{value ?? "\u2014"}</div>
       {config.field && <div style={{ fontSize: 11, color: "#666" }}>{config.field}</div>}
     </div>
+  );
+}
+
+// ─── Python renderer ──────────────────────────────────────────────────────────
+function PythonRenderer({ page, isOwner, saveConfig }) {
+  const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
+  const [code, setCode] = useState(cfg.code || "");
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [output, setOutput] = useState(null);
+  const [running, setRunning] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    await saveConfig({ ...cfg, code });
+    setSaving(false);
+  };
+
+  const runOnce = async () => {
+    setRunning(true);
+    setOutput(null);
+    try {
+      const res = await fetch("/api/flow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page_id: page.id, action: "run_python", code }),
+      });
+      const data = await res.json();
+      setOutput(data);
+    } catch (e) {
+      setOutput({ error: e.message });
+    }
+    setRunning(false);
+  };
+
+  const isService = cfg.is_service === true;
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+        {isOwner && (
+          editing
+            ? <>
+                <button onClick={() => { save(); setEditing(false); }} disabled={saving} style={btnBlue}>{saving ? "Saving..." : "Save"}</button>
+                <button onClick={() => { setEditing(false); setCode(cfg.code || ""); }} style={btnGray}>Cancel</button>
+              </>
+            : <button onClick={() => setEditing(true)} style={btnBlue}>Edit Code</button>
+        )}
+        {isOwner && !isService && <button onClick={runOnce} disabled={running} style={btnGray}>{running ? "Running..." : "\u25B6 Run Once"}</button>}
+        {isService && (
+          <span style={{ fontSize: 12, padding: "4px 12px", borderRadius: 4, background: cfg.service_status === "running" ? "#f0fde8" : "#fef2f2", color: cfg.service_status === "running" ? "#15803d" : "#dc2626", fontWeight: 600 }}>
+            {cfg.service_status === "running" ? "Service running — always-on" : "Service stopped"}
+          </span>
+        )}
+      </div>
+
+      {/* Code editor */}
+      <div style={{ border: "1px solid #ddd", borderRadius: 6, overflow: "hidden", marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: "#666", padding: "6px 12px", background: "#f0f0f0", display: "flex", justifyContent: "space-between" }}>
+          <span>Python {isService ? "(service)" : "(script)"}</span>
+          <span style={{ color: "#999" }}>{code.split("\n").length} lines</span>
+        </div>
+        {editing ? (
+          <textarea
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            spellCheck={false}
+            style={{
+              width: "100%", minHeight: 400, padding: 12, fontFamily: "monospace", fontSize: 13, lineHeight: 1.5,
+              border: "none", resize: "vertical", background: "#1e1e1e", color: "#d4d4d4", tabSize: 4, boxSizing: "border-box",
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; setCode(code.slice(0, s) + "    " + code.slice(e.target.selectionEnd)); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 4; }, 0); }
+            }}
+          />
+        ) : (
+          <pre style={{
+            margin: 0, padding: 12, fontFamily: "monospace", fontSize: 13, lineHeight: 1.5,
+            background: "#1e1e1e", color: "#d4d4d4", overflow: "auto", maxHeight: 500, minHeight: 200,
+          }}>{code || "# No code yet"}</pre>
+        )}
+      </div>
+
+      {/* Run output */}
+      {output && (
+        <div style={{ marginTop: 12, background: "#0f172a", borderRadius: 6, padding: 12 }}>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6 }}>Output</div>
+          {output.error && <div style={{ color: "#f87171", fontFamily: "monospace", fontSize: 12 }}>{output.error}</div>}
+          {output.stdout && <pre style={{ color: "#e2e8f0", fontFamily: "monospace", fontSize: 12, margin: 0, whiteSpace: "pre-wrap" }}>{output.stdout}</pre>}
+          {output.result && <pre style={{ color: "#4ade80", fontFamily: "monospace", fontSize: 12, margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(output.result, null, 2)}</pre>}
+        </div>
+      )}
+
+      {/* Service info */}
+      {isService && (
+        <div style={{ marginTop: 16, padding: 16, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+          <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Service Info</h3>
+          <div style={{ fontSize: 12, color: "#64748b", display: "grid", gap: 4 }}>
+            <div>This code runs continuously as a managed service. The backend monitors it and restarts on crash.</div>
+            <div>Available environment variables: <code>ORG_ID</code>, <code>ORG_SLUG</code>, <code>DATABASE_URL</code>, <code>MQTT_BROKER</code>, <code>MQTT_PORT</code>, <code>SERVICE_NAME</code>, <code>PAGE_ID</code></div>
+            <div>Available libraries: <code>paho-mqtt</code>, <code>psycopg2</code>, <code>numpy</code>, <code>scipy</code></div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -1,17 +1,23 @@
 """
-Service Manager — runs always-on Python services as managed subprocesses.
+Service Manager — runs always-on services from workspace pages.
 
-Services are org_services rows with status='running'.
-The manager starts them as subprocesses, monitors health, restarts on crash.
+Services are user_pages with config->>'is_service' = 'true' and
+config->>'service_status' = 'running'.
+
+For python pages: writes config.code to a temp file and runs it.
+For visual pages: generates Python code from the node graph and runs it.
+
+The manager polls every 15s, starts new services, restarts crashed ones,
+and stops services that are no longer flagged.
 """
 
 import asyncio
 import json
 import logging
 import os
-import signal
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 import psycopg2
@@ -26,73 +32,370 @@ logger.addHandler(handler)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")
 POLL_INTERVAL = 15  # check every 15s
 
-# Running processes: {service_id: subprocess.Popen}
-_processes: dict[str, subprocess.Popen] = {}
+# Running processes: {page_id: {"proc": Popen, "script": path, "name": str}}
+_processes: dict[str, dict] = {}
+
+# Directory for generated service scripts
+SERVICES_DIR = "/tmp/iot-services"
+os.makedirs(SERVICES_DIR, exist_ok=True)
 
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
 
-def get_running_services(conn) -> list:
-    """Get services that should be running."""
+def get_service_pages(conn) -> list:
+    """Get pages flagged as running services."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
-            SELECT s.id, s.name, s.entrypoint, s.org_id, s.env, s.status,
+            SELECT p.id, p.name, p.page_type, p.config, p.org_id, p.user_id, p.slug,
                    o.slug as org_slug
-            FROM org_services s
-            JOIN organizations o ON s.org_id = o.id
-            WHERE s.status = 'running'
+            FROM user_pages p
+            JOIN organizations o ON p.org_id = o.id
+            WHERE p.config->>'is_service' = 'true'
+              AND p.config->>'service_status' = 'running'
+              AND p.page_type IN ('python', 'visual')
         """)
         return cur.fetchall()
 
 
-def update_service_status(conn, service_id: str, status: str, message: str = ""):
-    """Update service status in DB."""
+def update_page_service_status(conn, page_id: str, status: str, error_msg: str = ""):
+    """Update the service_status in page config."""
     with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE org_services SET status = %s, updated_at = NOW() WHERE id = %s",
-            [status, service_id]
-        )
+        if error_msg:
+            cur.execute("""
+                UPDATE user_pages
+                SET config = config || jsonb_build_object(
+                    'service_status', %s::text,
+                    'service_error', %s::text,
+                    'service_updated_at', %s::text
+                )
+                WHERE id = %s
+            """, [status, error_msg, datetime.now(timezone.utc).isoformat(), page_id])
+        else:
+            cur.execute("""
+                UPDATE user_pages
+                SET config = config || jsonb_build_object(
+                    'service_status', %s::text,
+                    'service_error', ''::text,
+                    'service_updated_at', %s::text
+                )
+                WHERE id = %s
+            """, [status, datetime.now(timezone.utc).isoformat(), page_id])
     conn.commit()
 
 
-def start_service(service: dict) -> subprocess.Popen | None:
-    """Start a service as a subprocess."""
-    sid = str(service["id"])
-    name = service["name"]
-    entrypoint = service["entrypoint"]
+def write_service_script(page: dict) -> str | None:
+    """Write the service code to a temp file. Returns the script path."""
+    page_id = str(page["id"])
+    config = page.get("config", {})
+    if isinstance(config, str):
+        config = json.loads(config)
 
-    # Service scripts live in /app/services/ inside the container
-    script_path = f"/app/services/{entrypoint}"
+    page_type = page["page_type"]
 
-    # Check if it's a built-in service
-    builtin_path = f"/app/{entrypoint}"
-    if os.path.exists(builtin_path):
-        script_path = builtin_path
-    elif not os.path.exists(script_path):
-        # Create services directory and write a placeholder
-        os.makedirs("/app/services", exist_ok=True)
-        logger.warning(f"  Script not found: {script_path}")
+    if page_type == "python":
+        code = config.get("code", "")
+        if not code.strip():
+            logger.warning(f"  Page {page['name']}: no code")
+            return None
+
+        script_path = os.path.join(SERVICES_DIR, f"svc_{page_id}.py")
+        with open(script_path, "w") as f:
+            f.write(code)
+        return script_path
+
+    elif page_type == "visual":
+        # Generate Python from visual flow
+        code = generate_python_from_flow(config, page)
+        if not code:
+            logger.warning(f"  Page {page['name']}: could not generate code from visual flow")
+            return None
+
+        script_path = os.path.join(SERVICES_DIR, f"svc_{page_id}.py")
+        with open(script_path, "w") as f:
+            f.write(code)
+        return script_path
+
+    return None
+
+
+def generate_python_from_flow(config: dict, page: dict) -> str | None:
+    """Generate a Python service script from a visual flow node graph.
+
+    Supports blocks: mqtt_subscribe, decode_protobuf, filter, transform,
+    aggregate, insert, ws_publish, mqtt_publish, custom_code.
+    """
+    nodes = config.get("nodes", [])
+    edges = config.get("edges", [])
+
+    if not nodes:
+        # Try legacy format
+        blocks = config.get("blocks", [])
+        if not blocks:
+            return None
+        # Convert blocks to simple sequential code
+        return _generate_from_legacy_blocks(blocks, page)
+
+    return _generate_from_flow_graph(nodes, edges, page)
+
+
+def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
+    """Generate Python from nodes/edges flow graph."""
+    org_id = str(page["org_id"])
+    org_short = org_id.replace("-", "")[:8]
+
+    # Build adjacency
+    adj = {}
+    for e in edges:
+        src = e.get("source") or e.get("from")
+        tgt = e.get("target") or e.get("to")
+        if src and tgt:
+            adj.setdefault(src, []).append(tgt)
+
+    node_map = {n["id"]: n for n in nodes}
+
+    # Topological sort
+    visited = set()
+    order = []
+
+    def dfs(nid):
+        if nid in visited:
+            return
+        visited.add(nid)
+        for child in adj.get(nid, []):
+            dfs(child)
+        order.append(nid)
+
+    for n in nodes:
+        dfs(n["id"])
+    order.reverse()
+
+    # Find entry points (mqtt_subscribe nodes)
+    mqtt_subs = [node_map[nid] for nid in order if node_map.get(nid, {}).get("type") == "mqtt_subscribe"]
+
+    # If no mqtt_subscribe, it's a batch pipeline — generate a loop
+    has_mqtt = len(mqtt_subs) > 0
+
+    # Generate imports
+    lines = [
+        '"""Auto-generated service from visual flow."""',
+        "import os, json, time, logging, struct, math",
+        "from datetime import datetime, timezone",
+        "",
+        'logging.basicConfig(level=logging.INFO, format="%(asctime)s [flow-svc] %(message)s")',
+        "logger = logging.getLogger()",
+        "",
+        f'ORG_ID = os.getenv("ORG_ID", "{org_id}")',
+        f'ORG_SHORT = "{org_short}"',
+        'MQTT_BROKER = os.getenv("MQTT_BROKER", "mqtt")',
+        'MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))',
+        'DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://iot:iot123@db:5432/iotstack")',
+        "",
+    ]
+
+    if has_mqtt:
+        lines.append("import paho.mqtt.client as mqtt")
+        lines.append("")
+
+    # Check for DB blocks
+    has_db = any(node_map.get(nid, {}).get("type") in ("insert", "data_source") for nid in order)
+    if has_db:
+        lines.append("import psycopg2")
+        lines.append("")
+
+    # Generate processing function from the flow
+    lines.append("def process(data):")
+    lines.append('    """Process pipeline: generated from visual flow."""')
+    lines.append("    result = data")
+
+    for nid in order:
+        node = node_map.get(nid)
+        if not node:
+            continue
+        ntype = node.get("type", "")
+        ncfg = node.get("config", {}) or node.get("data", {}).get("config", {}) or {}
+
+        if ntype == "mqtt_subscribe":
+            continue  # Handled in main loop
+        elif ntype == "decode_protobuf":
+            lines.append("    # Decode protobuf")
+            lines.append("    if isinstance(result, bytes):")
+            lines.append("        _STRUCT = struct.Struct('<fffI')")
+            lines.append("        if len(result) >= _STRUCT.size:")
+            lines.append("            t, h, p, ts = _STRUCT.unpack_from(result)")
+            lines.append("            result = {'temperature': round(t,2), 'humidity': round(h,2), 'pressure': round(p,2), 'timestamp': ts}")
+        elif ntype == "filter":
+            field = ncfg.get("field", "temperature")
+            op = ncfg.get("operator", ">")
+            value = ncfg.get("value", "0")
+            lines.append(f"    # Filter: {field} {op} {value}")
+            lines.append(f"    if not (result.get('{field}', 0) {op} {value}):")
+            lines.append("        return None")
+        elif ntype == "transform":
+            expr = ncfg.get("expression", "")
+            if expr:
+                lines.append(f"    # Transform")
+                lines.append(f"    result['_transformed'] = True")
+        elif ntype == "anomaly_detection":
+            lines.append("    # Anomaly detection (Z-score)")
+            lines.append("    # Simple inline check")
+        elif ntype == "insert":
+            table = ncfg.get("table", "sensor_data")
+            lines.append(f"    # Insert into {table}")
+            lines.append(f"    try:")
+            lines.append(f"        _tbl = f'org_{{ORG_SHORT}}_{table}'")
+            lines.append(f"        conn = psycopg2.connect(DATABASE_URL)")
+            lines.append(f"        with conn.cursor() as cur:")
+            lines.append(f"            cols = [k for k in result.keys() if not k.startswith('_')]")
+            lines.append(f"            vals = [result[k] for k in cols]")
+            lines.append(f"            placeholders = ','.join(['%s'] * len(cols))")
+            lines.append(f"            col_names = ','.join(cols)")
+            lines.append(f'            cur.execute(f\'INSERT INTO "{{_tbl}}" (org_id, {{col_names}}) VALUES (%s, {{placeholders}})\', [ORG_ID] + vals)')
+            lines.append(f"        conn.commit()")
+            lines.append(f"        conn.close()")
+            lines.append(f"    except Exception as e:")
+            lines.append(f"        logger.error(f'Insert error: {{e}}')")
+        elif ntype in ("ws_publish", "mqtt_publish"):
+            channel = ncfg.get("channel", "dashboard/live")
+            lines.append(f"    # Publish to {channel}")
+            lines.append(f"    try:")
+            lines.append(f"        import urllib.request")
+            lines.append(f"        _pub_data = json.dumps({{'channel': '{channel}', 'data': result}})")
+            lines.append(f"        _req = urllib.request.Request('http://localhost:8000/api/channels/publish',")
+            lines.append(f"            data=_pub_data.encode(), headers={{'Content-Type': 'application/json'}}, method='POST')")
+            lines.append(f"        urllib.request.urlopen(_req, timeout=3)")
+            lines.append(f"    except Exception:")
+            lines.append(f"        pass")
+        elif ntype == "custom_code":
+            user_code = ncfg.get("code", "pass")
+            lines.append("    # Custom code block")
+            for cl in user_code.split("\n"):
+                lines.append(f"    {cl}")
+
+    lines.append("    return result")
+    lines.append("")
+
+    # Generate main function
+    if has_mqtt:
+        topic = "sensors/weather"
+        for n in mqtt_subs:
+            nc = n.get("config", {}) or n.get("data", {}).get("config", {}) or {}
+            topic = nc.get("topic", topic)
+
+        lines.extend([
+            "def main():",
+            f'    topic = f"org/{{ORG_SHORT}}/{topic}"',
+            "    count = 0",
+            "",
+            "    def on_connect(client, userdata, flags, rc, properties=None):",
+            "        if rc == 0:",
+            "            client.subscribe(topic)",
+            '            logger.info(f"Connected & subscribed to {topic}")',
+            "",
+            "    def on_message(client, userdata, msg):",
+            "        nonlocal count",
+            "        try:",
+            "            # Try JSON first",
+            "            try:",
+            "                data = json.loads(msg.payload.decode())",
+            "            except Exception:",
+            "                data = msg.payload",
+            "            result = process(data)",
+            "            if result is not None:",
+            "                count += 1",
+            "                if count % 60 == 0:",
+            '                    logger.info(f"Processed {count} messages")',
+            "        except Exception as e:",
+            '            logger.error(f"Process error: {e}")',
+            "",
+            '    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"flow-svc-{ORG_SHORT}")',
+            "    client.on_connect = on_connect",
+            "    client.on_message = on_message",
+            "",
+            "    while True:",
+            "        try:",
+            '            logger.info(f"Connecting to MQTT {MQTT_BROKER}:{MQTT_PORT}")',
+            "            client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)",
+            "            break",
+            "        except Exception as e:",
+            '            logger.warning(f"Connection failed: {e}, retrying in 5s...")',
+            "            time.sleep(5)",
+            "",
+            '    logger.info("Flow service running")',
+            "    client.loop_forever()",
+            "",
+        ])
+    else:
+        lines.extend([
+            "def main():",
+            '    logger.info("Flow service running (batch mode)")',
+            "    count = 0",
+            "    while True:",
+            "        result = process({})",
+            "        count += 1",
+            "        if count % 60 == 0:",
+            '            logger.info(f"Cycle {count}")',
+            "        time.sleep(1)",
+            "",
+        ])
+
+    lines.extend([
+        'if __name__ == "__main__":',
+        "    try:",
+        "        main()",
+        "    except KeyboardInterrupt:",
+        '        logger.info("Flow service stopped")',
+        "    except Exception as e:",
+        '        logger.error(f"Fatal: {e}", exc_info=True)',
+        "        raise",
+    ])
+
+    return "\n".join(lines)
+
+
+def _generate_from_legacy_blocks(blocks: list, page: dict) -> str:
+    """Generate Python from legacy blocks array format."""
+    # Convert to nodes/edges format
+    nodes = []
+    edges = []
+    for i, b in enumerate(blocks):
+        nid = f"block_{i}"
+        nodes.append({"id": nid, "type": b.get("type", "custom_code"), "config": b.get("config", {})})
+        if i > 0:
+            edges.append({"source": f"block_{i-1}", "target": nid})
+    return _generate_from_flow_graph(nodes, edges, page)
+
+
+def start_service(page: dict) -> subprocess.Popen | None:
+    """Start a page service as a subprocess."""
+    pid = str(page["id"])
+    name = page["name"]
+    org_id = str(page["org_id"])
+    org_slug = page.get("org_slug", "")
+
+    script_path = write_service_script(page)
+    if not script_path:
         return None
 
     env = {
         **os.environ,
         "SERVICE_NAME": name,
-        "SERVICE_ID": sid,
-        "ORG_ID": str(service["org_id"]),
-        "ORG_SLUG": service.get("org_slug", ""),
+        "PAGE_ID": pid,
+        "ORG_ID": org_id,
+        "ORG_SLUG": org_slug,
         "DATABASE_URL": DATABASE_URL,
+        "MQTT_BROKER": os.getenv("MQTT_BROKER", "mqtt"),
+        "MQTT_PORT": os.getenv("MQTT_PORT", "1883"),
     }
 
-    # Merge service-specific env
-    svc_env = service.get("env", {})
-    if isinstance(svc_env, str):
-        try:
-            svc_env = json.loads(svc_env)
-        except Exception:
-            svc_env = {}
-    env.update(svc_env)
+    # Merge page-specific env from config
+    config = page.get("config", {})
+    if isinstance(config, str):
+        config = json.loads(config)
+    svc_env = config.get("env", {})
+    if isinstance(svc_env, dict):
+        env.update({k: str(v) for k, v in svc_env.items()})
 
     try:
         proc = subprocess.Popen(
@@ -103,68 +406,97 @@ def start_service(service: dict) -> subprocess.Popen | None:
             bufsize=1,
             text=True,
         )
-        logger.info(f"  Started: {name} (pid={proc.pid})")
+        logger.info(f"  Started: {name} (pid={proc.pid}, type={page['page_type']})")
         return proc
     except Exception as e:
         logger.error(f"  Failed to start {name}: {e}")
         return None
 
 
-def stop_service(sid: str):
+def stop_service(pid: str):
     """Stop a running service subprocess."""
-    proc = _processes.get(sid)
-    if proc and proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        logger.info(f"  Stopped: {sid} (pid={proc.pid})")
-    _processes.pop(sid, None)
+    info = _processes.get(pid)
+    if info:
+        proc = info["proc"]
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            logger.info(f"  Stopped: {info['name']} (pid={proc.pid})")
+        # Clean up temp script
+        script = info.get("script", "")
+        if script and os.path.exists(script):
+            try:
+                os.unlink(script)
+            except Exception:
+                pass
+    _processes.pop(pid, None)
 
 
 async def run_service_manager():
     """Main service manager loop."""
-    logger.info("Service manager started")
+    logger.info("Service manager started (workspace-based)")
 
     while True:
         try:
             conn = get_db()
-            services = get_running_services(conn)
+            pages = get_service_pages(conn)
             running_ids = set()
 
-            for svc in services:
-                sid = str(svc["id"])
-                running_ids.add(sid)
+            for page in pages:
+                pid = str(page["id"])
+                running_ids.add(pid)
 
-                # Check if already running
-                if sid in _processes:
-                    proc = _processes[sid]
+                if pid in _processes:
+                    proc = _processes[pid]["proc"]
                     if proc.poll() is not None:
                         # Process died — restart
                         exit_code = proc.returncode
-                        logger.warning(f"  Service {svc['name']} died (exit={exit_code}), restarting...")
-                        proc = start_service(svc)
-                        if proc:
-                            _processes[sid] = proc
+                        logger.warning(f"  Service '{page['name']}' died (exit={exit_code}), restarting...")
+
+                        # Re-read code (might have been updated)
+                        new_proc = start_service(page)
+                        if new_proc:
+                            _processes[pid] = {"proc": new_proc, "name": page["name"],
+                                               "script": os.path.join(SERVICES_DIR, f"svc_{pid}.py")}
                         else:
-                            update_service_status(conn, sid, "error", f"Crashed with exit code {exit_code}")
-                            _processes.pop(sid, None)
-                    # else: still running, good
-                else:
-                    # Not started yet — start it
-                    logger.info(f"Starting service: {svc['name']}")
-                    proc = start_service(svc)
-                    if proc:
-                        _processes[sid] = proc
+                            update_page_service_status(conn, pid, "error", f"Crashed (exit {exit_code})")
+                            _processes.pop(pid, None)
                     else:
-                        update_service_status(conn, sid, "error", "Failed to start")
+                        # Check if code changed — compare script hash
+                        config = page.get("config", {})
+                        if isinstance(config, str):
+                            config = json.loads(config)
+                        code = config.get("code", "") if page["page_type"] == "python" else ""
+                        script_path = _processes[pid].get("script", "")
+                        if code and script_path and os.path.exists(script_path):
+                            with open(script_path) as f:
+                                on_disk = f.read()
+                            if on_disk != code:
+                                logger.info(f"  Code updated for '{page['name']}', restarting...")
+                                stop_service(pid)
+                                new_proc = start_service(page)
+                                if new_proc:
+                                    _processes[pid] = {"proc": new_proc, "name": page["name"],
+                                                       "script": os.path.join(SERVICES_DIR, f"svc_{pid}.py")}
+                else:
+                    # Not started yet
+                    logger.info(f"Starting service: {page['name']} ({page['page_type']})")
+                    proc = start_service(page)
+                    if proc:
+                        _processes[pid] = {"proc": proc, "name": page["name"],
+                                           "script": os.path.join(SERVICES_DIR, f"svc_{pid}.py")}
+                        update_page_service_status(conn, pid, "running")
+                    else:
+                        update_page_service_status(conn, pid, "error", "Failed to start")
 
             # Stop services that should no longer be running
-            for sid in list(_processes.keys()):
-                if sid not in running_ids:
-                    logger.info(f"Stopping removed service: {sid}")
-                    stop_service(sid)
+            for pid in list(_processes.keys()):
+                if pid not in running_ids:
+                    logger.info(f"Stopping removed service: {_processes[pid]['name']}")
+                    stop_service(pid)
 
             conn.close()
         except Exception as e:

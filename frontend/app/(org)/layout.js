@@ -146,6 +146,7 @@ function OrgShell({ children }) {
                       {hasFeature("app_builder") && <option value="html">{"\u{1F310}"} Web Page</option>}
                       {hasFeature("app_builder") && <option value="visual">{"\u{1F9E9}"} Visual Flow</option>}
                       {hasFeature("notebooks") && hasPermission("notebooks.use") && <option value="notebook">{"\u{1F4D3}"} Notebook</option>}
+                      {hasFeature("python_services") && <option value="python">{"\u{1F40D}"} Python</option>}
                     </select>
                   </div>
                 )}
@@ -285,6 +286,7 @@ const TYPE_INFO = {
   html: { icon: "\u{1F310}", label: "New Web Page", desc: "HTML/JS app with IoT Stack SDK" },
   visual: { icon: "\u{1F9E9}", label: "New Visual Flow", desc: "Drag-and-drop data pipeline" },
   notebook: { icon: "\u{1F4D3}", label: "New Notebook", desc: "Jupyter notebook with SDK" },
+  python: { icon: "\u{1F40D}", label: "New Python", desc: "Python script — run as service or on-demand" },
 };
 
 function CreatePageDialog({ type, onClose, onCreate }) {
@@ -365,7 +367,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
     return <div style={{ padding: "8px 14px", fontSize: 11, color: "#475569" }}>No pages yet</div>;
   }
 
-  const PAGE_ICONS = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}" };
+  const PAGE_ICONS = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}", python: "\u{1F40D}" };
 
   return children.map((item) => {
     const isFolder = item.entry_type === "folder";
