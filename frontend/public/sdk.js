@@ -89,6 +89,53 @@ window.IoTStack = {
     });
   },
 
+  // --- Real-time channels ---
+  _ws: null,
+  _handlers: {},
+
+  subscribe(channel, callback) {
+    if (!this._ws) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this._ws = new WebSocket(`${protocol}//${window.location.host}/ws/channels`);
+      this._ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.channel && this._handlers[msg.channel]) {
+            this._handlers[msg.channel].forEach(cb => cb(msg.data, msg));
+          }
+        } catch {}
+      };
+      this._ws.onopen = () => {
+        // Re-subscribe all channels
+        Object.keys(this._handlers).forEach(ch => {
+          this._ws.send(JSON.stringify({ action: 'subscribe', channel: ch }));
+        });
+      };
+    }
+    if (!this._handlers[channel]) this._handlers[channel] = [];
+    this._handlers[channel].push(callback);
+    if (this._ws.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ action: 'subscribe', channel }));
+    }
+    return () => {
+      this._handlers[channel] = this._handlers[channel].filter(cb => cb !== callback);
+      if (this._handlers[channel].length === 0) {
+        delete this._handlers[channel];
+        if (this._ws.readyState === WebSocket.OPEN) {
+          this._ws.send(JSON.stringify({ action: 'unsubscribe', channel }));
+        }
+      }
+    };
+  },
+
+  publish(channel, data) {
+    return fetch('/api/channels/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, data }),
+    }).then(r => r.json());
+  },
+
   // --- User ---
   get user() { return this._user; },
   get permissions() { return this._perms ? [...this._perms] : []; },
