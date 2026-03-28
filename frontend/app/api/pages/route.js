@@ -80,14 +80,14 @@ export async function POST(request) {
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
 
   const type = entry_type === "folder" ? "folder" : "page";
-  const pType = ["dashboard", "html", "visual", "notebook"].includes(page_type) ? page_type : "dashboard";
-  const defaultIcons = { folder: "\u{1F4C1}", dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}" };
+  const pType = ["dashboard", "html", "visual", "notebook", "python"].includes(page_type) ? page_type : "dashboard";
+  const defaultIcons = { folder: "\u{1F4C1}", dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}", python: "\u{1F40D}" };
 
   // Generate slug for pages
   const pageSlug = slug || name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 
   // Default config based on type
-  const defaultConfig = { dashboard: { widgets: [], layout: { columns: 2 } }, html: {}, visual: { blocks: [] }, notebook: {} };
+  const defaultConfig = { dashboard: { widgets: [], layout: { columns: 2 } }, html: {}, visual: { blocks: [] }, notebook: {}, python: { code: "# Python service\nimport os, time\n\nORG_ID = os.getenv('ORG_ID', '')\nMQTT_BROKER = os.getenv('MQTT_BROKER', 'mqtt')\nMQTT_PORT = int(os.getenv('MQTT_PORT', '1883'))\nDATABASE_URL = os.getenv('DATABASE_URL', '')\n\nprint(f'Service started (org={ORG_ID})')\n\nwhile True:\n    # Your service logic here\n    time.sleep(1)\n" } };
 
   const result = await query(
     `INSERT INTO user_pages (org_id, user_id, name, slug, icon, page_type, entry_type, parent_id, config)
