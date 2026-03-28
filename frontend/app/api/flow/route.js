@@ -153,6 +153,72 @@ async function executeFlow(orgId, userId, blocks) {
         }
       }
 
+      else if (type === "anomaly_detection") {
+        const col = config?.column;
+        const threshold = parseFloat(config?.threshold) || 2.0;
+        if (!col || data.length < 3) { results.push({ block: "Anomaly Detection", error: "Need column + 3+ rows" }); continue; }
+        const vals = data.map((r) => parseFloat(r[col]) || 0);
+        const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const std = Math.sqrt(vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length);
+        let anomalies = 0;
+        data = data.map((r, i) => {
+          const z = std > 0 ? (vals[i] - mean) / std : 0;
+          const isAnomaly = Math.abs(z) > threshold;
+          if (isAnomaly) anomalies++;
+          return { ...r, _z_score: Math.round(z * 1000) / 1000, _anomaly: isAnomaly };
+        });
+        results.push({ block: "Anomaly Detection", message: `${anomalies}/${data.length} anomalies (threshold=${threshold}, mean=${Math.round(mean*100)/100})` });
+      }
+
+      else if (type === "statistics") {
+        const col = config?.column;
+        if (!col || data.length === 0) { results.push({ block: "Statistics", error: "Need column + data" }); continue; }
+        const vals = data.map((r) => parseFloat(r[col]) || 0).sort((a, b) => a - b);
+        const n = vals.length;
+        const mean = vals.reduce((a, b) => a + b, 0) / n;
+        const std = Math.sqrt(vals.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
+        data = [{ column: col, count: n, mean: Math.round(mean*1000)/1000, std: Math.round(std*1000)/1000, min: vals[0], q1: vals[Math.floor(n/4)], median: vals[Math.floor(n/2)], q3: vals[Math.floor(3*n/4)], max: vals[n-1] }];
+        results.push({ block: "Statistics", message: `Stats(${col}): mean=${Math.round(mean*100)/100}, std=${Math.round(std*100)/100}, n=${n}` });
+      }
+
+      else if (type === "moving_average") {
+        const col = config?.column;
+        const window = parseInt(config?.window) || 5;
+        if (!col) { results.push({ block: "Moving Average", error: "Need column" }); continue; }
+        const outCol = `${col}_ma${window}`;
+        const vals = data.map((r) => parseFloat(r[col]) || 0);
+        data = data.map((r, i) => {
+          const start = Math.max(0, i - window + 1);
+          const windowVals = vals.slice(start, i + 1);
+          return { ...r, [outCol]: Math.round(windowVals.reduce((a, b) => a + b, 0) / windowVals.length * 1000) / 1000 };
+        });
+        results.push({ block: "Moving Average", message: `MA(${col}, window=${window}) -> ${outCol}` });
+      }
+
+      else if (type === "fft") {
+        const col = config?.column;
+        if (!col || data.length < 8) { results.push({ block: "FFT", error: "Need column + 8+ rows" }); continue; }
+        const vals = data.map((r) => parseFloat(r[col]) || 0);
+        const n = vals.length;
+        const mean = vals.reduce((a, b) => a + b, 0) / n;
+        const centered = vals.map((v) => v - mean);
+        // Simple DFT (pure JS)
+        const freqs = [];
+        for (let k = 0; k < n / 2; k++) {
+          let real = 0, imag = 0;
+          for (let i = 0; i < n; i++) {
+            const angle = 2 * Math.PI * k * i / n;
+            real += centered[i] * Math.cos(angle);
+            imag -= centered[i] * Math.sin(angle);
+          }
+          const mag = Math.sqrt(real * real + imag * imag) / n;
+          if (mag > 0.01) freqs.push({ frequency: Math.round(k / n * 10000) / 10000, magnitude: Math.round(mag * 1000) / 1000 });
+        }
+        freqs.sort((a, b) => b.magnitude - a.magnitude);
+        data = freqs.slice(0, 5);
+        results.push({ block: "FFT", message: `FFT(${col}): ${data.length} dominant frequencies from ${n} samples` });
+      }
+
       else if (type === "output") {
         results.push({ block: "Output", message: `${data.length} rows as ${config?.format || "table"}`, rows: data });
       }

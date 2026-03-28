@@ -12,6 +12,11 @@ const NODE_TYPES = [
   { id: "decode_protobuf", label: "Decode Protobuf", icon: "\u{1F510}", color: "#4f46e5", inputs: 1, outputs: 1, category: "Process" },
   { id: "aggregate", label: "Aggregate", icon: "\u{1F4CA}", color: "#d97706", inputs: 1, outputs: 1, category: "Process" },
   { id: "join", label: "Join", icon: "\u{1F517}", color: "#06b6d4", inputs: 2, outputs: 1, category: "Process" },
+  { id: "anomaly_detection", label: "Anomaly Detect", icon: "\u{26A0}", color: "#b91c1c", inputs: 1, outputs: 1, category: "ML" },
+  { id: "statistics", label: "Statistics", icon: "\u{1F4CA}", color: "#7c3aed", inputs: 1, outputs: 1, category: "ML" },
+  { id: "moving_average", label: "Moving Avg", icon: "\u{1F4C8}", color: "#0d9488", inputs: 1, outputs: 1, category: "ML" },
+  { id: "fft", label: "FFT Analysis", icon: "\u{1F50A}", color: "#6d28d9", inputs: 1, outputs: 1, category: "ML" },
+  { id: "custom_code", label: "Custom Code", icon: "\u{1F4BB}", color: "#374151", inputs: 1, outputs: 1, category: "ML" },
   { id: "insert", label: "Insert to DB", icon: "\u{1F4E5}", color: "#16a34a", inputs: 1, outputs: 0, category: "Output" },
   { id: "ws_publish", label: "WS Broadcast", icon: "\u{1F4E2}", color: "#ea580c", inputs: 1, outputs: 0, category: "Output" },
   { id: "mqtt_publish", label: "MQTT Publish", icon: "\u{1F4E4}", color: "#0891b2", inputs: 1, outputs: 0, category: "Output" },
@@ -204,7 +209,7 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
         {/* Node catalog dropdown */}
         {showCatalog && (
           <div style={{ position: "absolute", top: 40, left: 8, zIndex: 20, background: "#fff", border: "1px solid #ddd", borderRadius: 8, padding: 8, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", width: 200 }}>
-            {["Input", "Process", "Output"].map((cat) => (
+            {["Input", "Process", "ML", "Output"].map((cat) => (
               <div key={cat}>
                 <div style={{ fontSize: 10, color: "#999", padding: "4px 8px", textTransform: "uppercase" }}>{cat}</div>
                 {NODE_TYPES.filter((t) => t.category === cat).map((t) => (
@@ -495,6 +500,64 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
           <Field label="Join Key">
             <input value={cfg.join_key || ""} onChange={(e) => onUpdate("join_key", e.target.value)} placeholder="column name" disabled={readOnly} style={propInput} />
           </Field>
+        </>}
+
+        {node.type === "anomaly_detection" && <>
+          <Field label="Column">
+            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
+              <option value="">Select...</option>
+              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Threshold (std devs)">
+            <input type="number" step="0.1" value={cfg.threshold || 2.0} onChange={(e) => onUpdate("threshold", parseFloat(e.target.value))} disabled={readOnly} style={propInput} />
+          </Field>
+          <div style={{ fontSize: 10, color: "#999", padding: "4px 0" }}>Adds _anomaly (bool) and _z_score columns</div>
+        </>}
+
+        {node.type === "statistics" && <>
+          <Field label="Column">
+            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
+              <option value="">Select...</option>
+              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <div style={{ fontSize: 10, color: "#999", padding: "4px 0" }}>Outputs: count, mean, std, min, q1, median, q3, max, iqr</div>
+        </>}
+
+        {node.type === "moving_average" && <>
+          <Field label="Column">
+            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
+              <option value="">Select...</option>
+              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Window Size">
+            <input type="number" value={cfg.window || 5} onChange={(e) => onUpdate("window", parseInt(e.target.value))} disabled={readOnly} style={propInput} />
+          </Field>
+        </>}
+
+        {node.type === "fft" && <>
+          <Field label="Column">
+            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
+              <option value="">Select...</option>
+              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <div style={{ fontSize: 10, color: "#999", padding: "4px 0" }}>Outputs dominant frequencies + magnitudes. Needs 8+ samples.</div>
+        </>}
+
+        {node.type === "custom_code" && <>
+          <Field label="Python Code">
+            <textarea value={cfg.code || "# data = list of dicts from upstream\n# Set result = your output\nresult = [r for r in data if r.get('temperature', 0) > 30]"}
+              onChange={(e) => onUpdate("code", e.target.value)} disabled={readOnly}
+              style={{ ...propInput, fontFamily: "monospace", fontSize: 10, minHeight: 120, resize: "vertical" }} />
+          </Field>
+          <div style={{ fontSize: 10, color: "#999", padding: "4px 0" }}>
+            Input: <code>data</code> (list of dicts). Set <code>result</code> as output.<br />
+            Available: math, json, len, range, sorted, sum, min, max.<br />
+            Runs in isolated subprocess (10s timeout).
+          </div>
         </>}
 
         {node.type === "mqtt_subscribe" && <>

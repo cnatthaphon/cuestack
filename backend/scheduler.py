@@ -376,6 +376,42 @@ def execute_flow_blocks(conn, org_id: str, blocks: list, user_id=None) -> tuple[
         elif btype == "output":
             messages.append(f"output: {len(data)} rows")
 
+        elif btype == "anomaly_detection":
+            from ml_blocks import anomaly_detection
+            data, msg = anomaly_detection(data, config)
+            messages.append(msg)
+
+        elif btype == "statistics":
+            from ml_blocks import statistics
+            data, msg = statistics(data, config)
+            messages.append(msg)
+
+        elif btype == "moving_average":
+            from ml_blocks import moving_average
+            data, msg = moving_average(data, config)
+            messages.append(msg)
+
+        elif btype == "fft":
+            from ml_blocks import fft_analysis
+            data, msg = fft_analysis(data, config)
+            messages.append(msg)
+
+        elif btype == "custom_code":
+            from ml_blocks import run_custom_code
+            data, msg = run_custom_code(data, config)
+            messages.append(msg)
+
+        elif btype == "ws_publish":
+            import channels as ch_mod
+            channel = config.get("channel")
+            if channel and data:
+                import asyncio
+                for row in data[:100]:
+                    asyncio.get_event_loop().call_soon(
+                        lambda r=row: asyncio.ensure_future(ch_mod.publish(org_id, channel, r))
+                    )
+                messages.append(f"ws_publish: {min(len(data),100)} messages to {channel}")
+
     return True, " | ".join(messages) if messages else "No blocks executed"
 
 
