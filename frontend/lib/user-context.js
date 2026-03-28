@@ -9,10 +9,11 @@ export function UserProvider({ children }) {
 
   const loadData = async () => {
     try {
-      const [meRes, pagesRes, sharedRes] = await Promise.all([
+      const [meRes, pagesRes, sharedRes, pinsRes] = await Promise.all([
         fetch("/api/auth/me").then((r) => r.json()),
         fetch("/api/pages").then((r) => r.ok ? r.json() : { pages: [] }),
         fetch("/api/pages?view=shared").then((r) => r.ok ? r.json() : { pages: [] }),
+        fetch("/api/pins").then((r) => r.ok ? r.json() : { personal: [], org: [] }),
       ]);
       if (!meRes.user) { window.location.href = "/login"; return null; }
       if (meRes.user.is_super_admin) { window.location.href = "/super"; return null; }
@@ -21,6 +22,7 @@ export function UserProvider({ children }) {
         org: meRes.org,
         myPages: pagesRes.pages || [],
         sharedPages: sharedRes.pages || [],
+        pins: pinsRes,
         loading: false,
       };
     } catch {

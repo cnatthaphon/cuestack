@@ -40,7 +40,7 @@ export default function OrgLayout({ children }) {
 }
 
 function OrgShell({ children }) {
-  const { user, org, myPages, sharedPages, loading, logout, hasPermission, hasFeature, refresh } = useUser();
+  const { user, org, myPages, sharedPages, pins, loading, logout, hasPermission, hasFeature, refresh } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const [dragOverTarget, setDragOverTarget] = useState(null);
   const [dashExpanded, setDashExpanded] = useState(true);
@@ -129,6 +129,32 @@ function OrgShell({ children }) {
 
         {/* Nav Content */}
         <div style={{ flex: 1, padding: "4px 0", overflowY: "auto" }}>
+
+          {/* Pinned items — org pins + personal pins */}
+          {!collapsed && (pins?.org?.length > 0 || pins?.personal?.length > 0) && (
+            <div style={{ padding: "2px 0", borderBottom: "1px solid #2a2a4a" }}>
+              {pins?.org?.length > 0 && (
+                <>
+                  <div style={{ padding: "6px 16px 2px", fontSize: 9, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
+                    {"\u{1F4CC}"} Org Pinned
+                  </div>
+                  {pins.org.map((p) => (
+                    <PinnedItem key={`org-${p.id}`} page={p} pathname={pathname} isOrg />
+                  ))}
+                </>
+              )}
+              {pins?.personal?.length > 0 && (
+                <>
+                  <div style={{ padding: "6px 16px 2px", fontSize: 9, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>
+                    {"\u2B50"} Pinned
+                  </div>
+                  {pins.personal.map((p) => (
+                    <PinnedItem key={`pin-${p.id}`} page={p} pathname={pathname} />
+                  ))}
+                </>
+              )}
+            </div>
+          )}
 
           {/* Workspace — permission-gated page creation */}
           <div style={{ padding: "2px 0", borderBottom: "1px solid #2a2a4a" }}>
@@ -280,6 +306,23 @@ const plusBtn = { background: "none", border: "none", color: "#666", cursor: "po
 
 function hasPageSchedule(item) {
   return item.has_schedule === true;
+}
+
+function PinnedItem({ page, pathname, isOrg }) {
+  const active = pathname === `/my/${page.id}`;
+  const icons = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}" };
+  return (
+    <Link href={`/my/${page.id}`} style={{
+      display: "flex", alignItems: "center", gap: 8, padding: "4px 16px",
+      color: active ? "#fff" : "#8a8aa0", textDecoration: "none", fontSize: 12,
+      background: active ? "rgba(0,112,243,0.2)" : "transparent",
+      borderLeft: active ? "3px solid #0070f3" : "3px solid transparent",
+    }}>
+      <span style={{ fontSize: 11 }}>{page.icon || icons[page.page_type] || "\u{1F4CA}"}</span>
+      <span style={{ flex: 1 }}>{page.name}</span>
+      {isOrg && <span style={{ fontSize: 8, color: "#666" }}>{"\u{1F4CC}"}</span>}
+    </Link>
+  );
 }
 
 // Page tree — recursive folder/page structure with drag indicators
