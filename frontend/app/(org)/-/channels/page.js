@@ -86,7 +86,8 @@ export default function ChannelsPage() {
     setMessages([]);
     setLiveChannel(channelName);
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/channels`);
+    const host = window.location.port === "3000" ? window.location.hostname + ":8080" : window.location.host;
+    const ws = new WebSocket(`${protocol}//${host}/ws/channels`);
     wsRef.current = ws;
     ws.onopen = () => ws.send(JSON.stringify({ action: "subscribe", channel: channelName }));
     ws.onmessage = (e) => { try { const msg = JSON.parse(e.data); if (msg.channel) setMessages((p) => [msg, ...p].slice(0, 50)); } catch {} };

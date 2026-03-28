@@ -905,7 +905,9 @@ function LiveWidget({ config }) {
   useEffect(() => {
     if (!config?.channel) return;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/channels`);
+    // WebSocket goes through nginx (8080), not the Next.js dev server (3000)
+    const host = window.location.port === "3000" ? window.location.hostname + ":8080" : window.location.host;
+    const ws = new WebSocket(`${protocol}//${host}/ws/channels`);
     wsRef.current = ws;
 
     ws.onopen = () => {
