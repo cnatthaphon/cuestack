@@ -51,6 +51,7 @@ function OrgShell({ children }) {
   const [dashExpanded, setDashExpanded] = useState(true);
   const [expandedFolders, setExpandedFolders] = useState({});
   const [autoExpanded, setAutoExpanded] = useState(false);
+  const [createDialog, setCreateDialog] = useState(null); // {type: "folder"|"dashboard"|"html"|"visual"|"notebook"}
   const pathname = usePathname();
   const canCreate = hasPermission("pages.create");
 
@@ -135,20 +136,10 @@ function OrgShell({ children }) {
                 </button>
                 {canCreate && (
                   <div style={{ display: "flex", gap: 2 }}>
-                    <button onClick={async () => {
-                      const name = prompt("Folder name:");
-                      if (!name) return;
-                      await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, entry_type: "folder" }) });
-                      refresh();
-                    }} style={iconBtn} title="New Folder">{"\u{1F4C1}"}</button>
-                    <select onChange={async (e) => {
+                    <button onClick={() => setCreateDialog({ type: "folder" })} style={iconBtn} title="New Folder">{"\u{1F4C1}"}</button>
+                    <select onChange={(e) => {
                       const pt = e.target.value; e.target.value = "";
-                      if (!pt) return;
-                      const labels = { dashboard: "Dashboard", html: "Web Page", visual: "Visual Flow", notebook: "Notebook" };
-                      const name = prompt(`New ${labels[pt]} name:`);
-                      if (!name) return;
-                      const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, page_type: pt }) });
-                      if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.page.id}`; }
+                      if (pt) setCreateDialog({ type: pt });
                     }} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 13, padding: 0 }} title="New Page">
                       <option value="">+</option>
                       <option value="dashboard">{"\u{1F4CA}"} Dashboard</option>
@@ -166,12 +157,8 @@ function OrgShell({ children }) {
               </div>
             )}
             {collapsed && canCreate && (
-              <button onClick={async () => {
-                const name = prompt("Dashboard name:");
-                if (!name) return;
-                const res = await fetch("/api/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-                if (res.ok) { const d = await res.json(); refresh(); window.location.href = `/my/${d.page.id}`; }
-              }} style={{ display: "block", width: "100%", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "8px 0" }} title="New">{"\u{1F4CA}"}</button>
+              <button onClick={() => setCreateDialog({ type: "dashboard" })}
+                style={{ display: "block", width: "100%", background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: "8px 0" }} title="New">{"\u{1F4CA}"}</button>
             )}
           </div>
 
@@ -245,6 +232,30 @@ function OrgShell({ children }) {
           {children}
         </main>
       </div>
+
+      {/* Create dialog */}
+      {createDialog && (
+        <CreatePageDialog
+          type={createDialog.type}
+          onClose={() => setCreateDialog(null)}
+          onCreate={async (name) => {
+            const isFolder = createDialog.type === "folder";
+            const body = isFolder
+              ? { name, entry_type: "folder" }
+              : { name, page_type: createDialog.type };
+            const res = await fetch("/api/pages", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            setCreateDialog(null);
+            if (res.ok) {
+              const d = await res.json();
+              refresh();
+              if (!isFolder) window.location.href = `/my/${d.page.id}`;
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -267,6 +278,66 @@ function NavLink({ item, pathname, collapsed }) {
 }
 
 const iconBtn = { background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 12, padding: "0 2px" };
+
+const TYPE_INFO = {
+  folder: { icon: "\u{1F4C1}", label: "New Folder", desc: "Organize your pages into folders" },
+  dashboard: { icon: "\u{1F4CA}", label: "New Dashboard", desc: "Widget-based data dashboard" },
+  html: { icon: "\u{1F310}", label: "New Web Page", desc: "HTML/JS app with IoT Stack SDK" },
+  visual: { icon: "\u{1F9E9}", label: "New Visual Flow", desc: "Drag-and-drop data pipeline" },
+  notebook: { icon: "\u{1F4D3}", label: "New Notebook", desc: "Jupyter notebook with SDK" },
+};
+
+function CreatePageDialog({ type, onClose, onCreate }) {
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const info = TYPE_INFO[type] || TYPE_INFO.dashboard;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setCreating(true);
+    await onCreate(name.trim());
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 400, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 28 }}>{info.icon}</span>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 16, color: "#1e293b" }}>{info.label}</h2>
+            <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>{info.desc}</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Enter name..."
+            style={{
+              width: "100%", padding: "10px 14px", border: "2px solid #e2e8f0", borderRadius: 8,
+              fontSize: 14, outline: "none", transition: "border-color 0.15s",
+            }}
+            onFocus={(e) => e.target.style.borderColor = "#3b82f6"}
+            onBlur={(e) => e.target.style.borderColor = "#e2e8f0"}
+          />
+          <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+            <button type="button" onClick={onClose}
+              style={{ padding: "8px 20px", background: "#f1f5f9", color: "#64748b", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+              Cancel
+            </button>
+            <button type="submit" disabled={!name.trim() || creating}
+              style={{ padding: "8px 20px", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 500, opacity: name.trim() ? 1 : 0.5 }}>
+              {creating ? "Creating..." : "Create"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 function hasPageSchedule(item) { return item.has_schedule === true; }
 
