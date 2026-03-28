@@ -32,7 +32,11 @@ export default function DatabasesPage() {
 
       <DataTable
         columns={[
-          { key: "name", label: "Name", render: (v) => <code style={{ fontSize: 12 }}>{v}</code> },
+          { key: "name", label: "Name", render: (v, row) => (
+            <Link href={`/-/databases/${row.id}`} style={{ color: "#0070f3", textDecoration: "none" }}>
+              <code style={{ fontSize: 12 }}>{v}</code>
+            </Link>
+          )},
           { key: "db_type", label: "Type", render: (v) => <Badge color={v === "analytical" ? "#0070f3" : "#92400e"} bg={v === "analytical" ? "#e8f4ff" : "#fef3c7"}>{v}</Badge> },
           { key: "columns", label: "Columns", sortable: false, render: (v) => {
             const cols = typeof v === "string" ? JSON.parse(v) : (v || []);
@@ -52,9 +56,13 @@ export default function DatabasesPage() {
         searchKeys={["name", "db_type", "description"]}
         emptyMessage="No tables yet."
         toolbar={hasPermission("db.create") ? <Link href="/-/databases/new" style={{ padding: "8px 16px", background: "#0070f3", color: "#fff", borderRadius: 4, fontSize: 13, textDecoration: "none" }}>New Table</Link> : undefined}
-        actions={hasPermission("db.delete") ? (row) => (
-          <button onClick={() => deleteTable(row.id, row.name)} style={btnDanger}>Delete</button>
-        ) : undefined}
+        actions={(row) => (
+          <div style={{ display: "flex", gap: 4 }}>
+            <Link href={`/-/databases/${row.id}`} style={{ padding: "4px 8px", color: "#0070f3", fontSize: 12, textDecoration: "none", border: "1px solid #ddd", borderRadius: 3 }}>View</Link>
+            {hasPermission("db.edit") && <Link href={`/-/databases/${row.id}`} style={{ padding: "4px 8px", color: "#059669", fontSize: 12, textDecoration: "none", border: "1px solid #ddd", borderRadius: 3 }}>Edit</Link>}
+            {hasPermission("db.delete") && <button onClick={() => deleteTable(row.id, row.name)} style={btnDanger}>Delete</button>}
+          </div>
+        )}
       />
     </div>
   );
