@@ -30,13 +30,10 @@ RUN mkdir -p /root/.jupyter/lab/user-settings/@jupyterlab/application-extension 
     echo '{ "layout": "single-document" }' > /root/.jupyter/lab/user-settings/@jupyterlab/application-extension/shell.jupyterlab-settings
 
 # Inject custom CSS into JupyterLab's template to hide file management UI
+COPY hide-ui.css /tmp/hide-ui.css
 RUN TMPL="/usr/local/lib/python3.12/site-packages/jupyterlab_server/templates/index.html" && \
-    sed -i 's|</head>|<style>\
-.jp-SideBar.jp-mod-left{display:none!important}\
-#jp-menu-panel,#jp-MainMenu{display:none!important}\
-.jp-Launcher{display:none!important}\
-.jp-SideBar.jp-mod-right{display:none!important}\
-</style>\n</head>|' "$TMPL"
+    CSS=$(cat /tmp/hide-ui.css | tr '\n' ' ') && \
+    sed -i "s|</head>|<style>${CSS}</style>\n</head>|" "$TMPL"
 
 # Jupyter config
 RUN mkdir -p /root/.jupyter
