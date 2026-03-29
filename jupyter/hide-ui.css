@@ -1,13 +1,4 @@
-.jp-SideBar{display:none!important}
-.lm-TabBar.jp-SideBar{display:none!important}
-[id="jp-left-stack"]{display:none!important}
-[id="jp-right-stack"]{display:none!important}
+.jp-SideBar.jp-mod-left{display:none!important}
+.jp-SideBar.jp-mod-right{display:none!important}
 [id="jp-menu-panel"]{display:none!important}
-[id="jp-MainMenu"]{display:none!important}
 .jp-Launcher{display:none!important}
-.jp-LabShell .lm-SplitPanel-child:first-child{min-width:0!important;width:0!important}
-[data-id="filebrowser"]{display:none!important}
-[data-id="jp-running-sessions"]{display:none!important}
-[data-id="extensionmanager.main-view"]{display:none!important}
-[data-id="table-of-contents"]{display:none!important}
-.lm-MenuBar{display:none!important}
