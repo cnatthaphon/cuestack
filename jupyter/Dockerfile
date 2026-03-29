@@ -29,16 +29,14 @@ RUN mkdir -p /workspace
 RUN mkdir -p /root/.jupyter/lab/user-settings/@jupyterlab/application-extension && \
     echo '{ "layout": "single-document" }' > /root/.jupyter/lab/user-settings/@jupyterlab/application-extension/shell.jupyterlab-settings
 
-# Inject custom CSS into JupyterLab's index.html to hide file management UI
-RUN LABSTATIC=$(python -c "import jupyterlab; import os; print(os.path.join(os.path.dirname(jupyterlab.__file__), 'static'))") && \
-    cp "$LABSTATIC/index.html" "$LABSTATIC/index.html.bak" && \
+# Inject custom CSS into JupyterLab's template to hide file management UI
+RUN TMPL="/usr/local/lib/python3.12/site-packages/jupyterlab_server/templates/index.html" && \
     sed -i 's|</head>|<style>\
-/* Platform-managed: hide file browser sidebar, menu bar, launcher */\
-.jp-SideBar.jp-mod-left, #jp-left-stack { display:none!important; }\
-#jp-menu-panel, #jp-MainMenu { display:none!important; }\
-.jp-Launcher { display:none!important; }\
-.jp-SideBar.jp-mod-right { display:none!important; }\
-</style></head>|' "$LABSTATIC/index.html"
+.jp-SideBar.jp-mod-left{display:none!important}\
+#jp-menu-panel,#jp-MainMenu{display:none!important}\
+.jp-Launcher{display:none!important}\
+.jp-SideBar.jp-mod-right{display:none!important}\
+</style>\n</head>|' "$TMPL"
 
 # Jupyter config
 RUN mkdir -p /root/.jupyter
