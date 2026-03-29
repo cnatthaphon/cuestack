@@ -344,6 +344,9 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
   const [editIdx, setEditIdx] = useState(null);
   const [tables, setTables] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dropIdx, setDropIdx] = useState(null);
+  const gridRef = useRef(null);
 
   useEffect(() => {
     fetch("/api/tables").then((r) => r.ok ? r.json() : { tables: [] }).then((d) => setTables(d.tables || []));
@@ -379,19 +382,16 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
   };
 
   const addWidget = (type) => {
-    const w = { type, config: {}, w: 1, h: 1 };
+    const w = { type, config: {}, colSpan: 1, rowSpan: 1 };
     if (type === "stat") w.config = { label: "Metric", aggregation: "count" };
     if (type === "text") w.config = { text: "Enter text" };
-    if (type === "table") w.config = { max_rows: 10 };
+    if (type === "table") { w.config = { max_rows: 10 }; w.colSpan = 2; w.rowSpan = 2; }
+    if (type === "chart") w.colSpan = 2;
+    if (type === "live") w.colSpan = 2;
     setWidgets([...widgets, w]);
     setEditIdx(widgets.length);
   };
   const removeWidget = (idx) => { setWidgets(widgets.filter((_, i) => i !== idx)); setEditIdx(null); };
-  const moveWidget = (idx, dir) => {
-    const ni = idx + dir;
-    if (ni < 0 || ni >= widgets.length) return;
-    const c = [...widgets]; [c[idx], c[ni]] = [c[ni], c[idx]]; setWidgets(c); setEditIdx(ni);
-  };
   const updateConfig = (idx, key, val) => {
     setWidgets(widgets.map((w, i) => i === idx ? { ...w, config: { ...w.config, [key]: val } } : w));
   };
@@ -403,6 +403,35 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
     if (!t) return [];
     const c = typeof t.columns === "string" ? JSON.parse(t.columns) : (t.columns || []);
     return ["id", ...c.map((col) => col.name), "created_at"];
+  };
+
+  // Drag-and-drop reorder
+  const handleDragStart = (e, idx) => {
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", idx);
+    e.target.style.opacity = "0.4";
+  };
+  const handleDragEnd = (e) => {
+    e.target.style.opacity = "1";
+    setDragIdx(null);
+    setDropIdx(null);
+  };
+  const handleDragOver = (e, idx) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (idx !== dropIdx) setDropIdx(idx);
+  };
+  const handleDrop = (e, targetIdx) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === targetIdx) return;
+    const updated = [...widgets];
+    const [moved] = updated.splice(dragIdx, 1);
+    updated.splice(targetIdx, 0, moved);
+    setWidgets(updated);
+    setEditIdx(targetIdx);
+    setDragIdx(null);
+    setDropIdx(null);
   };
 
   return (
@@ -436,59 +465,68 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
         </div>
       )}
 
-      {/* Widget grid */}
-      <div data-widget-grid style={{ display: "grid", gridTemplateColumns: `repeat(${layout.columns || 2}, 1fr)`, gap: 12, gridAutoRows: "minmax(120px, auto)" }}>
+      {/* Widget grid — drag to reorder, drag corner to resize */}
+      <div ref={gridRef} data-widget-grid style={{ display: "grid", gridTemplateColumns: `repeat(${layout.columns || 2}, 1fr)`, gap: 12, gridAutoRows: "minmax(120px, auto)" }}>
         {widgets.map((w, i) => {
           const cs = w.colSpan || 1;
           const rs = w.rowSpan || 1;
+          const isDropTarget = editing && dropIdx === i && dragIdx !== i;
           return (
-            <div key={i} onClick={() => editing && setEditIdx(i)} style={{
-              background: "#fff", borderRadius: 8, padding: editing ? 12 : 16,
-              border: editing && editIdx === i ? "2px solid #0070f3" : "1px solid #e2e8f0",
-              gridColumn: `span ${Math.min(cs, layout.columns || 2)}`,
-              gridRow: `span ${rs}`,
-              cursor: editing ? "pointer" : "default", minHeight: 80,
-              position: "relative", overflow: "hidden",
-            }}>
+            <div
+              key={i}
+              draggable={editing}
+              onDragStart={(e) => handleDragStart(e, i)}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, i)}
+              onDrop={(e) => handleDrop(e, i)}
+              onClick={() => editing && setEditIdx(editIdx === i ? null : i)}
+              style={{
+                background: "#fff", borderRadius: 8, padding: editing ? 12 : 16,
+                border: isDropTarget ? "2px dashed #3b82f6" : editing && editIdx === i ? "2px solid #0070f3" : "1px solid #e2e8f0",
+                gridColumn: `span ${Math.min(cs, layout.columns || 2)}`,
+                gridRow: `span ${rs}`,
+                cursor: editing ? "grab" : "default", minHeight: 80,
+                position: "relative", overflow: "hidden",
+                transition: "border-color 0.15s, box-shadow 0.15s",
+                boxShadow: isDropTarget ? "0 0 0 3px rgba(59,130,246,0.15)" : "none",
+              }}
+            >
+              {/* Edit header — minimal: type label + delete */}
               {editing && (
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, color: "#999" }}>{WIDGET_TYPES.find((t) => t.id === w.type)?.icon} {WIDGET_TYPES.find((t) => t.id === w.type)?.label}</span>
-                  <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
-                    <span style={{ fontSize: 9, color: "#999" }}>W:</span>
-                    {[1, 2, 3, 4].filter((n) => n <= (layout.columns || 2)).map((n) => (
-                      <button key={`w${n}`} onClick={(e) => { e.stopPropagation(); setWidgetSize(i, n, rs); }}
-                        style={{ ...sizeBtn, background: cs === n ? "#0070f3" : "#f0f0f0", color: cs === n ? "#fff" : "#666" }}>{n}</button>
-                    ))}
-                    <span style={{ fontSize: 9, color: "#999", marginLeft: 4 }}>H:</span>
-                    {[1, 2, 3].map((n) => (
-                      <button key={`h${n}`} onClick={(e) => { e.stopPropagation(); setWidgetSize(i, cs, n); }}
-                        style={{ ...sizeBtn, background: rs === n ? "#0070f3" : "#f0f0f0", color: rs === n ? "#fff" : "#666" }}>{n}</button>
-                    ))}
-                    <button onClick={(e) => { e.stopPropagation(); moveWidget(i, -1); }} style={miniBtn}>&uarr;</button>
-                    <button onClick={(e) => { e.stopPropagation(); moveWidget(i, 1); }} style={miniBtn}>&darr;</button>
-                    <button onClick={(e) => { e.stopPropagation(); removeWidget(i); }} style={{ ...miniBtn, color: "#e53e3e" }}>x</button>
-                  </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: "#94a3b8", cursor: "grab" }}>
+                    {"\u2630"} {WIDGET_TYPES.find((t) => t.id === w.type)?.icon} {WIDGET_TYPES.find((t) => t.id === w.type)?.label}
+                    <span style={{ color: "#cbd5e1", marginLeft: 6, fontSize: 9 }}>{cs}x{rs}</span>
+                  </span>
+                  <button onClick={(e) => { e.stopPropagation(); removeWidget(i); }}
+                    style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 14, padding: "0 4px", lineHeight: 1 }}
+                    title="Remove widget">{"\u00D7"}</button>
                 </div>
               )}
+
+              {/* Widget content or config */}
               {editing && editIdx === i ? (
                 <WidgetConfig widget={w} tables={tables} getTableCols={getTableCols} updateConfig={(k, v) => updateConfig(i, k, v)} />
               ) : (
                 <WidgetView widget={w} data={widgetData[i]?.data} />
               )}
-              {/* Drag resize handle */}
+
+              {/* Resize handle — drag corner to resize */}
               {editing && (
                 <div
                   onMouseDown={(e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     const startX = e.clientX;
                     const startY = e.clientY;
                     const startW = cs;
                     const startH = rs;
-                    const gridEl = e.target.closest("[data-widget-grid]");
+                    const gridEl = gridRef.current;
                     const cellW = gridEl ? gridEl.offsetWidth / (layout.columns || 2) : 200;
-                    const cellH = 132; // minmax(120px, auto) + gap
+                    const cellH = 132;
 
                     const onMove = (me) => {
+                      me.preventDefault();
                       const dx = me.clientX - startX;
                       const dy = me.clientY - startY;
                       const newW = Math.max(1, Math.min(layout.columns || 2, startW + Math.round(dx / cellW)));
@@ -500,10 +538,12 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
                     document.addEventListener("mouseup", onUp);
                   }}
                   style={{
-                    position: "absolute", bottom: 0, right: 0, width: 16, height: 16, cursor: "nwse-resize",
-                    background: "linear-gradient(135deg, transparent 50%, #0070f3 50%)", borderRadius: "0 0 6px 0", opacity: 0.5,
+                    position: "absolute", bottom: 0, right: 0, width: 20, height: 20, cursor: "nwse-resize",
+                    background: "linear-gradient(135deg, transparent 40%, #94a3b8 40%, #94a3b8 50%, transparent 50%, transparent 65%, #94a3b8 65%, #94a3b8 75%, transparent 75%)",
+                    borderRadius: "0 0 6px 0", opacity: 0.4,
                   }}
                   title="Drag to resize"
+                  draggable={false}
                 />
               )}
             </div>

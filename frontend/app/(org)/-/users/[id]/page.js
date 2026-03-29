@@ -16,6 +16,7 @@ export default function UserDetailPage() {
   const [newPassword, setNewPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [orgPages, setOrgPages] = useState([]);
 
   useEffect(() => {
     fetch(`/api/users/${params.id}`).then((r) => r.ok ? r.json() : null).then((d) => {
@@ -34,6 +35,7 @@ export default function UserDetailPage() {
       }
     });
     fetch("/api/roles").then((r) => r.ok ? r.json() : { roles: [] }).then((d) => setRoles(d.roles || []));
+    fetch("/api/pages?view=published").then((r) => r.ok ? r.json() : { pages: [] }).then((d) => setOrgPages(d.pages || []));
   }, [params.id]);
 
   const canEdit = hasPermission("users.edit");
@@ -96,8 +98,12 @@ export default function UserDetailPage() {
             <input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} disabled={!canEdit} style={inputStyle} />
           </label>
           <label style={{ ...labelStyle, gridColumn: "1 / -1" }}>Landing Page
-            <input value={form.landing_page || ""} onChange={(e) => setForm({ ...form, landing_page: e.target.value })} disabled={!canEdit}
-              placeholder="e.g. /a/my-dashboard (leave empty for default home)" style={inputStyle} />
+            <select value={form.landing_page || ""} onChange={(e) => setForm({ ...form, landing_page: e.target.value })} disabled={!canEdit} style={inputStyle}>
+              <option value="">Default (home)</option>
+              {orgPages.map((p) => (
+                <option key={p.id} value={`/my/${p.id}`}>{p.icon} {p.name} ({p.page_type})</option>
+              ))}
+            </select>
           </label>
         </div>
 
