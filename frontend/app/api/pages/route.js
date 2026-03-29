@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../lib/auth.js";
 import { query } from "../../../lib/db.js";
 import { hasPermission as checkPerm } from "../../../lib/permissions.js";
+import { hasFeature } from "../../../lib/features.js";
 
 // GET — list pages (tree for nav, or by view)
 export async function GET(request) {
@@ -100,6 +101,13 @@ export async function POST(request) {
 
   const type = entry_type === "folder" ? "folder" : "page";
   const pType = ["dashboard", "html", "visual", "notebook", "python"].includes(page_type) ? page_type : "dashboard";
+
+  // Feature gate — enforce org feature flags per page type
+  const FEATURE_MAP = { html: "app_builder", visual: "app_builder", notebook: "notebooks", python: "python_services" };
+  const requiredFeature = FEATURE_MAP[pType];
+  if (requiredFeature && !(await hasFeature(user.org_id, requiredFeature))) {
+    return NextResponse.json({ error: `Feature '${requiredFeature}' not enabled for your organization` }, { status: 403 });
+  }
   const defaultIcons = { folder: "\u{1F4C1}", dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}", python: "\u{1F40D}" };
 
   // Generate slug for pages
