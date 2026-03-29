@@ -104,6 +104,23 @@ export async function POST(request) {
   // Still nothing — create starter
   if (!nbContent) {
     nbContent = createStarterNotebook(sdkToken);
+  } else {
+    // Refresh the SDK token in existing notebook (tokens expire after 24h)
+    // Find the first code cell containing IOT_STACK_TOKEN and update it
+    if (nbContent.cells) {
+      for (const cell of nbContent.cells) {
+        if (cell.cell_type !== "code") continue;
+        const src = Array.isArray(cell.source) ? cell.source.join("") : (cell.source || "");
+        if (src.includes("IOT_STACK_TOKEN")) {
+          const updated = src.replace(
+            /os\.environ\["IOT_STACK_TOKEN"\]\s*=\s*"[^"]*"/,
+            `os.environ["IOT_STACK_TOKEN"] = "${sdkToken}"`
+          );
+          cell.source = Array.isArray(cell.source) ? updated.split(/(?<=\n)/) : updated;
+          break;
+        }
+      }
+    }
   }
 
   try {
