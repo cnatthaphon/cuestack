@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser, createToken } from "../../../lib/auth.js";
+import { getCurrentUser } from "../../../lib/auth.js";
 import { hasFeature } from "../../../lib/features.js";
-import { getConfig, setConfig, getConfigsByCategory } from "../../../lib/org-config.js";
+import { query } from "../../../lib/db.js";
 import { SignJWT } from "jose";
 
 const JUPYTER_INTERNAL = "http://jupyter:8888";
@@ -9,7 +9,7 @@ const SECRET = new TextEncoder().encode(
   process.env.SECRET_KEY || "dev-only-not-for-production"
 );
 
-// GET — list active Jupyter sessions + notebook workspace pages
+// GET — list active Jupyter sessions
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -18,7 +18,6 @@ export async function GET() {
   const enabled = await hasFeature(user.org_id, "notebooks");
   if (!enabled) return NextResponse.json({ error: "Notebooks not enabled" }, { status: 403 });
 
-  // Query Jupyter for active kernel sessions
   let activeSessions = [];
   try {
     const res = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/sessions`);
@@ -34,16 +33,14 @@ export async function GET() {
       }));
     }
   } catch {
-    // Jupyter might be down — that's ok
+    // Jupyter might be down
   }
 
-  return NextResponse.json({
-    sessions: activeSessions,
-    org_id: user.org_id,
-  });
+  return NextResponse.json({ sessions: activeSessions, org_id: user.org_id });
 }
 
-// POST — create/start a notebook session (generates SDK token)
+// POST — open a notebook page in Jupyter
+// Pushes notebook_content from DB to a temp .ipynb in Jupyter, returns URL
 export async function POST(request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -52,10 +49,9 @@ export async function POST(request) {
   const enabled = await hasFeature(user.org_id, "notebooks");
   if (!enabled) return NextResponse.json({ error: "Notebooks not enabled" }, { status: 403 });
 
-  const { name } = await request.json();
-  const sessionName = name || "default";
+  const { page_id, name } = await request.json();
 
-  // Generate SDK token (JWT, 24h, scoped to user+org)
+  // Generate SDK token
   const sdkToken = await new SignJWT({
     sub: user.id,
     username: user.username,
@@ -67,48 +63,55 @@ export async function POST(request) {
     .setExpirationTime("24h")
     .sign(SECRET);
 
-  // Save session
-  await setConfig(user.org_id, "notebook_session", sessionName, {
-    user_id: user.id,
-    username: user.username,
-    started_at: new Date().toISOString(),
-    status: "active",
-  });
+  // Load notebook content from page config (DB is source of truth)
+  let nbContent = null;
+  if (page_id) {
+    const result = await query(
+      `SELECT config FROM user_pages WHERE id = $1 AND org_id = $2`,
+      [page_id, user.org_id]
+    );
+    if (result.rows.length > 0) {
+      const cfg = typeof result.rows[0].config === "string"
+        ? JSON.parse(result.rows[0].config) : (result.rows[0].config || {});
+      nbContent = cfg.notebook_content || null;
+    }
+  }
 
-  // Create org workspace + notebook file via Jupyter API
+  // If no content yet, create starter notebook
+  if (!nbContent) {
+    nbContent = createStarterNotebook(sdkToken);
+  }
+
+  // Push to Jupyter as a temp file
   const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
   const dirName = `org_${orgShort}`;
-  const nbFileName = `${sessionName}.ipynb`;
-  const nbPath = `${dirName}/${nbFileName}`;
+  const sessionName = name || "notebook";
+  const nbPath = `${dirName}/${sessionName}.ipynb`;
 
   try {
-    // Create org directory
+    // Ensure org directory exists
     await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "directory" }),
     });
 
-    // Create the specific notebook if it doesn't exist
-    const checkRes = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}`);
-    if (checkRes.status === 404) {
-      await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "notebook", content: createStarterNotebook(sdkToken) }),
-      });
-    }
+    // Write notebook content to Jupyter
+    await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "notebook", content: nbContent }),
+    });
   } catch (e) {
-    console.error("Jupyter workspace setup:", e.message);
+    console.error("Jupyter push:", e.message);
+    return NextResponse.json({ error: "Could not reach Jupyter" }, { status: 502 });
   }
 
-  // URL points to the specific notebook file in JupyterLab
   const notebookUrl = `/jupyter/lab/tree/${nbPath}`;
 
   return NextResponse.json({
     url: notebookUrl,
-    session: sessionName,
-    status: "active",
+    jupyter_path: nbPath,
     sdk_token: sdkToken,
   });
 }
@@ -122,20 +125,15 @@ function createStarterNotebook(token) {
       {
         cell_type: "markdown",
         metadata: {},
-        source: [
-          "# IoT Stack Notebook\n",
-          "\n",
-          "This notebook is pre-configured with the IoT Stack SDK.\n",
-          "Run the cell below to connect.\n",
-        ],
+        source: ["# IoT Stack Notebook\n", "\n", "Run the cell below to connect to the IoT Stack SDK.\n"],
       },
       {
         cell_type: "code",
         metadata: {},
         source: [
           "import os\n",
-          `os.environ[\"IOT_STACK_TOKEN\"] = \"${token}\"\n`,
-          `os.environ[\"IOT_STACK_URL\"] = \"http://nginx:80\"\n`,
+          `os.environ["IOT_STACK_TOKEN"] = "${token}"\n`,
+          `os.environ["IOT_STACK_URL"] = "http://nginx:80"\n`,
           "\n",
           "from iot_stack import connect\n",
           "client = connect()",
@@ -150,18 +148,6 @@ function createStarterNotebook(token) {
         outputs: [],
         execution_count: null,
       },
-      {
-        cell_type: "code",
-        metadata: {},
-        source: [
-          "# Query data from a table\n",
-          "# df = client.query_table('sensor_data', limit=10)\n",
-          "# df.head()",
-        ],
-        outputs: [],
-        execution_count: null,
-      },
     ],
   };
 }
-

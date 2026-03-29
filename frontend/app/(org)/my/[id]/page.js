@@ -839,58 +839,34 @@ function renderOutput(output) {
   return null;
 }
 
-function NotebookRenderer({ page, isOwner }) {
+function NotebookRenderer({ page, isOwner, onReload }) {
   const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
   const schedule = cfg.schedule;
   const lastRun = schedule?.last_run;
   const lastStatus = schedule?.last_status;
 
+  // DB is source of truth — notebook_content stored in page config
+  const nbContent = cfg.notebook_content || null;
+  const notebook = nbContent && typeof nbContent === "string" ? JSON.parse(nbContent) : nbContent;
+  const cells = notebook?.cells || [];
+
   const [jupyterUrl, setJupyterUrl] = useState(null);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notebook, setNotebook] = useState(null);
-  const [nbLoading, setNbLoading] = useState(true);
-  const [nbError, setNbError] = useState("");
   const [collapsedCells, setCollapsedCells] = useState({});
-
-  // Load notebook content for preview
-  useEffect(() => {
-    loadNotebookContent();
-  }, [page.id]);
 
   const nbName = page.slug || page.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
-  const loadNotebookContent = async () => {
-    setNbLoading(true);
-    setNbError("");
-    try {
-      if (cfg.notebook_content) {
-        const nb = typeof cfg.notebook_content === "string" ? JSON.parse(cfg.notebook_content) : cfg.notebook_content;
-        setNotebook(nb);
-        setNbLoading(false);
-        return;
-      }
-      const res = await fetch(`/api/notebooks/${encodeURIComponent(nbName)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setNotebook(data.notebook || data);
-      } else {
-        setNbError("not_created");
-      }
-    } catch {
-      setNbError("load_failed");
-    }
-    setNbLoading(false);
-  };
-
+  // Open: push content from DB → Jupyter, open editor
   const openNotebook = async () => {
     setLoading(true);
     setError("");
     const res = await fetch("/api/notebooks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: nbName }),
+      body: JSON.stringify({ page_id: page.id, name: nbName }),
     });
     if (!res.ok) { setError((await res.json()).error); setLoading(false); return; }
     const data = await res.json();
@@ -901,6 +877,27 @@ function NotebookRenderer({ page, isOwner }) {
     setJupyterUrl(url);
     setEditing(true);
     setLoading(false);
+  };
+
+  // Done: pull content from Jupyter → DB, back to preview
+  const saveAndClose = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/notebooks/${encodeURIComponent(nbName)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page_id: page.id }),
+      });
+      if (!res.ok) {
+        setError((await res.json()).error || "Failed to save");
+      }
+    } catch {
+      setError("Failed to save notebook");
+    }
+    setSaving(false);
+    setEditing(false);
+    if (onReload) onReload(); // reload page to get fresh config from DB
   };
 
   const toggleCell = (idx) => {
@@ -922,7 +919,9 @@ function NotebookRenderer({ page, isOwner }) {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => window.open(jupyterUrl, "_blank")} style={toolbarBtn}>Open in new tab</button>
-            <button onClick={() => { setEditing(false); loadNotebookContent(); }} style={{ ...toolbarBtn, background: "#38a169" }}>Done — back to preview</button>
+            <button onClick={saveAndClose} disabled={saving} style={{ ...toolbarBtn, background: "#38a169" }}>
+              {saving ? "Saving..." : "Save & Close"}
+            </button>
           </div>
         </div>
         <iframe src={jupyterUrl} style={{ flex: 1, border: "none", width: "100%" }} title="JupyterLab" allow="clipboard-read; clipboard-write" />
@@ -930,18 +929,15 @@ function NotebookRenderer({ page, isOwner }) {
     );
   }
 
-  const cells = notebook?.cells || [];
-
   return (
     <div>
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
         {isOwner && (
           <button onClick={openNotebook} disabled={loading} style={btnBlue}>
-            {loading ? "Starting..." : "Edit in Jupyter"}
+            {loading ? "Starting..." : cells.length > 0 ? "Edit in Jupyter" : "Create Notebook"}
           </button>
         )}
-        <button onClick={loadNotebookContent} style={btnGray}>Refresh</button>
         {error && <span style={{ color: "#e53e3e", fontSize: 13 }}>{error}</span>}
         {cells.length > 0 && <span style={{ fontSize: 11, color: "#999" }}>{cells.length} cells</span>}
       </div>
@@ -957,28 +953,13 @@ function NotebookRenderer({ page, isOwner }) {
         </div>
       )}
 
-      {/* Notebook preview */}
-      {nbLoading ? (
-        <div style={{ padding: 40, textAlign: "center", color: "#999" }}>Loading notebook...</div>
-      ) : nbError ? (
+      {/* Notebook preview — rendered from DB content */}
+      {cells.length === 0 ? (
         <div style={{ padding: 32, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center" }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📓</div>
-          <p style={{ color: "#666", fontSize: 14, margin: "0 0 16px" }}>
-            {nbError === "not_created" ? "Notebook not yet created." : "Could not load notebook preview."}
+          <p style={{ color: "#999", margin: "0 0 16px" }}>
+            {nbContent ? "Empty notebook." : "No notebook content yet. Click above to create one."}
           </p>
-          {isOwner && (
-            <button onClick={openNotebook} disabled={loading} style={btnBlue}>
-              {loading ? "Starting..." : nbError === "not_created" ? "Create & Edit in Jupyter" : "Edit in Jupyter"}
-            </button>
-          )}
-        </div>
-      ) : cells.length === 0 ? (
-        <div style={{ padding: 32, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📓</div>
-          <p style={{ color: "#999", margin: "0 0 16px" }}>Empty notebook.</p>
-          {isOwner && (
-            <button onClick={openNotebook} disabled={loading} style={btnBlue}>Edit in Jupyter</button>
-          )}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
