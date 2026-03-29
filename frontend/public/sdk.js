@@ -95,8 +95,9 @@ window.IoTStack = {
 
   subscribe(channel, callback) {
     if (!this._ws) {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.port === '3000' ? window.location.hostname + ':8080' : window.location.host;
+      const loc = window.location.host ? window.location : (window.parent || window).location;
+      const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = loc.port === '3000' ? loc.hostname + ':8080' : loc.host;
       this._ws = new WebSocket(`${protocol}//${host}/ws/channels`);
       this._ws.onmessage = (e) => {
         try {
