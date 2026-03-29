@@ -91,6 +91,19 @@ export default function PageViewer() {
   };
   const Renderer = renderers[page.page_type] || DashboardRenderer;
 
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showMenu]);
+
+  const menuAction = (fn) => { setShowMenu(false); fn(); };
+
   return (
     <div>
       {/* Header */}
@@ -118,27 +131,40 @@ export default function PageViewer() {
             <span style={{ fontSize: 10, color: "#bbb" }} title={`Last edited by ${getConfigUpdatedBy(page)}`}>v{getConfigVersion(page)}</span>
           )}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={async () => {
-            await fetch("/api/pins", { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "pin", page_id: page.id, scope: "personal" }) });
-            refresh();
-          }} style={{ ...btnGray, padding: "8px 10px" }} title="Pin to top">{"\u2B50"}</button>
-          {!isOwner && <button onClick={clonePage} style={btnGray}>Clone</button>}
-          {canService && (
-            <button onClick={async () => {
-              const next = { ...cfg, is_service: !isService };
-              if (!isService) next.service_status = "running";
-              else next.service_status = "stopped";
-              await saveConfig(next);
-              loadPage();
-            }} style={{ ...btnGray, background: isService ? "#f0fde8" : undefined, color: isService ? "#15803d" : undefined, borderColor: isService ? "#22c55e" : undefined }}>
-              {isService ? "\u25A0 Stop Service" : "\u25B6 Run as Service"}
-            </button>
+        {/* ⋯ menu button */}
+        <div style={{ position: "relative" }} ref={menuRef}>
+          <button onClick={() => setShowMenu(!showMenu)} style={{ ...btnGray, padding: "6px 12px", fontSize: 16, lineHeight: 1 }} title="Actions">{"\u22EF"}</button>
+          {showMenu && (
+            <div style={{
+              position: "absolute", right: 0, top: "100%", marginTop: 4, minWidth: 200,
+              background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+              zIndex: 100, overflow: "hidden", fontSize: 13,
+            }}>
+              <button onClick={() => menuAction(async () => {
+                await fetch("/api/pins", { method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "pin", page_id: page.id, scope: "personal" }) });
+                refresh();
+              })} style={menuItem}>{"\u2B50"} Pin to sidebar</button>
+              {isOwner && <button onClick={() => menuAction(() => { setShowShare(true); setShowSchedule(false); })} style={menuItem}>{"\u{1F517}"} Share</button>}
+              {canSchedule && <button onClick={() => menuAction(() => { setShowSchedule(true); setShowShare(false); })} style={menuItem}>{"\u23F0"} Schedule</button>}
+              {canService && (
+                <button onClick={() => menuAction(async () => {
+                  const next = { ...cfg, is_service: !isService };
+                  if (!isService) next.service_status = "running";
+                  else next.service_status = "stopped";
+                  await saveConfig(next);
+                  loadPage();
+                })} style={menuItem}>
+                  {isService ? "\u25A0 Stop Service" : "\u25B6 Run as Service"}
+                </button>
+              )}
+              {!isOwner && <button onClick={() => menuAction(clonePage)} style={menuItem}>{"\u{1F4CB}"} Clone</button>}
+              {isOwner && <>
+                <div style={{ borderTop: "1px solid #f0f0f0", margin: "4px 0" }} />
+                <button onClick={() => menuAction(deletePage)} style={{ ...menuItem, color: "#e53e3e" }}>{"\u{1F5D1}"} Delete</button>
+              </>}
+            </div>
           )}
-          {canSchedule && <button onClick={() => { setShowSchedule(!showSchedule); setShowShare(false); }} style={btnGray}>{"\u23F0"} Schedule</button>}
-          {isOwner && <button onClick={() => { setShowShare(!showShare); setShowSchedule(false); }} style={btnGray}>Share</button>}
-          {isOwner && <button onClick={deletePage} style={{ ...btnGray, color: "#e53e3e" }}>Delete</button>}
         </div>
       </div>
 
@@ -1313,6 +1339,7 @@ function PythonRenderer({ page, isOwner, saveConfig }) {
 
 const btnBlue = { padding: "8px 16px", background: "#0070f3", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13 };
 const btnGray = { padding: "8px 16px", background: "#f0f0f0", color: "#333", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", fontSize: 13 };
+const menuItem = { display: "block", width: "100%", padding: "8px 14px", background: "none", border: "none", textAlign: "left", cursor: "pointer", fontSize: 13, color: "#333" };
 const miniBtn = { padding: "1px 5px", background: "none", border: "1px solid #ddd", borderRadius: 2, cursor: "pointer", fontSize: 10, color: "#666" };
 const sizeBtn = { padding: "1px 5px", border: "none", borderRadius: 2, cursor: "pointer", fontSize: 9, fontWeight: 700, minWidth: 16, textAlign: "center" };
 const cfgInput = { display: "block", width: "100%", padding: 4, border: "1px solid #ddd", borderRadius: 3, fontSize: 12, marginBottom: 4, boxSizing: "border-box" };

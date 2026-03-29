@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { UserProvider, useUser } from "../../lib/user-context.js";
 import TopBar from "../../lib/components/top-bar.js";
@@ -54,8 +54,25 @@ function OrgShell({ children }) {
   const [expandedFolders, setExpandedFolders] = useState({});
   const [autoExpanded, setAutoExpanded] = useState(false);
   const [createDialog, setCreateDialog] = useState(null); // {type: "folder"|"dashboard"|"html"|"visual"|"notebook"}
+  const [ctxMenu, setCtxMenu] = useState(null); // {x, y, page}
+  const ctxRef = useRef(null);
   const pathname = usePathname();
+  const router = useRouter();
   const canCreate = hasPermission("pages.create");
+
+  // Close context menu on outside click or scroll
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    document.addEventListener("mousedown", (e) => { if (ctxRef.current && !ctxRef.current.contains(e.target)) close(); });
+    document.addEventListener("scroll", close, true);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("scroll", close, true); };
+  }, [ctxMenu]);
+
+  const onPageContext = useCallback((e, page) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, page });
+  }, []);
 
   // Auto-expand folder containing the current page on first load
   if (!autoExpanded && myPages && myPages.length > 0 && pathname.startsWith("/my/")) {
@@ -156,7 +173,7 @@ function OrgShell({ children }) {
             )}
             {dashExpanded && !collapsed && (
               <div style={{ maxHeight: 280, overflowY: "auto", paddingBottom: 4 }}>
-                <PageTree items={myPages || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} />
+                <PageTree items={myPages || []} parentId={null} depth={0} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} onPageContext={onPageContext} />
               </div>
             )}
             {collapsed && canCreate && (
@@ -236,6 +253,34 @@ function OrgShell({ children }) {
         </main>
       </div>
 
+      {/* Right-click context menu for workspace pages */}
+      {ctxMenu && (
+        <div ref={ctxRef} style={{
+          position: "fixed", left: ctxMenu.x, top: ctxMenu.y, minWidth: 180,
+          background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          zIndex: 9999, overflow: "hidden", fontSize: 13, padding: "4px 0",
+        }}>
+          <button onClick={async () => {
+            await fetch("/api/pins", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "pin", page_id: ctxMenu.page.id, scope: "personal" }) });
+            refresh(); setCtxMenu(null);
+          }} style={ctxMenuItem}>{"\u2B50"} Pin</button>
+          <button onClick={() => { router.push(`/my/${ctxMenu.page.id}`); setCtxMenu(null); }} style={ctxMenuItem}>{"\u{1F4DD}"} Open</button>
+          <div style={{ borderTop: "1px solid #f0f0f0", margin: "4px 0" }} />
+          <button onClick={async () => {
+            const res = await fetch(`/api/pages/${ctxMenu.page.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clone" }) });
+            if (res.ok) { const d = await res.json(); refresh(); router.push(`/my/${d.page.id}`); }
+            setCtxMenu(null);
+          }} style={ctxMenuItem}>{"\u{1F4CB}"} Clone</button>
+          <div style={{ borderTop: "1px solid #f0f0f0", margin: "4px 0" }} />
+          <button onClick={async () => {
+            if (!confirm(`Delete "${ctxMenu.page.name}"?`)) { setCtxMenu(null); return; }
+            await fetch(`/api/pages/${ctxMenu.page.id}`, { method: "DELETE" });
+            refresh(); setCtxMenu(null);
+          }} style={{ ...ctxMenuItem, color: "#e53e3e" }}>{"\u{1F5D1}"} Delete</button>
+        </div>
+      )}
+
       {/* Create dialog */}
       {createDialog && (
         <CreatePageDialog
@@ -290,6 +335,8 @@ const TYPE_INFO = {
   notebook: { icon: "\u{1F4D3}", label: "New Notebook", desc: "Jupyter notebook with SDK" },
   python: { icon: "\u{1F40D}", label: "New Python", desc: "Python script — run as service or on-demand" },
 };
+
+const ctxMenuItem = { display: "block", width: "100%", padding: "7px 14px", background: "none", border: "none", textAlign: "left", cursor: "pointer", fontSize: 13, color: "#333" };
 
 function CreatePageDialog({ type, onClose, onCreate }) {
   const [name, setName] = useState("");
@@ -363,7 +410,7 @@ function PinnedItem({ page, pathname, isOrg }) {
 }
 
 // Page tree — recursive folder/page structure with drag indicators
-function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh, dragOverTarget, onDragOverItem, onDragLeaveItem }) {
+function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh, dragOverTarget, onDragOverItem, onDragLeaveItem, onPageContext }) {
   const children = items.filter((i) => (i.parent_id || null) === parentId);
   if (children.length === 0 && depth === 0) {
     return <div style={{ padding: "8px 14px", fontSize: 11, color: "#475569" }}>No pages yet</div>;
@@ -418,6 +465,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
         draggable onDragStart={(e) => e.dataTransfer.setData("page_id", item.id)}
         onDragOver={(e) => { e.preventDefault(); onDragOverItem?.(item.id); }}
         onDragLeave={() => onDragLeaveItem?.()}
+        onContextMenu={(e) => onPageContext?.(e, item)}
         style={{
           display: "flex", alignItems: "center", gap: 7, padding: `4px 10px 4px ${pl}px`,
           color: active ? "#f1f5f9" : "#94a3b8", textDecoration: "none", fontSize: 12,
