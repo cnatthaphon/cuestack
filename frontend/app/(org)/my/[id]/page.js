@@ -587,7 +587,7 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
               key={previewKey}
               srcDoc={srcdoc}
               style={{ flex: 1, border: "1px solid #ddd", borderTop: "none", borderRadius: "0 0 6px 6px", background: "#fff" }}
-              sandbox="allow-scripts allow-same-origin allow-forms"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"
               title="Preview"
             />
           </div>
@@ -598,7 +598,7 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
             key={previewKey}
             srcDoc={srcdoc}
             style={{ width: "100%", height: 600, border: "none" }}
-            sandbox="allow-scripts allow-same-origin allow-forms"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"
             title="Page"
           />
         </div>
@@ -689,7 +689,70 @@ function VisualRenderer({ page, isOwner, saveConfig }) {
 
 // Old linear block editor removed — FlowCanvas handles everything now
 
-// ─── Notebook renderer (Jupyter iframe) ──────────────────────────────────────
+// ─── Notebook renderer (read-only HTML preview + Jupyter iframe) ─────────────
+
+// Render markdown to HTML (basic: headings, bold, italic, code, links, lists)
+function renderMarkdown(md) {
+  let html = md
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    // code blocks
+    .replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => `<pre style="background:#f5f5f5;padding:12px;border-radius:6px;overflow:auto;font-size:12px"><code>${code}</code></pre>`)
+    // inline code
+    .replace(/`([^`]+)`/g, '<code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;font-size:12px">$1</code>')
+    // headings
+    .replace(/^#### (.+)$/gm, '<h4 style="margin:8px 0 4px;font-size:14px">$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3 style="margin:8px 0 4px;font-size:15px">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 style="margin:10px 0 6px;font-size:16px">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="margin:12px 0 8px;font-size:18px">$1</h1>')
+    // bold/italic
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#0070f3">$1</a>')
+    // unordered lists
+    .replace(/^[-*] (.+)$/gm, '<li style="margin:2px 0">$1</li>')
+    // line breaks
+    .replace(/\n\n/g, '<br/><br/>')
+    .replace(/\n/g, '<br/>');
+  // wrap consecutive <li> in <ul>
+  html = html.replace(/((?:<li[^>]*>.*?<\/li>\s*(?:<br\/>)?)+)/g, '<ul style="margin:4px 0 4px 16px;padding:0">$1</ul>');
+  return html;
+}
+
+// Render a notebook output object
+function renderOutput(output) {
+  if (!output) return null;
+  const otype = output.output_type;
+  if (otype === "stream") {
+    return <pre style={{ margin: 0, padding: "4px 12px", fontSize: 12, fontFamily: "monospace", color: output.name === "stderr" ? "#e53e3e" : "#333", whiteSpace: "pre-wrap", background: "#fafafa" }}>{(output.text || []).join("")}</pre>;
+  }
+  if (otype === "error") {
+    return <pre style={{ margin: 0, padding: "4px 12px", fontSize: 12, fontFamily: "monospace", color: "#e53e3e", whiteSpace: "pre-wrap", background: "#fff5f5" }}>{(output.traceback || []).join("\n").replace(/\x1b\[[0-9;]*m/g, "")}</pre>;
+  }
+  if (otype === "execute_result" || otype === "display_data") {
+    const data = output.data || {};
+    // HTML output
+    if (data["text/html"]) {
+      const html = Array.isArray(data["text/html"]) ? data["text/html"].join("") : data["text/html"];
+      return <div style={{ padding: "4px 12px", overflow: "auto" }} dangerouslySetInnerHTML={{ __html: html }} />;
+    }
+    // Image output
+    if (data["image/png"]) {
+      return <div style={{ padding: "4px 12px" }}><img src={`data:image/png;base64,${Array.isArray(data["image/png"]) ? data["image/png"].join("") : data["image/png"]}`} style={{ maxWidth: "100%" }} alt="output" /></div>;
+    }
+    if (data["image/svg+xml"]) {
+      const svg = Array.isArray(data["image/svg+xml"]) ? data["image/svg+xml"].join("") : data["image/svg+xml"];
+      return <div style={{ padding: "4px 12px", overflow: "auto" }} dangerouslySetInnerHTML={{ __html: svg }} />;
+    }
+    // Plain text fallback
+    if (data["text/plain"]) {
+      const text = Array.isArray(data["text/plain"]) ? data["text/plain"].join("") : data["text/plain"];
+      return <pre style={{ margin: 0, padding: "4px 12px", fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap", color: "#333", background: "#fafafa" }}>{text}</pre>;
+    }
+  }
+  return null;
+}
+
 function NotebookRenderer({ page, isOwner }) {
   const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
   const schedule = cfg.schedule;
@@ -700,11 +763,45 @@ function NotebookRenderer({ page, isOwner }) {
   const [showJupyter, setShowJupyter] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notebook, setNotebook] = useState(null);
+  const [nbLoading, setNbLoading] = useState(true);
+  const [nbError, setNbError] = useState("");
+  const [collapsedCells, setCollapsedCells] = useState({});
+
+  // Load notebook content for preview
+  useEffect(() => {
+    loadNotebookContent();
+  }, [page.id]);
+
+  const loadNotebookContent = async () => {
+    setNbLoading(true);
+    setNbError("");
+    try {
+      // Try config first (if notebook_content is stored inline)
+      if (cfg.notebook_content) {
+        const nb = typeof cfg.notebook_content === "string" ? JSON.parse(cfg.notebook_content) : cfg.notebook_content;
+        setNotebook(nb);
+        setNbLoading(false);
+        return;
+      }
+      // Otherwise fetch via API
+      const name = page.slug || page.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+      const res = await fetch(`/api/notebooks/${encodeURIComponent(name)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setNotebook(data.notebook || data);
+      } else {
+        setNbError("Notebook not yet created. Click 'Open in Jupyter' to create it.");
+      }
+    } catch (e) {
+      setNbError("Could not load notebook preview.");
+    }
+    setNbLoading(false);
+  };
 
   const openNotebook = async () => {
     setLoading(true);
     setError("");
-    // Use page slug as notebook name — creates the notebook if it doesn't exist
     const name = page.slug || page.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
     const res = await fetch("/api/notebooks", {
       method: "POST",
@@ -713,8 +810,6 @@ function NotebookRenderer({ page, isOwner }) {
     });
     if (!res.ok) { setError((await res.json()).error); setLoading(false); return; }
     const data = await res.json();
-    // Jupyter is proxied through nginx (:8080), not Next.js (:3000)
-    // If user is on port 3000, redirect through 8080
     let url = data.url;
     if (window.location.port === "3000") {
       url = `http://${window.location.hostname}:8080${data.url}`;
@@ -724,7 +819,11 @@ function NotebookRenderer({ page, isOwner }) {
     setLoading(false);
   };
 
-  // Jupyter editor (owner only)
+  const toggleCell = (idx) => {
+    setCollapsedCells((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  // Jupyter editor (full-screen iframe)
   if (showJupyter && jupyterUrl) {
     return (
       <div style={{ margin: "-32px -32px 0", display: "flex", flexDirection: "column", height: "calc(100vh - 49px)" }}>
@@ -739,7 +838,7 @@ function NotebookRenderer({ page, isOwner }) {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => window.open(jupyterUrl, "_blank")} style={toolbarBtn}>New tab</button>
-            <button onClick={() => setShowJupyter(false)} style={toolbarBtn}>Back</button>
+            <button onClick={() => { setShowJupyter(false); loadNotebookContent(); }} style={toolbarBtn}>Back to preview</button>
           </div>
         </div>
         <iframe src={jupyterUrl} style={{ flex: 1, border: "none", width: "100%" }} title="JupyterLab" allow="clipboard-read; clipboard-write" />
@@ -747,53 +846,112 @@ function NotebookRenderer({ page, isOwner }) {
     );
   }
 
+  const cells = notebook?.cells || [];
+
   return (
     <div>
-      {/* Notebook info card */}
-      <div style={{ padding: 24, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{page.name}</h2>
-            <p style={{ color: "#666", fontSize: 13, margin: 0 }}>
-              Jupyter notebook with IoT Stack SDK pre-loaded.
-            </p>
-          </div>
+      {/* Toolbar */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+        {isOwner && (
+          <button onClick={openNotebook} disabled={loading} style={btnBlue}>
+            {loading ? "Starting..." : "Open in Jupyter"}
+          </button>
+        )}
+        <button onClick={loadNotebookContent} style={btnGray}>Refresh</button>
+        {error && <span style={{ color: "#e53e3e", fontSize: 13 }}>{error}</span>}
+      </div>
+
+      {/* Schedule info */}
+      {schedule?.cron && (
+        <div style={{ marginBottom: 12, padding: 10, background: "#fffbeb", borderRadius: 6, border: "1px solid #fde68a", fontSize: 12 }}>
+          <strong>{"\u23F0"} Scheduled:</strong> {schedule.cron}
+          {schedule.enabled === false && <span style={{ color: "#999" }}> (paused)</span>}
+          {lastRun && <span> &middot; Last run: {new Date(lastRun).toLocaleString()}</span>}
+          {lastStatus && <span> &middot; <span style={{ color: lastStatus === "success" ? "#38a169" : "#e53e3e" }}>{lastStatus}</span></span>}
+          {schedule.run_count > 0 && <span> &middot; {schedule.run_count} runs</span>}
+        </div>
+      )}
+
+      {/* Notebook cells (read-only preview) */}
+      {nbLoading ? (
+        <div style={{ padding: 40, textAlign: "center", color: "#999" }}>Loading notebook...</div>
+      ) : nbError ? (
+        <div style={{ padding: 24, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center" }}>
+          <p style={{ color: "#666", fontSize: 14 }}>{nbError}</p>
           {isOwner && (
             <button onClick={openNotebook} disabled={loading} style={btnBlue}>
               {loading ? "Starting..." : "Open in Jupyter"}
             </button>
           )}
         </div>
-        {error && <p style={{ color: "#e53e3e", margin: "8px 0 0", fontSize: 13 }}>{error}</p>}
+      ) : cells.length === 0 ? (
+        <div style={{ padding: 24, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center", color: "#999" }}>
+          Empty notebook. {isOwner ? "Open in Jupyter to add cells." : ""}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {cells.map((cell, idx) => {
+            const cellType = cell.cell_type;
+            const source = Array.isArray(cell.source) ? cell.source.join("") : (cell.source || "");
+            const outputs = cell.outputs || [];
+            const execCount = cell.execution_count;
+            const isCollapsed = collapsedCells[idx];
 
-        {/* Schedule info */}
-        {schedule?.cron && (
-          <div style={{ marginTop: 12, padding: 10, background: "#fffbeb", borderRadius: 6, border: "1px solid #fde68a", fontSize: 12 }}>
-            <strong>{"\u23F0"} Scheduled:</strong> {schedule.cron}
-            {schedule.enabled === false && <span style={{ color: "#999" }}> (paused)</span>}
-            {lastRun && <span> &middot; Last run: {new Date(lastRun).toLocaleString()}</span>}
-            {lastStatus && <span> &middot; <span style={{ color: lastStatus === "success" ? "#38a169" : "#e53e3e" }}>{lastStatus}</span></span>}
-            {schedule.run_count > 0 && <span> &middot; {schedule.run_count} runs</span>}
-          </div>
-        )}
-      </div>
+            if (cellType === "markdown") {
+              return (
+                <div key={idx} style={{ padding: "12px 16px", background: "#fff", borderLeft: "3px solid #0070f3", borderRadius: 4 }}>
+                  <div dangerouslySetInnerHTML={{ __html: renderMarkdown(source) }} />
+                </div>
+              );
+            }
 
-      {/* For non-owners: show read-only info */}
-      {!isOwner && (
-        <div style={{ padding: 24, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", textAlign: "center" }}>
-          <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>{"\u{1F512}"}</div>
-          <p style={{ color: "#666", fontSize: 14 }}>
-            This notebook is owned by another user. You can view its schedule and status above.
-          </p>
-          <p style={{ color: "#999", fontSize: 12, marginTop: 8 }}>
-            Clone it to your workspace to get your own editable copy.
-          </p>
+            if (cellType === "code") {
+              const sourceLines = source.split("\n");
+              const isLong = sourceLines.length > 15;
+              return (
+                <div key={idx} style={{ background: "#fff", borderLeft: "3px solid #38a169", borderRadius: 4, overflow: "hidden" }}>
+                  {/* Code cell header */}
+                  <div style={{ display: "flex", alignItems: "center", padding: "4px 12px", background: "#f8f9fa", fontSize: 11, color: "#888", gap: 8 }}>
+                    <span style={{ fontFamily: "monospace", minWidth: 40 }}>[{execCount ?? " "}]:</span>
+                    <span>{sourceLines.length} lines</span>
+                    {isLong && (
+                      <button onClick={() => toggleCell(idx)} style={{ background: "none", border: "none", color: "#0070f3", cursor: "pointer", fontSize: 11, padding: 0 }}>
+                        {isCollapsed ? "Show code" : "Hide code"}
+                      </button>
+                    )}
+                  </div>
+                  {/* Source code */}
+                  {!(isLong && isCollapsed) && (
+                    <pre style={{
+                      margin: 0, padding: "8px 12px 8px 52px", fontFamily: "monospace", fontSize: 12.5, lineHeight: 1.5,
+                      background: "#f7f7f7", overflow: "auto", maxHeight: 400, color: "#1e1e1e", whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    }}>{source}</pre>
+                  )}
+                  {/* Outputs */}
+                  {outputs.length > 0 && (
+                    <div style={{ borderTop: "1px solid #eee" }}>
+                      {outputs.map((out, oi) => (
+                        <div key={oi}>{renderOutput(out)}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // raw or other cell types
+            return (
+              <div key={idx} style={{ padding: "8px 16px", background: "#f9f9f9", borderLeft: "3px solid #ccc", borderRadius: 4 }}>
+                <pre style={{ margin: 0, fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap" }}>{source}</pre>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* SDK quick reference (owner only) */}
-      {isOwner && (
-        <div style={{ padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+      {/* SDK quick reference (owner only, when no notebook loaded) */}
+      {isOwner && cells.length === 0 && !nbLoading && (
+        <div style={{ padding: 16, background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", marginTop: 12 }}>
           <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>SDK Quick Reference</h3>
           <pre style={{ background: "#f7f7f7", padding: 12, borderRadius: 6, fontSize: 12, overflow: "auto", lineHeight: 1.6, margin: 0 }}>
 {`from iot_stack import connect

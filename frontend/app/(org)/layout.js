@@ -32,6 +32,7 @@ const NAV_SECTIONS = [
       { href: "/-/users", label: "Users", icon: "\u{1F465}", permission: "users.view", feature: null },
       { href: "/-/roles", label: "Roles", icon: "\u{1F6E1}", permission: "roles.manage", feature: null },
       { href: "/-/permissions", label: "Permissions", icon: "\u{1F511}", permission: "permissions.manage", feature: null },
+      { href: "/-/security", label: "Security", icon: "\u{1F512}", permission: "org.settings", feature: null },
       { href: "/-/settings", label: "Settings", icon: "\u2699", permission: "org.settings", feature: null },
     ],
   },

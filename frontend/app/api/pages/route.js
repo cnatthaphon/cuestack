@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../lib/auth.js";
 import { query } from "../../../lib/db.js";
-import { hasPermission as checkPerm } from "../../../lib/permissions.js";
+import { hasPermission as checkPerm, getUserPermissions } from "../../../lib/permissions.js";
 import { hasFeature } from "../../../lib/features.js";
 
 // GET — list pages (tree for nav, or by view)
@@ -51,7 +51,27 @@ export async function GET(request) {
        ORDER BY p.updated_at DESC`,
       params
     );
-    return NextResponse.json({ pages: result.rows });
+
+    // Filter out page types the user lacks permission to access
+    let pages = result.rows;
+    if (!user.is_super_admin) {
+      const userPerms = await getUserPermissions(user.id, user.role_id);
+      const permSet = new Set(userPerms);
+      // Map page_type → required permission
+      const TYPE_PERM_MAP = {
+        notebook: "notebooks.use",
+        dashboard: "dashboard.view",
+        python: "services.manage",
+      };
+      pages = pages.filter((p) => {
+        const requiredPerm = TYPE_PERM_MAP[p.page_type];
+        // If no specific permission required (html, visual, etc.), allow
+        if (!requiredPerm) return true;
+        return permSet.has(requiredPerm);
+      });
+    }
+
+    return NextResponse.json({ pages });
   }
 
   if (view === "published") {

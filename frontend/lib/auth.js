@@ -105,31 +105,48 @@ export function requireOrg(user) {
   return user.org_id;
 }
 
-// --- Rate Limiting (in-memory, resets on restart) ---
+// --- Rate Limiting (DB-backed via audit_log, survives restarts) ---
 
-const loginAttempts = new Map();
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 60_000;
+const MAX_ATTEMPTS = 10;
+const WINDOW_MINUTES = 15;
 
-export function checkRateLimit(ip) {
-  const now = Date.now();
-  const entry = loginAttempts.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + LOCKOUT_MS });
+export async function checkRateLimit(ip) {
+  try {
+    const result = await query(
+      `SELECT COUNT(*) as attempts FROM audit_log
+       WHERE ip_address = $1 AND action = 'login_failed'
+         AND created_at > NOW() - INTERVAL '${WINDOW_MINUTES} minutes'`,
+      [ip]
+    );
+    return parseInt(result.rows[0].attempts) < MAX_ATTEMPTS;
+  } catch {
+    // If DB query fails, allow login (fail-open for availability)
     return true;
   }
-
-  if (entry.count >= MAX_ATTEMPTS) {
-    return false;
-  }
-
-  entry.count++;
-  return true;
 }
 
-export function resetRateLimit(ip) {
-  loginAttempts.delete(ip);
+export async function recordFailedLogin(ip, username) {
+  try {
+    await query(
+      `INSERT INTO audit_log (action, resource_type, resource_id, ip_address, details)
+       VALUES ('login_failed', 'auth', $1, $2, $3)`,
+      [username || "unknown", ip, JSON.stringify({ username })]
+    );
+  } catch {
+    // Non-critical — don't block login flow
+  }
+}
+
+export async function resetRateLimit(ip) {
+  try {
+    await query(
+      `DELETE FROM audit_log WHERE ip_address = $1 AND action = 'login_failed'
+         AND created_at > NOW() - INTERVAL '${WINDOW_MINUTES} minutes'`,
+      [ip]
+    );
+  } catch {
+    // Non-critical
+  }
 }
 
 // --- Seed Data (dev only) ---

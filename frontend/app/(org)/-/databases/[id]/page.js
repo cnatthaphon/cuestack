@@ -9,7 +9,7 @@ import { useUser } from "../../../../../lib/user-context.js";
 const INPUT_MAP = {
   text: "text", long_text: "textarea", integer: "number", bigint: "number",
   float: "number", boolean: "checkbox", timestamp: "datetime-local",
-  date: "date", json: "json", uuid: "text",
+  date: "date", json: "json", uuid: "text", serial: "number",
 };
 
 const FILTER_OPS = [
@@ -129,6 +129,23 @@ export default function TableViewerPage() {
     fetchData();
   };
 
+  // Duplicate record — copies all user columns, server assigns new id/created_at
+  const duplicateRecord = async (row) => {
+    const data = {};
+    for (const col of columns) {
+      if (row[col.name] != null) data[col.name] = row[col.name];
+    }
+    try {
+      await fetch(`/api/tables/${tableId}/data`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      fetchData();
+    } catch (e) {
+      console.error("Duplicate failed:", e);
+    }
+  };
+
   if (!user) return null;
   if (!table && !loading) return <div style={{ padding: 32 }}>Table not found</div>;
 
@@ -226,8 +243,9 @@ export default function TableViewerPage() {
                   </td>
                 ))}
                 {canEdit && (
-                  <td style={td}>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>
                     <button onClick={() => { setEditRecord(row); setShowForm(true); }} style={actionBtn}>Edit</button>
+                    <button onClick={() => duplicateRecord(row)} style={{ ...actionBtn, marginLeft: 4 }}>Duplicate</button>
                   </td>
                 )}
               </tr>
