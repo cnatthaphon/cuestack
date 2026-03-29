@@ -35,3 +35,8 @@ c.InteractiveShellApp.exec_files = ["/root/.jupyter/startup.py"]
 
 # Disable terminal for security (users use notebooks only)
 c.ServerApp.terminals_enabled = False
+
+# Lock down: platform manages notebook files, Jupyter is just the editor
+# Hide launcher and file browser in JupyterLab
+c.LabApp.default_url = "/doc"  # default to single-document mode
+c.ContentsManager.allow_hidden = False

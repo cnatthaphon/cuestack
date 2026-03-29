@@ -150,7 +150,8 @@ export async function POST(request) {
     return NextResponse.json({ error: "Could not reach Jupyter" }, { status: 502 });
   }
 
-  const notebookUrl = `/jupyter/lab/tree/${nbPath}`;
+  // Use /doc/ mode — single notebook only, no file browser, no launcher
+  const notebookUrl = `/jupyter/doc/tree/${nbPath}`;
 
   return NextResponse.json({
     url: notebookUrl,
