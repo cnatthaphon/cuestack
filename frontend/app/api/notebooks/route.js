@@ -77,16 +77,34 @@ export async function POST(request) {
     }
   }
 
-  // If no content yet, create starter notebook
-  if (!nbContent) {
-    nbContent = createStarterNotebook(sdkToken);
-  }
-
-  // Push to Jupyter as a temp file
   const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
   const dirName = `org_${orgShort}`;
   const sessionName = name || "notebook";
   const nbPath = `${dirName}/${sessionName}.ipynb`;
+
+  // If no content in DB, try to pull existing file from Jupyter (migration)
+  if (!nbContent) {
+    try {
+      const existingRes = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}?content=1`);
+      if (existingRes.ok) {
+        const existing = await existingRes.json();
+        nbContent = existing.content;
+        // Save to DB so future opens read from DB
+        if (page_id && nbContent) {
+          const pgRes = await query(`SELECT config FROM user_pages WHERE id = $1 AND org_id = $2`, [page_id, user.org_id]);
+          if (pgRes.rows.length > 0) {
+            const existCfg = typeof pgRes.rows[0].config === "string" ? JSON.parse(pgRes.rows[0].config) : (pgRes.rows[0].config || {});
+            await query(`UPDATE user_pages SET config = $1, updated_at = NOW() WHERE id = $2`, [JSON.stringify({ ...existCfg, notebook_content: nbContent }), page_id]);
+          }
+        }
+      }
+    } catch { /* Jupyter might be down */ }
+  }
+
+  // Still nothing — create starter
+  if (!nbContent) {
+    nbContent = createStarterNotebook(sdkToken);
+  }
 
   try {
     // Ensure org directory exists

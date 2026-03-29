@@ -859,6 +859,17 @@ function NotebookRenderer({ page, isOwner, onReload }) {
 
   const nbName = page.slug || page.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
+  // Migration: if DB has no content, try pulling from Jupyter (old notebooks)
+  useEffect(() => {
+    if (!nbContent && page.id) {
+      fetch(`/api/notebooks/${encodeURIComponent(nbName)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page_id: page.id }),
+      }).then((r) => { if (r.ok && onReload) onReload(); }).catch(() => {});
+    }
+  }, [page.id]);
+
   // Open: push content from DB → Jupyter, open editor
   const openNotebook = async () => {
     setLoading(true);
