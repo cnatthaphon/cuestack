@@ -14,11 +14,21 @@ export default function PageViewer() {
   const [showShare, setShowShare] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [orgUsers, setOrgUsers] = useState([]);
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     loadPage();
     fetch("/api/users").then((r) => r.ok ? r.json() : { users: [] }).then((d) => setOrgUsers(d.users || []));
   }, [params.id]);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showMenu]);
 
   const loadPage = async () => {
     const res = await fetch(`/api/pages/${params.id}`);
@@ -90,17 +100,6 @@ export default function PageViewer() {
     python: PythonRenderer,
   };
   const Renderer = renderers[page.page_type] || DashboardRenderer;
-
-  const [showMenu, setShowMenu] = useState(false);
-  const menuRef = useRef(null);
-
-  // Close menu on outside click
-  useEffect(() => {
-    if (!showMenu) return;
-    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showMenu]);
 
   const menuAction = (fn) => { setShowMenu(false); fn(); };
 
