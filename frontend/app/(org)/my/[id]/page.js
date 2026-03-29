@@ -582,30 +582,34 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
   const [htmlBody, setHtmlBody] = useState(parts.body);
   const [css, setCss] = useState(parts.css);
   const [js, setJs] = useState(parts.js);
+  const [previewJs, setPreviewJs] = useState(parts.js); // JS only runs on explicit "Run"
   const [activeTab, setActiveTab] = useState("html");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
 
+  const runPreview = () => { setPreviewJs(js); setPreviewKey((k) => k + 1); };
+
   const save = async () => {
     setSaving(true);
     await saveConfig({ ...cfg, html_body: htmlBody, css, js, html: undefined });
     setSaving(false);
+    setPreviewJs(js);
     setPreviewKey((k) => k + 1);
   };
 
   const cancel = () => {
     setEditing(false);
     const p = migrateOld(cfg);
-    setHtmlBody(p.body); setCss(p.css); setJs(p.js);
+    setHtmlBody(p.body); setCss(p.css); setJs(p.js); setPreviewJs(p.js);
   };
 
-  // Build iframe srcdoc with SDK injection
+  // Build iframe srcdoc — uses previewJs (not live js) to avoid partial-typing errors
   const srcdoc = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{margin:0;font-family:system-ui,-apple-system,sans-serif}${css ? "\n" + css : ""}</style>
 <script src="/sdk.js"><\/script>
-</head><body>${htmlBody}${js ? "\n<script>" + js + "<\/script>" : ""}</body></html>`;
+</head><body>${htmlBody}${previewJs ? "\n<script>" + previewJs + "<\/script>" : ""}</body></html>`;
 
   const TABS = [
     { id: "html", label: "HTML", color: "#e34c26" },
@@ -618,16 +622,18 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
         {isOwner && (
           editing
             ? <>
                 <button onClick={() => { save(); setEditing(false); }} disabled={saving} style={btnBlue}>{saving ? "Saving..." : "Save"}</button>
                 <button onClick={cancel} style={btnGray}>Cancel</button>
+                <button onClick={runPreview} style={{ ...btnGray, background: "#38a169", color: "#fff" }} title="Run JS in preview (Ctrl+Enter)">&#9654; Run</button>
               </>
             : <button onClick={() => setEditing(true)} style={btnBlue}>Edit Code</button>
         )}
-        <button onClick={() => setPreviewKey((k) => k + 1)} style={btnGray}>Refresh</button>
+        <button onClick={runPreview} style={btnGray}>Refresh</button>
+        {editing && activeTab === "js" && <span style={{ fontSize: 11, color: "#999" }}>Ctrl+Enter to run</span>}
       </div>
 
       {editing ? (
@@ -662,6 +668,7 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
                   tabSetter[activeTab](val.substring(0, selectionStart) + "  " + val.substring(selectionEnd));
                   setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = selectionStart + 2; }, 0);
                 }
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); runPreview(); }
               }}
               placeholder={activeTab === "html" ? "Write your HTML markup here..." : activeTab === "css" ? "body { background: #f5f5f5; }\n.card { padding: 16px; }" : "// Your JavaScript code\ndocument.addEventListener('DOMContentLoaded', () => {\n  \n});"}
             />
