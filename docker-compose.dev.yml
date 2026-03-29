@@ -1,0 +1,14 @@
+# Development override — mounts source for hot-reload
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+services:
+  frontend:
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+      - org_files:/files
+
+  backend:
+    volumes:
+      - ./backend:/app
