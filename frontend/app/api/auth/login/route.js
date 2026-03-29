@@ -6,13 +6,14 @@ import {
   setSessionCookie,
   checkRateLimit,
   resetRateLimit,
+  recordFailedLogin,
 } from "../../../../lib/auth.js";
 
 export async function POST(request) {
   const ip = request.headers.get("x-forwarded-for") || "unknown";
-  if (!checkRateLimit(ip)) {
+  if (!(await checkRateLimit(ip))) {
     return NextResponse.json(
-      { error: "Too many login attempts. Try again in 1 minute." },
+      { error: "Too many login attempts. Try again in 15 minutes." },
       { status: 429 }
     );
   }
@@ -52,10 +53,11 @@ export async function POST(request) {
   }
 
   if (!user || !(await verifyPassword(password, user.hashed_password))) {
+    await recordFailedLogin(ip, username);
     return NextResponse.json({ error: "Bad credentials" }, { status: 401 });
   }
 
-  resetRateLimit(ip);
+  await resetRateLimit(ip);
   const token = await createToken(user);
   await setSessionCookie(token);
 

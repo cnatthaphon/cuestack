@@ -332,6 +332,7 @@ export async function initDB() {
     )
   `);
   await query(`CREATE INDEX IF NOT EXISTS idx_audit_org ON audit_log (org_id, created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_audit_ip_action ON audit_log (ip_address, action, created_at DESC)`);
 
   // Channel tokens (publish/subscribe credentials for devices/apps)
   await query(`

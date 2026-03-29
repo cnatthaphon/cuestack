@@ -14,6 +14,7 @@ const TYPE_MAP = {
   date: "DATE",
   json: "JSONB",
   uuid: "UUID",
+  serial: "BIGSERIAL",
 };
 
 const VALID_TYPES = Object.keys(TYPE_MAP);
@@ -42,6 +43,8 @@ function validateColumns(columns) {
   if (columns.length > 50) return "Maximum 50 columns";
   for (const col of columns) {
     if (!col.name || !/^[a-z][a-z0-9_]*$/.test(col.name)) return `Invalid column name: "${col.name}"`;
+    // Allow "id" column with no type — defaults to uuid
+    if (!col.type && col.name === "id") continue;
     if (!VALID_TYPES.includes(col.type)) return `Invalid type "${col.type}" for column "${col.name}". Valid: ${VALID_TYPES.join(", ")}`;
   }
   const names = columns.map((c) => c.name);
@@ -69,7 +72,13 @@ export async function createOrgTable(orgId, { name, db_type, columns, descriptio
   const indexCols = [];
 
   for (const col of columns) {
-    let def = `"${col.name}" ${TYPE_MAP[col.type]}`;
+    // Default "id" with no type to UUID with auto-generated default
+    const colType = col.type || (col.name === "id" ? "uuid" : "text");
+    let def = `"${col.name}" ${TYPE_MAP[colType]}`;
+    // UUID columns get gen_random_uuid() default unless user specified a default
+    if (colType === "uuid" && (col.default_value == null || col.default_value === "")) {
+      def += " DEFAULT gen_random_uuid()";
+    }
     if (!col.nullable) def += " NOT NULL";
     if (col.unique) def += " UNIQUE";
     if (col.default_value != null && col.default_value !== "") {
