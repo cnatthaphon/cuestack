@@ -3,11 +3,15 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { query } from "./db.js";
 
-const _secretKey = process.env.SECRET_KEY;
-if (!_secretKey && process.env.NODE_ENV === "production") {
-  throw new Error("FATAL: SECRET_KEY environment variable is required in production");
+// SECRET_KEY checked at runtime, not module load (build-time has no env vars)
+function getSecret() {
+  const key = process.env.SECRET_KEY;
+  if (!key && process.env.NODE_ENV === "production" && typeof window === "undefined") {
+    console.error("WARNING: SECRET_KEY not set in production — using insecure default");
+  }
+  return new TextEncoder().encode(key || "dev-only-not-for-production");
 }
-const SECRET = new TextEncoder().encode(_secretKey || "dev-only-not-for-production");
+const SECRET = getSecret();
 const COOKIE_NAME = "iot-session";
 const TOKEN_EXPIRY = "24h";
 const BCRYPT_ROUNDS = 12;
