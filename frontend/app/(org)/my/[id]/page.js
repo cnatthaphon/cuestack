@@ -560,27 +560,61 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
   );
 }
 
-// ─── HTML page renderer (code editor + preview) ──────────────────────────────
+// ─── HTML page renderer (tabbed code editor + preview) ──────────────────────
 function HtmlRenderer({ page, isOwner, saveConfig }) {
   const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
-  const [html, setHtml] = useState(cfg.html || DEFAULT_HTML);
+
+  // Backward compat: old pages store everything in cfg.html (may contain <style>/<script>)
+  // New pages store cfg.html_body, cfg.css, cfg.js separately
+  const migrateOld = (c) => {
+    if (c.html_body !== undefined) return { body: c.html_body || "", css: c.css || "", js: c.js || "" };
+    // Parse legacy single-field html into parts
+    const raw = c.html || DEFAULT_BODY;
+    let css = "", js = "", body = raw;
+    // Extract <style>...</style>
+    body = body.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, s) => { css += s.trim() + "\n"; return ""; });
+    // Extract <script>...</script>
+    body = body.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, (_, s) => { js += s.trim() + "\n"; return ""; });
+    return { body: body.trim(), css: css.trim(), js: js.trim() };
+  };
+
+  const parts = migrateOld(cfg);
+  const [htmlBody, setHtmlBody] = useState(parts.body);
+  const [css, setCss] = useState(parts.css);
+  const [js, setJs] = useState(parts.js);
+  const [activeTab, setActiveTab] = useState("html");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
 
   const save = async () => {
     setSaving(true);
-    await saveConfig({ ...cfg, html });
+    await saveConfig({ ...cfg, html_body: htmlBody, css, js, html: undefined });
     setSaving(false);
     setPreviewKey((k) => k + 1);
+  };
+
+  const cancel = () => {
+    setEditing(false);
+    const p = migrateOld(cfg);
+    setHtmlBody(p.body); setCss(p.css); setJs(p.js);
   };
 
   // Build iframe srcdoc with SDK injection
   const srcdoc = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{margin:0;font-family:system-ui,-apple-system,sans-serif}</style>
+<style>body{margin:0;font-family:system-ui,-apple-system,sans-serif}${css ? "\n" + css : ""}</style>
 <script src="/sdk.js"><\/script>
-</head><body>${html}</body></html>`;
+</head><body>${htmlBody}${js ? "\n<script>" + js + "<\/script>" : ""}</body></html>`;
+
+  const TABS = [
+    { id: "html", label: "HTML", color: "#e34c26" },
+    { id: "css", label: "CSS", color: "#264de4" },
+    { id: "js", label: "JavaScript", color: "#f7df1e" },
+  ];
+
+  const tabContent = { html: htmlBody, css, js };
+  const tabSetter = { html: setHtmlBody, css: setCss, js: setJs };
 
   return (
     <>
@@ -589,7 +623,7 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
           editing
             ? <>
                 <button onClick={() => { save(); setEditing(false); }} disabled={saving} style={btnBlue}>{saving ? "Saving..." : "Save"}</button>
-                <button onClick={() => { setEditing(false); setHtml(cfg.html || DEFAULT_HTML); }} style={btnGray}>Cancel</button>
+                <button onClick={cancel} style={btnGray}>Cancel</button>
               </>
             : <button onClick={() => setEditing(true)} style={btnBlue}>Edit Code</button>
         )}
@@ -598,12 +632,22 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
 
       {editing ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, minHeight: 500 }}>
-          {/* Code editor */}
+          {/* Tabbed code editor */}
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 11, color: "#666", padding: "4px 8px", background: "#f0f0f0", borderRadius: "6px 6px 0 0" }}>HTML + JavaScript</div>
+            <div style={{ display: "flex", background: "#f0f0f0", borderRadius: "6px 6px 0 0", overflow: "hidden" }}>
+              {TABS.map((t) => (
+                <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+                  padding: "6px 16px", fontSize: 12, fontWeight: activeTab === t.id ? 600 : 400,
+                  background: activeTab === t.id ? "#1e1e1e" : "transparent",
+                  color: activeTab === t.id ? t.color : "#666",
+                  border: "none", cursor: "pointer",
+                  borderBottom: activeTab === t.id ? `2px solid ${t.color}` : "2px solid transparent",
+                }}>{t.label}</button>
+              ))}
+            </div>
             <textarea
-              value={html}
-              onChange={(e) => setHtml(e.target.value)}
+              value={tabContent[activeTab]}
+              onChange={(e) => tabSetter[activeTab](e.target.value)}
               spellCheck={false}
               style={{
                 flex: 1, padding: 12, fontFamily: "monospace", fontSize: 13, lineHeight: 1.5,
@@ -613,16 +657,18 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
               onKeyDown={(e) => {
                 if (e.key === "Tab") {
                   e.preventDefault();
+                  const val = tabContent[activeTab];
                   const { selectionStart, selectionEnd } = e.target;
-                  setHtml(html.substring(0, selectionStart) + "  " + html.substring(selectionEnd));
+                  tabSetter[activeTab](val.substring(0, selectionStart) + "  " + val.substring(selectionEnd));
                   setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = selectionStart + 2; }, 0);
                 }
               }}
+              placeholder={activeTab === "html" ? "Write your HTML markup here..." : activeTab === "css" ? "body { background: #f5f5f5; }\n.card { padding: 16px; }" : "// Your JavaScript code\ndocument.addEventListener('DOMContentLoaded', () => {\n  \n});"}
             />
           </div>
           {/* Live preview */}
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 11, color: "#666", padding: "4px 8px", background: "#f0f0f0", borderRadius: "6px 6px 0 0" }}>Preview</div>
+            <div style={{ fontSize: 11, color: "#666", padding: "6px 8px", background: "#f0f0f0", borderRadius: "6px 6px 0 0", borderBottom: "2px solid transparent" }}>Preview</div>
             <iframe
               key={previewKey}
               srcDoc={srcdoc}
@@ -647,22 +693,15 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
   );
 }
 
-const DEFAULT_HTML = `<div style="padding: 24px; max-width: 800px; margin: 0 auto">
+const DEFAULT_BODY = `<div style="padding: 24px; max-width: 800px; margin: 0 auto">
   <h1>My Web Page</h1>
-  <p>Edit this page to build your app. The IoT Stack SDK is available:</p>
-  <pre style="background: #f5f5f5; padding: 12px; border-radius: 6px; font-size: 13px">
-// Query data
+  <p>Edit this page to build your app. The IoT Stack SDK is available.</p>
+  <pre style="background: #f5f5f5; padding: 12px; border-radius: 6px; font-size: 13px">// Query data
 const result = await IoTStack.query("SELECT * FROM my_table LIMIT 5");
-console.log(result.rows);
-
-// Check permissions
-const canView = await IoTStack.can("app.my_app");
-  </pre>
+console.log(result.rows);</pre>
   <div id="output" style="margin-top: 16px; padding: 12px; background: #f0f7ff; border-radius: 6px"></div>
-  <script>
-    document.getElementById("output").textContent = "Page loaded at " + new Date().toLocaleString();
-  </script>
 </div>`;
+const DEFAULT_HTML = DEFAULT_BODY;
 
 // ─── Visual flow renderer (canvas-based) ─────────────────────────────────────
 const BLOCK_TYPES = [
