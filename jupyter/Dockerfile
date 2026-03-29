@@ -29,9 +29,22 @@ RUN mkdir -p /workspace
 RUN mkdir -p /root/.jupyter/lab/user-settings/@jupyterlab/application-extension && \
     echo '{ "layout": "single-document" }' > /root/.jupyter/lab/user-settings/@jupyterlab/application-extension/shell.jupyterlab-settings
 
-# 2. Inject CSS into the STATIC index.html (this is what actually gets served)
+# 2. Inject CSS to hide file browser/menu into ALL index.html files JupyterLab uses
 COPY hide-ui.css /tmp/hide-ui.css
-RUN python3 -c "import jupyterlab,os;idx=os.path.join(os.path.dirname(jupyterlab.__file__),'static','index.html');css=open('/tmp/hide-ui.css').read().replace(chr(10),' ');html=open(idx).read();html=html.replace('</head>','<style>'+css+'</style></head>');open(idx,'w').write(html);print('OK',len(html))"
+RUN python3 << 'PYEOF'
+import glob, os
+css = open('/tmp/hide-ui.css').read().replace('\n', ' ')
+tag = '<style>' + css + '</style>'
+targets = glob.glob('/usr/local/**/index.html', recursive=True)
+for path in targets:
+    if 'jupyter' not in path.lower():
+        continue
+    html = open(path).read()
+    if '</head>' in html and 'jp-SideBar' not in html:
+        html = html.replace('</head>', tag + '</head>')
+        open(path, 'w').write(html)
+        print(f'Injected into {path}')
+PYEOF
 
 # Jupyter config
 RUN mkdir -p /root/.jupyter
