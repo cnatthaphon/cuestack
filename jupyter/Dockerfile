@@ -24,13 +24,21 @@ RUN echo 'from setuptools import setup; setup(name="iot_stack", version="0.1", p
 # Create workspace directory
 RUN mkdir -p /workspace
 
-# Disable file browser, launcher, and new file creation — platform manages files
-RUN jupyter labextension disable @jupyterlab/filebrowser-extension:browser && \
-    jupyter labextension disable @jupyterlab/launcher-extension:launcher && \
-    jupyter labextension disable @jupyterlab/filebrowser-extension:open-with && \
-    jupyter labextension disable @jupyterlab/filebrowser-extension:share-file && \
-    jupyter labextension disable @jupyterlab/filebrowser-extension:download && \
-    jupyter labextension disable @jupyterlab/filebrowser-extension:factory-default
+# Hide file browser, launcher, menus — platform manages notebook files
+# Single-document layout as default
+RUN mkdir -p /root/.jupyter/lab/user-settings/@jupyterlab/application-extension && \
+    echo '{ "layout": "single-document" }' > /root/.jupyter/lab/user-settings/@jupyterlab/application-extension/shell.jupyterlab-settings
+
+# Inject custom CSS into JupyterLab's index.html to hide file management UI
+RUN LABSTATIC=$(python -c "import jupyterlab; import os; print(os.path.join(os.path.dirname(jupyterlab.__file__), 'static'))") && \
+    cp "$LABSTATIC/index.html" "$LABSTATIC/index.html.bak" && \
+    sed -i 's|</head>|<style>\
+/* Platform-managed: hide file browser sidebar, menu bar, launcher */\
+.jp-SideBar.jp-mod-left, #jp-left-stack { display:none!important; }\
+#jp-menu-panel, #jp-MainMenu { display:none!important; }\
+.jp-Launcher { display:none!important; }\
+.jp-SideBar.jp-mod-right { display:none!important; }\
+</style></head>|' "$LABSTATIC/index.html"
 
 # Jupyter config
 RUN mkdir -p /root/.jupyter
