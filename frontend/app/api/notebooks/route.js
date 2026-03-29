@@ -114,6 +114,31 @@ export async function POST(request) {
       body: JSON.stringify({ type: "directory" }),
     });
 
+    // Clean up old orphan files (one-time migration cleanup)
+    try {
+      const dirRes = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${dirName}`);
+      if (dirRes.ok) {
+        const dirData = await dirRes.json();
+        const orphans = (dirData.content || []).filter(
+          (f) => f.type === "notebook" && f.name !== `${sessionName}.ipynb`
+        );
+        for (const f of orphans) {
+          await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${f.path}`, { method: "DELETE" });
+        }
+      }
+      // Also clean root-level orphans
+      const rootRes = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/`);
+      if (rootRes.ok) {
+        const rootData = await rootRes.json();
+        const rootOrphans = (rootData.content || []).filter(
+          (f) => f.type === "notebook" && f.name !== `${sessionName}.ipynb`
+        );
+        for (const f of rootOrphans) {
+          await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${f.path}`, { method: "DELETE" });
+        }
+      }
+    } catch { /* cleanup is best-effort */ }
+
     // Write notebook content to Jupyter
     await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}`, {
       method: "PUT",

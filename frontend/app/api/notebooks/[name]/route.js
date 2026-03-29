@@ -57,5 +57,10 @@ export async function POST(request, { params }) {
     [JSON.stringify(newConfig), page_id, user.org_id]
   );
 
+  // Clean up: delete the temp file from Jupyter (DB is source of truth now)
+  try {
+    await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}`, { method: "DELETE" });
+  } catch { /* non-critical */ }
+
   return NextResponse.json({ ok: true, cells: nbContent.cells?.length || 0 });
 }
