@@ -24,6 +24,14 @@ RUN echo 'from setuptools import setup; setup(name="iot_stack", version="0.1", p
 # Create workspace directory
 RUN mkdir -p /workspace
 
+# Disable file browser, launcher, and new file creation — platform manages files
+RUN jupyter labextension disable @jupyterlab/filebrowser-extension:browser && \
+    jupyter labextension disable @jupyterlab/launcher-extension:launcher && \
+    jupyter labextension disable @jupyterlab/filebrowser-extension:open-with && \
+    jupyter labextension disable @jupyterlab/filebrowser-extension:share-file && \
+    jupyter labextension disable @jupyterlab/filebrowser-extension:download && \
+    jupyter labextension disable @jupyterlab/filebrowser-extension:factory-default
+
 # Jupyter config
 RUN mkdir -p /root/.jupyter
 COPY jupyter_config.py /root/.jupyter/jupyter_lab_config.py
