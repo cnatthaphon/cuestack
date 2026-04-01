@@ -193,7 +193,7 @@ function updateUI(data) {
 // Connect via SDK
 async function start() {
   try {
-    const sdk = await IoTStack.init();
+    const sdk = await CueStack.init();
     document.getElementById('status-dot').className = 'dot on';
     document.getElementById('status-text').textContent = 'Connected';
 

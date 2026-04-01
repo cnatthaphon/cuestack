@@ -12,7 +12,7 @@ function getSecret() {
   return new TextEncoder().encode(key || "dev-only-not-for-production");
 }
 const SECRET = getSecret();
-const COOKIE_NAME = "iot-session";
+const COOKIE_NAME = "cuestack-session";
 const TOKEN_EXPIRY = "24h";
 const BCRYPT_ROUNDS = 12;
 

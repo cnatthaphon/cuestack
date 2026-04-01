@@ -1,5 +1,5 @@
 """
-Protobuf codec for IoT Stack sensor data.
+Protobuf codec for CueStack sensor data.
 
 Uses google.protobuf for proper serialization.
 Schema: sensor_data.proto (SensorData, DeviceCommand, CommandAck)

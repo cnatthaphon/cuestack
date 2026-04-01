@@ -727,9 +727,9 @@ function HtmlRenderer({ page, isOwner, saveConfig }) {
 
 const DEFAULT_BODY = `<div style="padding: 24px; max-width: 800px; margin: 0 auto">
   <h1>My Web Page</h1>
-  <p>Edit this page to build your app. The IoT Stack SDK is available.</p>
+  <p>Edit this page to build your app. The CueStack SDK is available.</p>
   <pre style="background: #f5f5f5; padding: 12px; border-radius: 6px; font-size: 13px">// Query data
-const result = await IoTStack.query("SELECT * FROM my_table LIMIT 5");
+const result = await CueStack.query("SELECT * FROM my_table LIMIT 5");
 console.log(result.rows);</pre>
   <div id="output" style="margin-top: 16px; padding: 12px; background: #f0f7ff; border-radius: 6px"></div>
 </div>`;

@@ -60,7 +60,7 @@ export default function PublicDashboard() {
           </div>
         ))}
       </div>
-      <p style={{ textAlign: "center", color: "#999", fontSize: 12, marginTop: 32 }}>Powered by IoT Stack</p>
+      <p style={{ textAlign: "center", color: "#999", fontSize: 12, marginTop: 32 }}>Powered by CueStack</p>
     </div>
   );
 }

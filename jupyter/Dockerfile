@@ -16,10 +16,10 @@ RUN pip install --no-cache-dir \
     scikit-learn \
     requests
 
-# Install IoT Stack SDK
-COPY iot_stack/ /opt/iot_stack/iot_stack/
-RUN echo 'from setuptools import setup; setup(name="iot_stack", version="0.1", packages=["iot_stack"])' > /opt/iot_stack/setup.py && \
-    pip install -e /opt/iot_stack
+# Install CueStack SDK
+COPY cuestack/ /opt/cuestack/cuestack/
+RUN echo 'from setuptools import setup; setup(name="cuestack", version="0.1", packages=["cuestack"])' > /opt/cuestack/setup.py && \
+    pip install -e /opt/cuestack
 
 # Create workspace directory
 RUN mkdir -p /workspace

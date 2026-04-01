@@ -137,7 +137,7 @@ async def run_mqtt_bridge():
             logger.error(f"Bridge error: {e}")
 
     # Connect to MQTT broker with retry
-    client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2, client_id="iot-stack-bridge")
+    client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2, client_id="cuestack-bridge")
     client.on_connect = on_connect
     client.on_message = on_message
 

@@ -70,7 +70,7 @@ export default function SettingsPage() {
             Custom permissions — app-specific logic (<code>app.simulator_control</code>)<br />
             Multi-role — permissions are the <strong>union</strong> of all assigned roles<br />
             <br />
-            <strong>JS apps:</strong> <code>IoTStack.can("permission.name")</code><br />
+            <strong>JS apps:</strong> <code>CueStack.can("permission.name")</code><br />
             <strong>Python:</strong> <code>client.me()["permissions"]</code>
           </div>
         </div>

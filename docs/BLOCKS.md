@@ -2,7 +2,7 @@
 
 ## Overview
 
-IoT Stack uses a Simulink-style block pipeline architecture. Every data operation flows through a chain of composable blocks. Each block has one job, receives a `PipelineContext`, and passes it forward.
+CueStack uses a Simulink-style block pipeline architecture. Every data operation flows through a chain of composable blocks. Each block has one job, receives a `PipelineContext`, and passes it forward.
 
 ## PipelineContext
 

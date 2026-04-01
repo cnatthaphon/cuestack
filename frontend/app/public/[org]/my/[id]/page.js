@@ -51,7 +51,7 @@ export default function PublicPage() {
           <h1 style={{ margin: 0, fontSize: 20 }}>{page.icon} {page.name}</h1>
         </div>
         <iframe srcDoc={srcdoc} style={{ width: "100%", height: "calc(100vh - 80px)", border: "none" }} sandbox="allow-scripts" title={page.name} />
-        <p style={{ textAlign: "center", color: "#999", fontSize: 12, padding: 16 }}>Powered by IoT Stack</p>
+        <p style={{ textAlign: "center", color: "#999", fontSize: 12, padding: 16 }}>Powered by CueStack</p>
       </div>
     );
   }
@@ -73,7 +73,7 @@ export default function PublicPage() {
           </div>
         ))}
       </div>
-      <p style={{ textAlign: "center", color: "#999", fontSize: 12, marginTop: 32 }}>Powered by IoT Stack</p>
+      <p style={{ textAlign: "center", color: "#999", fontSize: 12, marginTop: 32 }}>Powered by CueStack</p>
     </div>
   );
 }

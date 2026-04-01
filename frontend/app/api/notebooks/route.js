@@ -106,15 +106,15 @@ export async function POST(request) {
     nbContent = createStarterNotebook(sdkToken);
   } else {
     // Refresh the SDK token in existing notebook (tokens expire after 24h)
-    // Find the first code cell containing IOT_STACK_TOKEN and update it
+    // Find the first code cell containing CUESTACK_TOKEN and update it
     if (nbContent.cells) {
       for (const cell of nbContent.cells) {
         if (cell.cell_type !== "code") continue;
         const src = Array.isArray(cell.source) ? cell.source.join("") : (cell.source || "");
-        if (src.includes("IOT_STACK_TOKEN")) {
+        if (src.includes("CUESTACK_TOKEN")) {
           const updated = src.replace(
-            /os\.environ\["IOT_STACK_TOKEN"\]\s*=\s*"[^"]*"/,
-            `os.environ["IOT_STACK_TOKEN"] = "${sdkToken}"`
+            /os\.environ\["CUESTACK_TOKEN"\]\s*=\s*"[^"]*"/,
+            `os.environ["CUESTACK_TOKEN"] = "${sdkToken}"`
           );
           cell.source = Array.isArray(cell.source) ? updated.split(/(?<=\n)/) : updated;
           break;
@@ -186,17 +186,17 @@ function createStarterNotebook(token) {
       {
         cell_type: "markdown",
         metadata: {},
-        source: ["# IoT Stack Notebook\n", "\n", "Run the cell below to connect to the IoT Stack SDK.\n"],
+        source: ["# CueStack Notebook\n", "\n", "Run the cell below to connect to the CueStack SDK.\n"],
       },
       {
         cell_type: "code",
         metadata: {},
         source: [
           "import os\n",
-          `os.environ["IOT_STACK_TOKEN"] = "${token}"\n`,
-          `os.environ["IOT_STACK_URL"] = "http://nginx:80"\n`,
+          `os.environ["CUESTACK_TOKEN"] = "${token}"\n`,
+          `os.environ["CUESTACK_URL"] = "http://nginx:80"\n`,
           "\n",
-          "from iot_stack import connect\n",
+          "from cuestack import connect\n",
           "client = connect()",
         ],
         outputs: [],

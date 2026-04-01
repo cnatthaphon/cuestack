@@ -1,8 +1,8 @@
 """
-IoT Stack SDK — Python client for notebooks and services.
+CueStack SDK — Python client for notebooks and services.
 
 Usage:
-    from iot_stack import connect
+    from cuestack import connect
     client = connect()
 
     # Data
@@ -27,6 +27,6 @@ Usage:
     client.org()                             # org info
 """
 
-from iot_stack.client import IoTStackClient, connect
+from cuestack.client import CueStackClient, connect
 
-__all__ = ["IoTStackClient", "connect"]
+__all__ = ["CueStackClient", "connect"]

@@ -4,7 +4,7 @@ import { jwtVerify } from "jose";
 const SECRET = new TextEncoder().encode(
   process.env.SECRET_KEY || "dev-secret-change-in-prod"
 );
-const COOKIE_NAME = "iot-session";
+const COOKIE_NAME = "cuestack-session";
 
 const AUTH_PAGES = ["/login"];
 

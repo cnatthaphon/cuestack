@@ -6,7 +6,7 @@
 
 ## What
 
-Foundation classes for the Simulink-style block pipeline. Every data operation in IoT Stack flows through a chain of blocks. This feature provides the base classes that all blocks inherit from.
+Foundation classes for the Simulink-style block pipeline. Every data operation in CueStack flows through a chain of blocks. This feature provides the base classes that all blocks inherit from.
 
 Same pattern as SyncMD — proven architecture, applied to IoT data processing.
 

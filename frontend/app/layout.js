@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "IoT Stack",
-  description: "IoT Platform POC",
+  title: "CueStack",
+  description: "CueStack Platform POC",
 };
 
 export default function RootLayout({ children }) {

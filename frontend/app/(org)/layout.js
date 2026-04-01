@@ -120,7 +120,7 @@ function OrgShell({ children }) {
           <div style={{ display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "space-between" }}>
             {!collapsed && (
               <Link href="/" style={{ fontWeight: 700, fontSize: 15, color: "#f1f5f9", textDecoration: "none", letterSpacing: -0.3 }}>
-                IoT Stack
+                CueStack
               </Link>
             )}
             <button onClick={() => setCollapsed(!collapsed)}
@@ -330,7 +330,7 @@ const iconBtn = { background: "none", border: "none", color: "#64748b", cursor: 
 const TYPE_INFO = {
   folder: { icon: "\u{1F4C1}", label: "New Folder", desc: "Organize your pages into folders" },
   dashboard: { icon: "\u{1F4CA}", label: "New Dashboard", desc: "Widget-based data dashboard" },
-  html: { icon: "\u{1F310}", label: "New Web Page", desc: "HTML/JS app with IoT Stack SDK" },
+  html: { icon: "\u{1F310}", label: "New Web Page", desc: "HTML/JS app with CueStack SDK" },
   visual: { icon: "\u{1F9E9}", label: "New Visual Flow", desc: "Drag-and-drop data pipeline" },
   notebook: { icon: "\u{1F4D3}", label: "New Notebook", desc: "Jupyter notebook with SDK" },
   python: { icon: "\u{1F40D}", label: "New Python", desc: "Python script — run as service or on-demand" },

@@ -43,7 +43,7 @@ export default function Login() {
   return (
     <div style={containerStyle}>
       <form onSubmit={handleLogin} style={formStyle}>
-        <h1 style={{ margin: "0 0 8px" }}>IoT Stack</h1>
+        <h1 style={{ margin: "0 0 8px" }}>CueStack</h1>
         <p style={{ color: "#666", margin: "0 0 24px" }}>Login to continue</p>
         {error && <p style={{ color: "#e53e3e", margin: "0 0 12px" }}>{error}</p>}
         <input

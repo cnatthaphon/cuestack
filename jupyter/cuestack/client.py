@@ -1,5 +1,5 @@
 """
-IoT Stack Python SDK Client.
+CueStack Python SDK Client.
 Communicates with the platform API using a session token.
 """
 
@@ -9,14 +9,14 @@ import requests
 import pandas as pd
 
 
-class IoTStackClient:
+class CueStackClient:
     """Main SDK client — authenticated access to all platform APIs."""
 
     def __init__(self, base_url=None, token=None):
-        self.base_url = (base_url or os.environ.get("IOT_STACK_URL", "http://nginx:80")).rstrip("/")
-        self.token = token or os.environ.get("IOT_STACK_TOKEN", "")
+        self.base_url = (base_url or os.environ.get("CUESTACK_URL", "http://nginx:80")).rstrip("/")
+        self.token = token or os.environ.get("CUESTACK_TOKEN", "")
         self._headers = {
-            "Cookie": f"iot-session={self.token}",
+            "Cookie": f"cuestack-session={self.token}",
             "Content-Type": "application/json",
         }
         self.files = FileClient(self)
@@ -29,7 +29,7 @@ class IoTStackClient:
 
     def _post(self, path, data=None, files=None):
         if files:
-            h = {"Cookie": f"iot-session={self.token}"}
+            h = {"Cookie": f"cuestack-session={self.token}"}
             r = requests.post(f"{self.base_url}{path}", headers=h, data=data, files=files)
         else:
             r = requests.post(f"{self.base_url}{path}", headers=self._headers, json=data)
@@ -155,7 +155,7 @@ class IoTStackClient:
         me = self.me()
         user = me.get("user", {})
         org = me.get("org", {})
-        return f"IoTStackClient(user={user.get('username')}, org={org.get('name')}, plan={org.get('plan')})"
+        return f"CueStackClient(user={user.get('username')}, org={org.get('name')}, plan={org.get('plan')})"
 
 
 class FileClient:
@@ -198,7 +198,7 @@ class FileClient:
         """Download a file. Returns bytes or saves to path."""
         r = requests.get(
             f"{self._c.base_url}/api/files/download?id={file_id}",
-            headers={"Cookie": f"iot-session={self._c.token}"},
+            headers={"Cookie": f"cuestack-session={self._c.token}"},
         )
         r.raise_for_status()
         if save_as:
@@ -239,17 +239,17 @@ class FileClient:
 
 
 def connect(base_url=None, token=None):
-    """Create and return a connected IoT Stack client.
+    """Create and return a connected CueStack client.
 
     In notebooks, auto-connects using environment variables.
     """
-    client = IoTStackClient(base_url, token)
+    client = CueStackClient(base_url, token)
     # Test connection
     try:
         me = client.me()
         user = me.get("user", {})
         org = me.get("org", {})
-        print(f"Connected to IoT Stack as {user.get('username')} ({org.get('name')} - {org.get('plan')} plan)")
+        print(f"Connected to CueStack as {user.get('username')} ({org.get('name')} - {org.get('plan')} plan)")
     except Exception as e:
         print(f"Connection failed: {e}")
     return client

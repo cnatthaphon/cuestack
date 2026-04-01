@@ -155,7 +155,7 @@ client.loop_forever()`,
 
 <script>
 async function start() {
-  const sdk = await IoTStack.init();
+  const sdk = await CueStack.init();
   sdk.subscribe('dashboard/live', (data) => {
     document.getElementById('temp').innerHTML = data.temperature.toFixed(1) + '<span class="unit">&deg;C</span>';
     document.getElementById('hum').innerHTML = data.humidity.toFixed(1) + '<span class="unit">%</span>';
@@ -218,7 +218,7 @@ async function send(cmd) {
   document.getElementById('cmd').value = '';
 }
 async function start() {
-  sdk = await IoTStack.init();
+  sdk = await CueStack.init();
   sdk.subscribe('ack/sim-weather-01', (data) => {
     log('recv', 'ACK from ' + data.device_name + ': ' + data.message);
   });
@@ -231,10 +231,10 @@ start();
     id: "js-subscribe",
     title: "JavaScript SDK — Subscribe to Channel",
     tags: ["javascript", "sdk", "websocket", "subscribe", "real-time"],
-    desc: "Use IoTStack.init() and sdk.subscribe() in HTML pages to receive real-time data.",
+    desc: "Use CueStack.init() and sdk.subscribe() in HTML pages to receive real-time data.",
     code: `// Inside an HTML page — SDK is auto-injected
 async function start() {
-  const sdk = await IoTStack.init();
+  const sdk = await CueStack.init();
 
   // Subscribe to a channel
   sdk.subscribe('sensors/weather', (data, msg) => {
@@ -259,7 +259,7 @@ start();`,
     desc: "Publish data to channels from HTML apps. Messages are forwarded to MQTT subscribers.",
     code: `// Inside an HTML page — SDK is auto-injected
 async function sendCommand() {
-  const sdk = await IoTStack.init();
+  const sdk = await CueStack.init();
 
   // Publish a command to a device
   await sdk.publish('commands/my-device', {
@@ -378,7 +378,7 @@ export default function SdkPage() {
       <div style={{ marginBottom: 16 }}>
         <h1 style={{ margin: "0 0 4px" }}>SDK Documentation</h1>
         <p style={{ color: "#64748b", fontSize: 13, margin: 0 }}>
-          Code examples for building on IoT Stack. Copy and paste into your workspace pages.
+          Code examples for building on CueStack. Copy and paste into your workspace pages.
         </p>
       </div>
 

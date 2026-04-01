@@ -1,10 +1,10 @@
 /**
- * IoT Stack JS SDK — for HTML/JS apps running in the platform.
+ * CueStack JS SDK — for HTML/JS apps running in the platform.
  *
  * Usage in your app's HTML:
  *   <script src="/sdk.js"></script>
  *   <script>
- *     IoTStack.init().then(sdk => {
+ *     CueStack.init().then(sdk => {
  *       // Check permissions
  *       sdk.can('db.create').then(ok => { ... });
  *
@@ -16,7 +16,7 @@
  *     });
  *   </script>
  */
-window.IoTStack = {
+window.CueStack = {
   _perms: null,
   _user: null,
 
@@ -34,7 +34,7 @@ window.IoTStack = {
       this._user = { ...this._user, ...me.user, org: me.org };
     }
 
-    console.log(`IoT Stack SDK initialized (${this._perms.size} permissions)`);
+    console.log(`CueStack SDK initialized (${this._perms.size} permissions)`);
     return this;
   },
 

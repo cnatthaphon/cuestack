@@ -198,7 +198,7 @@ document.getElementById('payload-input').addEventListener('keydown', (e) => {
 
 async function start() {
   try {
-    sdk = await IoTStack.init();
+    sdk = await CueStack.init();
     document.getElementById('status-dot').className = 'dot on';
     document.getElementById('status-text').textContent = 'Connected';
 

@@ -35,7 +35,7 @@ def get_mqtt_publisher():
             import paho.mqtt.client as mqtt_client
             _mqtt_publisher = mqtt_client.Client(
                 mqtt_client.CallbackAPIVersion.VERSION2,
-                client_id="iot-stack-cmd-publisher"
+                client_id="cuestack-cmd-publisher"
             )
             _mqtt_publisher.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
             _mqtt_publisher.loop_start()
@@ -56,7 +56,7 @@ async def lifespan(app):
     service_task.cancel()
 
 
-app = FastAPI(title="IoT Stack — Pipeline Service", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="CueStack — Pipeline Service", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,7 +71,7 @@ app.add_middleware(
 
 async def require_auth(request: Request):
     """Verify JWT token from cookie. Returns payload with org_id."""
-    token = request.cookies.get("iot-session")
+    token = request.cookies.get("cuestack-session")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
@@ -203,7 +203,7 @@ async def ws_channels(websocket: WebSocket):
                         continue
                 else:
                     # Try JWT from cookie
-                    cookie = websocket.cookies.get("iot-session")
+                    cookie = websocket.cookies.get("cuestack-session")
                     if cookie:
                         try:
                             payload = jwt.decode(cookie, SECRET_KEY, algorithms=["HS256"])
@@ -278,7 +278,7 @@ async def channel_publish(body: PublishRequest, request: Request):
             org_id = auth["org_id"]
     else:
         # Try JWT
-        cookie = request.cookies.get("iot-session")
+        cookie = request.cookies.get("cuestack-session")
         if cookie:
             try:
                 payload = jwt.decode(cookie, SECRET_KEY, algorithms=["HS256"])
