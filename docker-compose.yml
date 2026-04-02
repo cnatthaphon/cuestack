@@ -24,6 +24,10 @@ services:
       SCHEDULER_POLL_INTERVAL: ${SCHEDULER_POLL_INTERVAL:-60}
       MQTT_BROKER: mqtt
       MQTT_PORT: 1883
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_DB: cuestack
+      CLICKHOUSE_USER: cuestack
+      CLICKHOUSE_PASSWORD: cuestack123
     ports:
       - "8000:8000"
     depends_on:
@@ -31,6 +35,8 @@ services:
         condition: service_healthy
       mqtt:
         condition: service_started
+      clickhouse:
+        condition: service_healthy
     volumes:
       - ./backend:/app
     healthcheck:
@@ -88,6 +94,24 @@ services:
       - jupyter_workspaces:/workspace
       - org_files:/files:ro
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      CLICKHOUSE_DB: cuestack
+      CLICKHOUSE_USER: cuestack
+      CLICKHOUSE_PASSWORD: cuestack123
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   nginx:
     image: nginx:alpine
     ports:
@@ -109,3 +133,4 @@ volumes:
   jupyter_workspaces:
   org_files:
   mqtt_data:
+  clickhouse_data:

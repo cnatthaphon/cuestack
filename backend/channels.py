@@ -22,6 +22,8 @@ from collections import defaultdict
 import psycopg2
 import psycopg2.extras
 
+import clickhouse_client
+
 logger = logging.getLogger("channels")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -104,6 +106,17 @@ async def disconnect(ws):
             _subscribers[key].discard(ws)
 
 
+async def _store_event(org_id: str, channel_name: str, data: dict):
+    """Store a channel event in ClickHouse (best-effort, non-blocking)."""
+    try:
+        await clickhouse_client.insert_event(
+            org_id=org_id, channel=channel_name,
+            source="channel", payload=data,
+        )
+    except Exception as e:
+        logger.debug(f"ClickHouse store failed (non-critical): {e}")
+
+
 async def publish(org_id: str, channel_name: str, data: dict):
     """Publish a message to a channel. Broadcasts to all subscribers."""
     key = _channel_key(org_id, channel_name)
@@ -131,6 +144,9 @@ async def publish(org_id: str, channel_name: str, data: dict):
         conn.close()
     except Exception:
         pass
+
+    # Store event in ClickHouse (fire-and-forget)
+    asyncio.create_task(_store_event(org_id, channel_name, data))
 
     # Broadcast to subscribers
     dead = set()

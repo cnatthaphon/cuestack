@@ -1,62 +1,57 @@
 """
-StoreBlock — writes records to PostgreSQL (→ ClickHouse in Sprint 2).
+StoreBlock — writes records to ClickHouse (generalized data events).
 
 Input:  ctx.records (validated/transformed)
 Output: ctx.events (store confirmation) or ctx.errors
 
-Security: ASVS V5.3.4 (parameterized queries), V5.3.5 (no SQL injection)
+Any data goes in — sensor readings, API responses, webhook payloads, service output.
+All stored as: timestamp, org_id, channel, source, payload (JSON).
 """
 
 from .base import Block, PipelineContext
+import json
+import os
+import httpx
+from datetime import datetime, timezone
 
-SENSOR_TABLE_DDL = """
-CREATE TABLE IF NOT EXISTS sensor_data (
-    id BIGSERIAL PRIMARY KEY,
-    device_id VARCHAR(100) NOT NULL,
-    metric VARCHAR(100) DEFAULT 'unknown',
-    value DOUBLE PRECISION NOT NULL,
-    timestamp TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_sensor_device_ts ON sensor_data (device_id, timestamp DESC);
-"""
-
-INSERT_SQL = """
-INSERT INTO sensor_data (device_id, metric, value, timestamp)
-VALUES ($1, $2, $3, $4)
-"""
+CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "http://clickhouse:8123")
+CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB", "cuestack")
+CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "cuestack")
+CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "cuestack123")
 
 
 class StoreBlock(Block):
     name = "Store"
 
-    def __init__(self, db_pool=None):
-        self.db_pool = db_pool
-
     async def execute(self, ctx: PipelineContext) -> PipelineContext:
         if not ctx.records:
             return ctx
 
-        if not self.db_pool:
-            ctx.events.append({"type": "store_dryrun", "count": len(ctx.records)})
-            return ctx
-
         try:
-            async with self.db_pool.acquire() as conn:
-                # Ensure table exists
-                await conn.execute(SENSOR_TABLE_DDL)
-                # Insert records — parameterized queries only (ASVS V5.3.4)
-                count = 0
-                for record in ctx.records:
-                    await conn.execute(
-                        INSERT_SQL,
-                        record.get("device_id"),
-                        record.get("metric", "unknown"),
-                        record["value"],
-                        record["timestamp"],
+            rows = []
+            for record in ctx.records:
+                ts = record.get("timestamp", datetime.now(timezone.utc).isoformat())
+                org_id = ctx.metadata.get("org_id", "00000000-0000-0000-0000-000000000000")
+                channel = ctx.metadata.get("channel", "default")
+                source = ctx.metadata.get("source", "pipeline")
+                payload = json.dumps({k: v for k, v in record.items() if k != "timestamp"})
+                rows.append(f"('{ts}', '{org_id}', '{channel}', '{source}', 'data', '{payload}', '{{}}')")
+
+            if rows:
+                values = ",\n".join(rows)
+                query = f"""INSERT INTO data_events (timestamp, org_id, channel, source, event_type, payload, metadata)
+                VALUES {values}"""
+
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        CLICKHOUSE_URL,
+                        params={"database": CLICKHOUSE_DB, "query": query},
+                        auth=(CLICKHOUSE_USER, CLICKHOUSE_PASSWORD),
+                        timeout=30.0,
                     )
-                    count += 1
-                ctx.events.append({"type": "stored", "count": count})
+                    resp.raise_for_status()
+
+                ctx.events.append({"type": "stored", "count": len(rows), "target": "clickhouse"})
         except Exception as e:
             ctx.errors.append(f"Store failed: {e}")
 
