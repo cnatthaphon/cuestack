@@ -197,12 +197,9 @@ export async function initDB() {
     )
   `);
 
-  // Nav group columns for apps and dashboards
+  // Nav group columns for dashboards (org_apps ALTER moved below its CREATE)
   await query(`ALTER TABLE org_dashboards ADD COLUMN IF NOT EXISTS nav_group VARCHAR(50) DEFAULT ''`);
   await query(`ALTER TABLE org_dashboards ADD COLUMN IF NOT EXISTS nav_order INTEGER DEFAULT 0`);
-  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS nav_group VARCHAR(50) DEFAULT ''`);
-  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS nav_order INTEGER DEFAULT 0`);
-  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS required_permissions JSONB DEFAULT '[]'`);
   await query(`ALTER TABLE org_dashboards ADD COLUMN IF NOT EXISTS required_permissions JSONB DEFAULT '[]'`);
 
   // Nav groups — org-defined categories for published content
@@ -249,6 +246,11 @@ export async function initDB() {
       UNIQUE(org_id, slug)
     )
   `);
+
+  // Nav group columns for org_apps (must be after CREATE TABLE org_apps)
+  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS nav_group VARCHAR(50) DEFAULT ''`);
+  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS nav_order INTEGER DEFAULT 0`);
+  await query(`ALTER TABLE org_apps ADD COLUMN IF NOT EXISTS required_permissions JSONB DEFAULT '[]'`);
 
   // Python services registry
   await query(`

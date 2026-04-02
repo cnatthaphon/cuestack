@@ -54,6 +54,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
       BACKEND_URL: http://backend:8000
       FILES_ROOT: /files
+      SEED_DATA: "true"
     ports:
       - "3000:3000"
     depends_on:
