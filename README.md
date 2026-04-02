@@ -1,6 +1,6 @@
 # CueStack
 
-> **Status:** Active Development | Not production-ready yet
+![Status](https://img.shields.io/badge/status-active%20development-brightgreen) ![Services](https://img.shields.io/badge/services-7-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 Multi-tenant platform for data, dashboards, notebooks, and automation — built with Next.js, FastAPI, PostgreSQL, ClickHouse, MQTT, and Docker.
 
