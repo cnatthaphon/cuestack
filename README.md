@@ -57,13 +57,13 @@ Devices (MQTT) → Data Pipeline → Storage → Dashboards / Notebooks / API
 - Markdown pages
 
 **Data Pipeline**
-- MQTT device ingestion
+- MQTT device ingestion (JSON, binary, or custom format via pluggable decoders)
 - Block-based pipeline: Validate → Transform → Store → Query
 - Scheduled jobs and automation services
 - REST API with channel tokens
 
 **Developer Tools**
-- Python SDK for notebooks (`from iot_stack import connect`)
+- Python SDK for notebooks (`from cuestack import connect`)
 - JavaScript SDK for HTML widgets
 - API key management
 - WebSocket live data channels
@@ -127,7 +127,7 @@ cuestack/
 │   ├── channels.py    # Real-time data channels
 │   └── services/      # Pipeline blocks, ML
 ├── jupyter/           # JupyterLab container
-│   └── iot_stack/     # Python SDK
+│   └── cuestack/      # Python SDK
 ├── mqtt/              # Mosquitto config
 ├── nginx/             # Reverse proxy config
 └── docker-compose.yml
