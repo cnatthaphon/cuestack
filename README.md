@@ -1,5 +1,7 @@
 # CueStack
 
+> **Status:** Active Development | Not production-ready yet
+
 Multi-tenant platform for IoT data, dashboards, notebooks, and automation — built with Next.js, FastAPI, PostgreSQL, MQTT, and Docker.
 
 ## What It Does
