@@ -36,7 +36,7 @@ POLL_INTERVAL = 15  # check every 15s
 _processes: dict[str, dict] = {}
 
 # Directory for generated service scripts
-SERVICES_DIR = "/tmp/iot-services"
+SERVICES_DIR = "/tmp/cuestack-services"
 os.makedirs(SERVICES_DIR, exist_ok=True)
 
 

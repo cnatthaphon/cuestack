@@ -3,6 +3,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from jose import jwt, JWTError
 
@@ -15,6 +16,8 @@ from scheduler import run_scheduler
 from mqtt_bridge import run_mqtt_bridge
 from service_manager import run_service_manager
 import channels as ch
+import clickhouse_client
+import export as export_module
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
@@ -309,3 +312,73 @@ async def channel_publish(body: PublishRequest, request: Request):
 async def channel_stats():
     """Get real-time channel stats."""
     return ch.get_stats()
+
+
+# --- Data Events (ClickHouse) ---
+
+class InsertEventRequest(BaseModel):
+    channel: str
+    source: str = "api"
+    payload: dict
+
+
+@app.post("/api/v1/data/events")
+async def create_event(body: InsertEventRequest, user=Depends(require_auth)):
+    """Insert a data event into ClickHouse."""
+    org_id = get_org_id(user)
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Org context required")
+    await clickhouse_client.insert_event(
+        org_id=org_id, channel=body.channel,
+        source=body.source, payload=body.payload,
+    )
+    return {"status": "ok"}
+
+
+@app.get("/api/v1/data/events")
+async def get_events(
+    channel: str = None, source: str = None,
+    start: str = None, end: str = None, limit: int = 100,
+    user=Depends(require_auth),
+):
+    """Query data events from ClickHouse."""
+    org_id = get_org_id(user)
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Org context required")
+    events = await clickhouse_client.query_events(
+        org_id=org_id, channel=channel, source=source,
+        start=start, end=end, limit=limit,
+    )
+    return {"events": events}
+
+
+@app.get("/api/v1/data/export")
+async def export_data(
+    channel: str = None, start: str = None, end: str = None,
+    user=Depends(require_auth),
+):
+    """Export data events as SQLite file download."""
+    org_id = get_org_id(user)
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Org context required")
+    path = await export_module.export_sqlite(
+        org_id=org_id, channel=channel, start=start, end=end,
+    )
+    return FileResponse(path, filename="cuestack_export.db",
+                        media_type="application/x-sqlite3")
+
+
+@app.get("/api/v1/data/audit")
+async def get_audit(
+    entity_type: str = None, entity_id: str = None, limit: int = 50,
+    user=Depends(require_auth),
+):
+    """Query audit log from ClickHouse."""
+    org_id = get_org_id(user)
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Org context required")
+    events = await clickhouse_client.query_audit(
+        org_id=org_id, entity_type=entity_type,
+        entity_id=entity_id, limit=limit,
+    )
+    return {"events": events}

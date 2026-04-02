@@ -72,6 +72,51 @@ window.CueStack = {
     return data.data?.rows || [];
   },
 
+  // --- Data Events (ClickHouse) ---
+  async queryEvents(options = {}) {
+    const params = new URLSearchParams();
+    if (options.channel) params.set("channel", options.channel);
+    if (options.source) params.set("source", options.source);
+    if (options.start) params.set("start", options.start);
+    if (options.end) params.set("end", options.end);
+    if (options.limit) params.set("limit", options.limit);
+    const res = await fetch(`/api/v1/data/events?${params}`);
+    return res.json();
+  },
+
+  async insertEvent(channel, payload, source = "sdk") {
+    const res = await fetch("/api/v1/data/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel, source, payload }),
+    });
+    return res.json();
+  },
+
+  async exportSQLite(options = {}) {
+    const params = new URLSearchParams();
+    if (options.channel) params.set("channel", options.channel);
+    if (options.start) params.set("start", options.start);
+    if (options.end) params.set("end", options.end);
+    const res = await fetch(`/api/v1/data/export?${params}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cuestack_export.db";
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  async queryAudit(options = {}) {
+    const params = new URLSearchParams();
+    if (options.entity_type) params.set("entity_type", options.entity_type);
+    if (options.entity_id) params.set("entity_id", options.entity_id);
+    if (options.limit) params.set("limit", options.limit);
+    const res = await fetch(`/api/v1/data/audit?${params}`);
+    return res.json();
+  },
+
   // --- Files ---
   async files(view = 'my', parentId = null) {
     const params = new URLSearchParams({ view });

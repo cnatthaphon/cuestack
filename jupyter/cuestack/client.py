@@ -63,7 +63,51 @@ class CueStackClient:
         """Get current org info."""
         return self.me().get("org", {})
 
-    # --- Data ---
+    # --- Data Events (ClickHouse) ---
+
+    def query_events(self, channel=None, source=None, start=None, end=None, limit=100):
+        """Query data events from ClickHouse. Returns pandas DataFrame."""
+        params = {"limit": limit}
+        if channel: params["channel"] = channel
+        if source: params["source"] = source
+        if start: params["start"] = start
+        if end: params["end"] = end
+        data = self._get("/api/v1/data/events", params=params)
+        return pd.DataFrame(data.get("events", []))
+
+    def insert_event(self, channel, payload, source="sdk"):
+        """Insert a data event."""
+        return self._post("/api/v1/data/events", data={
+            "channel": channel,
+            "source": source,
+            "payload": payload,
+        })
+
+    def export_sqlite(self, channel=None, start=None, end=None):
+        """Download data as SQLite file. Returns file path."""
+        params = {}
+        if channel: params["channel"] = channel
+        if start: params["start"] = start
+        if end: params["end"] = end
+        r = requests.get(f"{self.base_url}/api/v1/data/export",
+                         headers=self._headers, params=params, stream=True)
+        r.raise_for_status()
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".db")
+        with os.fdopen(fd, 'wb') as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+        return path
+
+    def query_audit(self, entity_type=None, entity_id=None, limit=50):
+        """Query audit log. Returns pandas DataFrame."""
+        params = {"limit": limit}
+        if entity_type: params["entity_type"] = entity_type
+        if entity_id: params["entity_id"] = entity_id
+        data = self._get("/api/v1/data/audit", params=params)
+        return pd.DataFrame(data.get("events", []))
+
+    # --- Data (Tables) ---
 
     def tables(self):
         """List org tables. Returns DataFrame."""

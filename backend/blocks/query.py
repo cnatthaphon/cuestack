@@ -1,69 +1,42 @@
 """
-QueryBlock — reads time-series data from PostgreSQL.
+QueryBlock — reads time-series data from ClickHouse.
 
-Input:  ctx.raw_data (query params: device_id, metric, start, end, limit)
+Input:  ctx.raw_data (query params: channel, source, start, end, limit, offset)
 Output: ctx.query_result (list of records)
 
-Security: ASVS V5.3.4 (parameterized queries)
+Security: ASVS V5.3.4 (parameterized queries via ClickHouse HTTP interface)
 """
 
 from .base import Block, PipelineContext
-
-SAMPLE_DATA = [
-    {"timestamp": "2026-03-24T10:00:00Z", "device_id": "sensor-01", "metric": "temperature", "value": 28.5},
-    {"timestamp": "2026-03-24T10:01:00Z", "device_id": "sensor-01", "metric": "temperature", "value": 28.3},
-    {"timestamp": "2026-03-24T10:02:00Z", "device_id": "sensor-01", "metric": "temperature", "value": 28.1},
-]
+import clickhouse_client
 
 
 class QueryBlock(Block):
     name = "Query"
 
-    def __init__(self, db_pool=None):
-        self.db_pool = db_pool
-
     async def execute(self, ctx: PipelineContext) -> PipelineContext:
         params = ctx.raw_data or {}
+        org_id = ctx.metadata.get("org_id") if ctx.metadata else None
 
-        if not self.db_pool:
-            ctx.query_result = SAMPLE_DATA
+        if not org_id:
+            ctx.errors.append("Query failed: org_id required")
             return ctx
 
         try:
-            async with self.db_pool.acquire() as conn:
-                # Build parameterized query (ASVS V5.3.4)
-                conditions = []
-                values = []
-                idx = 1
+            channel = params.get("channel")
+            source = params.get("source")
+            start = params.get("start")
+            end = params.get("end")
+            limit = min(int(params.get("limit", 100)), 1000)
 
-                if params.get("device_id"):
-                    conditions.append(f"device_id = ${idx}")
-                    values.append(params["device_id"])
-                    idx += 1
-
-                if params.get("metric"):
-                    conditions.append(f"metric = ${idx}")
-                    values.append(params["metric"])
-                    idx += 1
-
-                if params.get("start"):
-                    conditions.append(f"timestamp >= ${idx}")
-                    values.append(params["start"])
-                    idx += 1
-
-                if params.get("end"):
-                    conditions.append(f"timestamp <= ${idx}")
-                    values.append(params["end"])
-                    idx += 1
-
-                where = " AND ".join(conditions) if conditions else "TRUE"
-                limit = min(int(params.get("limit", 100)), 1000)
-
-                sql = f"SELECT device_id, metric, value, timestamp FROM sensor_data WHERE {where} ORDER BY timestamp DESC LIMIT ${idx}"
-                values.append(limit)
-
-                rows = await conn.fetch(sql, *values)
-                ctx.query_result = [dict(row) for row in rows]
+            ctx.query_result = await clickhouse_client.query_events(
+                org_id=org_id,
+                channel=channel,
+                source=source,
+                start=start,
+                end=end,
+                limit=limit,
+            )
         except Exception as e:
             ctx.errors.append(f"Query failed: {e}")
 
