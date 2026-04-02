@@ -1,0 +1,31 @@
+{
+  "name": "Sensor ETL Pipeline",
+  "icon": "⚙️",
+  "page_type": "visual",
+  "config": {
+    "is_service": true,
+    "service_status": "running",
+    "nodes": [
+      {"id": "mqtt1", "type": "mqtt_subscribe", "position": {"x": 50, "y": 50}, "config": {"channel": "sensor-room-a"}},
+      {"id": "mqtt2", "type": "mqtt_subscribe", "position": {"x": 50, "y": 250}, "config": {"channel": "sensor-room-b"}},
+      {"id": "store_raw", "type": "store_clickhouse", "position": {"x": 300, "y": 150}, "config": {"table": "raw_sensor_data"}},
+      {"id": "fft1", "type": "fft", "position": {"x": 300, "y": 50}, "config": {"column": "temperature", "sample_rate": 1}},
+      {"id": "smooth1", "type": "smoothing", "position": {"x": 300, "y": 250}, "config": {"column": "temperature", "window": 10}},
+      {"id": "store_proc", "type": "store_clickhouse", "position": {"x": 550, "y": 150}, "config": {"table": "processed_sensor_data"}},
+      {"id": "ws1", "type": "ws_broadcast", "position": {"x": 550, "y": 50}, "config": {"channel": "sensor-room-a"}},
+      {"id": "ws2", "type": "ws_broadcast", "position": {"x": 550, "y": 250}, "config": {"channel": "sensor-room-b"}}
+    ],
+    "edges": [
+      {"source": "mqtt1", "target": "store_raw", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "mqtt2", "target": "store_raw", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "mqtt1", "target": "fft1", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "mqtt1", "target": "smooth1", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "mqtt2", "target": "fft1", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "mqtt2", "target": "smooth1", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "fft1", "target": "store_proc", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "smooth1", "target": "store_proc", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "fft1", "target": "ws1", "sourceHandle": "data", "targetHandle": "data"},
+      {"source": "smooth1", "target": "ws2", "sourceHandle": "data", "targetHandle": "data"}
+    ]
+  }
+}

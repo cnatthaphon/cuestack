@@ -115,6 +115,68 @@ export const BLOCK_CATALOG = [
     inputs: [],
     outputs: ["data"],
   },
+  {
+    type: "mqtt_subscribe",
+    label: "MQTT Subscribe",
+    icon: "\u{1F4E1}",
+    category: "input",
+    description: "Subscribe to an MQTT channel for real-time data",
+    configFields: [
+      { key: "channel", label: "Channel", type: "channel_select" },
+    ],
+    inputs: [],
+    outputs: ["data"],
+  },
+  {
+    type: "ws_broadcast",
+    label: "WS Broadcast",
+    icon: "\u{1F4E2}",
+    category: "output",
+    description: "Broadcast data to a WebSocket channel",
+    configFields: [
+      { key: "channel", label: "Channel", type: "channel_select" },
+    ],
+    inputs: ["data"],
+    outputs: [],
+  },
+  {
+    type: "store_clickhouse",
+    label: "Store (ClickHouse)",
+    icon: "\u{1F4BE}",
+    category: "output",
+    description: "Store data to a ClickHouse table",
+    configFields: [
+      { key: "table", label: "Table", type: "table_select" },
+    ],
+    inputs: ["data"],
+    outputs: [],
+  },
+  {
+    type: "fft",
+    label: "FFT",
+    icon: "\u{3030}\uFE0F",
+    category: "transform",
+    description: "Extract frequency components using Fast Fourier Transform",
+    configFields: [
+      { key: "column", label: "Signal Column", type: "column_select" },
+      { key: "sample_rate", label: "Sample Rate (Hz)", type: "number", default: 1 },
+    ],
+    inputs: ["data"],
+    outputs: ["data"],
+  },
+  {
+    type: "smoothing",
+    label: "Smoothing",
+    icon: "\u{1F4C8}",
+    category: "transform",
+    description: "Apply moving average smoothing",
+    configFields: [
+      { key: "column", label: "Column", type: "column_select" },
+      { key: "window", label: "Window (seconds)", type: "number", default: 10 },
+    ],
+    inputs: ["data"],
+    outputs: ["data"],
+  },
 ];
 
 export function getBlock(type) {
