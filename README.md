@@ -2,46 +2,53 @@
 
 > **Status:** Active Development | Not production-ready yet
 
-Multi-tenant platform for IoT data, dashboards, notebooks, and automation — built with Next.js, FastAPI, PostgreSQL, MQTT, and Docker.
+Multi-tenant platform for data, dashboards, notebooks, and automation — built with Next.js, FastAPI, PostgreSQL, ClickHouse, MQTT, and Docker.
 
 ## What It Does
 
-CueStack is a self-hosted platform where organizations manage IoT devices, build dashboards, run notebooks, and automate data pipelines — all isolated per tenant.
+CueStack is a self-hosted platform where organizations ingest data from any source, build dashboards, run notebooks, and automate pipelines — all isolated per tenant.
 
 ```
-Devices (MQTT) → Data Pipeline → Storage → Dashboards / Notebooks / API
+Any Source (MQTT, API, webhook, service, upload)
+  → Channel (real-time broadcast)
+  → ClickHouse (history + analytics)
+  → Dashboards / Notebooks / API / SQLite Export
 ```
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Docker Compose                       │
-│                                                          │
-│  ┌──────────┐    ┌────────────────────────────────┐     │
-│  │  nginx   │───→│  Next.js (full-stack frontend)  │     │
-│  │  :8080   │    │  Auth, pages, dashboards,       │     │
-│  │          │    │  workspace, API routes           │     │
-│  │          │    └──────────────┬─────────────────┘     │
-│  │          │                   │                        │
-│  │ /api/    │    ┌──────────────▼─────────────────┐     │
-│  │ pipeline │───→│  FastAPI (data service)         │     │
-│  │          │    │  Pipelines, transforms, ML,     │     │
-│  │          │    │  scheduled jobs, MQTT bridge     │     │
-│  │          │    └──────────────┬─────────────────┘     │
-│  │          │                   │                        │
-│  │ /jupyter │    ┌──────────────▼─────────────────┐     │
-│  │          │───→│  JupyterLab (notebooks)         │     │
-│  └──────────┘    │  Python SDK, DB-backed storage  │     │
-│                   └────────────────────────────────┘     │
-│                                                          │
-│  ┌──────────────┐    ┌──────────────────────────┐       │
-│  │ PostgreSQL   │    │  Mosquitto (MQTT broker)  │       │
-│  │ Users, data, │    │  Device ingestion         │       │
-│  │ dashboards   │    │  WebSocket live data      │       │
-│  └──────────────┘    └──────────────────────────┘       │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      Docker Compose (7 services)              │
+│                                                               │
+│  ┌──────────┐    ┌────────────────────────────────┐          │
+│  │  nginx   │───→│  Next.js (full-stack frontend)  │          │
+│  │  :8080   │    │  Auth, pages, dashboards,       │          │
+│  │          │    │  workspace, API routes           │          │
+│  │          │    └──────────────┬─────────────────┘          │
+│  │          │                   │                             │
+│  │ /api/    │    ┌──────────────▼─────────────────┐          │
+│  │ pipeline │───→│  FastAPI (data service)         │          │
+│  │          │    │  Pipelines, transforms, ML,     │          │
+│  │          │    │  scheduled jobs, MQTT bridge     │          │
+│  │          │    └──┬───────────────────────┬────┘          │
+│  │          │       │                       │                │
+│  │ /jupyter │    ┌──▼──────────┐    ┌──────▼───────────┐    │
+│  │          │───→│ PostgreSQL  │    │   ClickHouse     │    │
+│  └──────────┘    │ State:      │    │   History:       │    │
+│                   │ users, orgs,│    │   data_events,   │    │
+│  ┌──────────┐    │ pages, auth │    │   audit_log      │    │
+│  │ Mosquitto│    └─────────────┘    └──────────────────┘    │
+│  │ MQTT     │                                                │
+│  │ broker   │    ┌─────────────────────────────────┐        │
+│  └──────────┘    │  JupyterLab (notebooks)          │        │
+│                   │  Python SDK, DB-backed storage   │        │
+│                   └─────────────────────────────────┘        │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+**PostgreSQL** = current state (users, orgs, pages, config)
+**ClickHouse** = history of everything (data events + audit log, append-only)
 
 ## Features
 
@@ -57,16 +64,23 @@ Devices (MQTT) → Data Pipeline → Storage → Dashboards / Notebooks / API
 - Markdown pages
 
 **Data Pipeline**
-- MQTT device ingestion (JSON, binary, or custom format via pluggable decoders)
+- Ingest from any source: MQTT, REST API, webhook, scheduled jobs, manual upload
+- Format-agnostic: JSON, binary, or custom format via pluggable decoders
 - Block-based pipeline: Validate → Transform → Store → Query
-- Scheduled jobs and automation services
-- REST API with channel tokens
+- Every event auto-stored in ClickHouse (append-only history)
+
+**History & Audit**
+- All data events stored with timestamp, channel, source, payload
+- Full audit log: who changed what, when, old/new values
+- Query any point in time
+- Export to SQLite for portable download
 
 **Developer Tools**
 - Python SDK for notebooks (`from cuestack import connect`)
 - JavaScript SDK for HTML widgets
 - API key management
 - WebSocket live data channels
+- Scheduled jobs and automation services
 
 ## Quick Start
 
@@ -79,15 +93,16 @@ docker compose up --build -d
 # Open http://localhost:8080
 ```
 
-6 services start automatically:
+7 services start automatically:
 
 | Service | Port | Purpose |
 |---------|------|---------|
 | nginx | 8080 | Reverse proxy (main entry) |
 | frontend | 3000 | Next.js UI |
 | backend | 8000 | FastAPI data service |
+| clickhouse | 8123 | Time-series + audit storage |
 | jupyter | 8888 | Notebook editor |
-| db | 5432 | PostgreSQL |
+| db | 5432 | PostgreSQL (state) |
 | mqtt | 1883/9001 | MQTT broker + WebSocket |
 
 ## Tech Stack
@@ -96,12 +111,29 @@ docker compose up --build -d
 |-------|-----------|
 | Frontend | Next.js 15 (App Router), React 19 |
 | Backend | FastAPI (Python 3.12) |
-| Database | PostgreSQL 16 |
+| State DB | PostgreSQL 16 |
+| Analytics DB | ClickHouse 24 |
 | Notebooks | JupyterLab 4 + custom Python SDK |
 | MQTT | Eclipse Mosquitto 2 |
 | Reverse Proxy | nginx |
 | Containerization | Docker Compose |
 | Auth | JWT (HS256), bcrypt, RBAC |
+
+## Data Flow
+
+```
+Source (device, API, webhook, service)
+  │
+  ▼
+Channel (publish)
+  ├── WebSocket → live subscribers (real-time)
+  └── ClickHouse → data_events table (history)
+                      │
+                      ├── Query (filter by org, channel, time range)
+                      ├── Dashboard widgets (charts, gauges)
+                      ├── Notebooks (Python SDK)
+                      └── Export (SQLite download)
+```
 
 ## Security
 
@@ -113,24 +145,30 @@ Built with security in mind:
 - bcrypt password hashing
 - Strict CORS, no debug in production
 - Channel tokens for device/API access
+- Full audit trail in ClickHouse
 
 ## Project Structure
 
 ```
 cuestack/
-├── frontend/          # Next.js — UI, auth, API routes
-│   ├── app/           # Pages (App Router)
-│   ├── lib/           # Auth, DB, components, features
-│   └── public/        # Static assets, SDK
-├── backend/           # FastAPI — data pipelines, scheduler
-│   ├── main.py        # App entry, WebSocket, API
-│   ├── channels.py    # Real-time data channels
-│   └── services/      # Pipeline blocks, ML
-├── jupyter/           # JupyterLab container
-│   └── cuestack/      # Python SDK
-├── mqtt/              # Mosquitto config
-├── nginx/             # Reverse proxy config
-└── docker-compose.yml
+├── frontend/             # Next.js — UI, auth, API routes
+│   ├── app/              # Pages (App Router)
+│   ├── lib/              # Auth, DB, components, features
+│   └── public/           # Static assets, SDK
+├── backend/              # FastAPI — data pipelines, scheduler
+│   ├── main.py           # App entry, WebSocket, API
+│   ├── channels.py       # Real-time data channels
+│   ├── clickhouse_client.py  # ClickHouse async client
+│   ├── export.py         # SQLite export
+│   ├── blocks/           # Pipeline blocks (validate, transform, store, query)
+│   └── services/         # Scheduled services, ML
+├── clickhouse/           # ClickHouse init schema
+│   └── init.sql          # data_events + audit_log tables
+├── jupyter/              # JupyterLab container
+│   └── cuestack/         # Python SDK
+├── mqtt/                 # Mosquitto config
+├── nginx/                # Reverse proxy config
+└── docker-compose.yml    # 7 services
 ```
 
 ## License
