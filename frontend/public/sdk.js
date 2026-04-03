@@ -176,11 +176,24 @@ window.CueStack = {
   },
 
   publish(channel, data) {
-    return fetch('/api/channels/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel, data }),
-    }).then(r => r.json());
+    // Why WebSocket? Publish goes through the same WS connection as subscribe.
+    // This ensures the backend's channel manager handles it (broadcast + ClickHouse store).
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ action: 'publish', channel, data }));
+      return Promise.resolve({ published: channel });
+    }
+    // Fallback: ensure WS is connected first
+    this.subscribe(channel, function() {});
+    return new Promise(function(resolve) {
+      setTimeout(function() {
+        if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+          this._ws.send(JSON.stringify({ action: 'publish', channel, data }));
+          resolve({ published: channel });
+        } else {
+          resolve({ error: 'WebSocket not connected' });
+        }
+      }.bind(this), 500);
+    }.bind(this));
   },
 
   // --- User ---
