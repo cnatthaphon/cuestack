@@ -1,129 +1,210 @@
 /**
- * E2E Demo Scenario Seeder
+ * E2E Demo Scenario Seeder — via API calls
  *
- * Seeds everything needed for the demo: org user, channels, tables, pages.
- * Run after: docker compose up -d && curl http://localhost:8080/api/init
+ * Uses the same API endpoints that a real user would use.
+ * This tests the API while setting up the demo.
+ *
+ * Prerequisites:
+ *   docker compose up -d
+ *   curl http://localhost:8080/api/init   (creates tables + super admin)
  *
  * Usage: node demo/e2e-scenario/seed.js
+ *
+ * Login after: org = aimagin, username = cue, password = admin123
  */
 
-const { Client } = require("pg");
-const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 
-const DB_URL = process.env.DATABASE_URL || "postgresql://iot:iot123@localhost:5432/iotstack";
+const BASE = process.env.BASE_URL || "http://localhost:8080";
+let cookie = "";
 
-async function seed() {
-  const client = new Client({ connectionString: DB_URL });
-  await client.connect();
+// --- HTTP helpers ---
 
-  try {
-    // Get aimagin org
-    const org = await client.query("SELECT id FROM organizations WHERE slug = 'aimagin'");
-    if (!org.rows[0]) {
-      console.error("Aimagin org not found. Run 'curl http://localhost:8080/api/init' first.");
-      process.exit(1);
-    }
-    const orgId = org.rows[0].id;
+async function post(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { status: res.status, data, cookie: res.headers.get("set-cookie") };
+}
 
-    // Get admin role for this org
-    const role = await client.query(
-      "SELECT id FROM roles WHERE org_id = $1 AND name = 'Admin' LIMIT 1",
-      [orgId]
-    );
-    const roleId = role.rows[0]?.id;
+async function get(path) {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { Cookie: cookie },
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
 
-    // 1. Create org user (aimagin / admin / admin123)
-    const existingUser = await client.query(
-      "SELECT id FROM users WHERE username = 'cue' AND org_id = $1",
-      [orgId]
-    );
-    let userId;
-    if (existingUser.rows[0]) {
-      userId = existingUser.rows[0].id;
-      console.log(`User 'cue' already exists (id: ${userId})`);
-    } else {
-      const hash = await bcrypt.hash("admin123", 10);
-      const newUser = await client.query(
-        `INSERT INTO users (username, hashed_password, org_id, role_id)
-         VALUES ($1, $2, $3, $4) RETURNING id`,
-        ["cue", hash, orgId, roleId]
-      );
-      userId = newUser.rows[0].id;
-      console.log(`Created user: cue / admin123 (org: aimagin, id: ${userId})`);
-    }
+// --- Steps ---
 
-    // 2. Create channels
-    for (const ch of ["sensor-room-a", "sensor-room-b"]) {
-      await client.query(
-        `INSERT INTO org_channels (org_id, name, description, channel_type)
-         VALUES ($1, $2, $3, 'data') ON CONFLICT (org_id, name) DO NOTHING`,
-        [orgId, ch, `Temperature & humidity sensor: ${ch}`]
-      );
-      console.log(`Channel: ${ch}`);
-    }
+async function login(username, password, orgSlug) {
+  const body = { username, password };
+  if (orgSlug) body.org_slug = orgSlug;
+  const res = await post("/api/auth/login", body);
+  if (res.status !== 200) {
+    console.error(`Login failed (${res.status}):`, res.data);
+    return false;
+  }
+  if (res.cookie) cookie = res.cookie.split(";")[0];
+  console.log(`✅ Logged in as ${username}${orgSlug ? ` (org: ${orgSlug})` : " (super admin)"}`);
+  return res.data;
+}
 
-    // 3. Create tables registry
-    for (const t of [
-      { name: "raw_sensor_data", desc: "Raw temperature and humidity from MQTT",
-        cols: [
-          {name:"timestamp",type:"DateTime64(3)"},
-          {name:"channel",type:"String"},
-          {name:"temperature",type:"Float64"},
-          {name:"humidity",type:"Float64"}
-        ]},
-      { name: "processed_sensor_data", desc: "FFT and smoothed values",
-        cols: [
-          {name:"timestamp",type:"DateTime64(3)"},
-          {name:"channel",type:"String"},
-          {name:"metric",type:"String"},
-          {name:"value",type:"Float64"}
-        ]},
-    ]) {
-      await client.query(
-        `INSERT INTO org_tables (org_id, name, db_type, columns, description)
-         VALUES ($1, $2, 'analytical', $3, $4) ON CONFLICT (org_id, name) DO NOTHING`,
-        [orgId, t.name, JSON.stringify(t.cols), t.desc]
-      );
-      console.log(`Table: ${t.name}`);
-    }
+async function getOrgs() {
+  const res = await get("/api/super/orgs");
+  return res.data.orgs || res.data || [];
+}
 
-    // 4. Create demo folder
-    const folder = await client.query(
-      `INSERT INTO user_pages (org_id, user_id, name, icon, page_type, entry_type, sort_order)
-       VALUES ($1, $2, 'E2E Demo', '🧪', 'dashboard', 'folder', 0)
-       ON CONFLICT DO NOTHING RETURNING id`,
-      [orgId, userId]
-    );
-    const folderId = folder.rows[0]?.id ||
-      (await client.query("SELECT id FROM user_pages WHERE name = 'E2E Demo' AND org_id = $1", [orgId])).rows[0]?.id;
-
-    // 5. Create pages from JSON configs
-    const pages = [
-      { file: "page-simulator.json", sort: 1 },
-      { file: "page-etl-service.json", sort: 2 },
-      { file: "page-dashboard.json", sort: 3 },
-    ];
-
-    for (const p of pages) {
-      const config = JSON.parse(fs.readFileSync(path.join(__dirname, p.file), "utf8"));
-      await client.query(
-        `INSERT INTO user_pages (org_id, user_id, name, icon, page_type, entry_type, parent_id, config, sort_order)
-         VALUES ($1, $2, $3, $4, $5, 'page', $6, $7, $8)
-         ON CONFLICT DO NOTHING`,
-        [orgId, userId, config.name, config.icon, config.page_type, folderId, JSON.stringify(config.config), p.sort]
-      );
-      console.log(`Page: ${config.name}`);
-    }
-
-    console.log("\n✅ Demo scenario seeded successfully!");
-    console.log("\nLogin: org = aimagin, username = cue, password = admin123");
-    console.log("Then open: Workspace → E2E Demo folder");
-
-  } finally {
-    await client.end();
+async function createUserInOrg(orgId, username, password, role) {
+  const res = await post(`/api/super/orgs/${orgId}/users`, { username, password, role });
+  if (res.status === 201) {
+    console.log(`✅ Created user: ${username} (role: ${role})`);
+    return res.data.user;
+  } else if (res.status === 409) {
+    console.log(`⏭️  User '${username}' already exists`);
+    return { username };
+  } else {
+    console.error(`❌ Create user failed (${res.status}):`, res.data);
+    return null;
   }
 }
 
-seed().catch(console.error);
+async function createChannel(name, description) {
+  const res = await post("/api/channels", { name, description });
+  if (res.status === 200 || res.status === 201) {
+    console.log(`✅ Channel: ${name}`);
+    return res.data;
+  } else if (res.data?.error?.includes("exists") || res.status === 409) {
+    console.log(`⏭️  Channel '${name}' already exists`);
+    return { name };
+  } else {
+    console.error(`❌ Create channel failed (${res.status}):`, res.data);
+    return null;
+  }
+}
+
+async function createTable(name, columns, description) {
+  const res = await post("/api/tables", { name, columns, description, db_type: "analytical" });
+  if (res.status === 200 || res.status === 201) {
+    console.log(`✅ Table: ${name}`);
+    return res.data;
+  } else if (res.data?.error?.includes("exists") || res.status === 409) {
+    console.log(`⏭️  Table '${name}' already exists`);
+    return { name };
+  } else {
+    console.error(`❌ Create table failed (${res.status}):`, res.data);
+    return null;
+  }
+}
+
+async function createPage(name, icon, pageType, config, parentId) {
+  const body = { name, icon, page_type: pageType, config };
+  if (parentId) body.parent_id = parentId;
+  const res = await post("/api/pages", body);
+  if (res.status === 200 || res.status === 201) {
+    console.log(`✅ Page: ${name} (${pageType})`);
+    return res.data;
+  } else if (res.status === 409) {
+    console.log(`⏭️  Page '${name}' already exists`);
+    return null;
+  } else {
+    console.error(`❌ Create page failed (${res.status}):`, res.data);
+    return null;
+  }
+}
+
+// --- Main ---
+
+async function seed() {
+  console.log("=== CueStack E2E Demo Seeder (via API) ===\n");
+
+  // Step 1: Init (ensure tables + super admin exist)
+  console.log("Step 1: Initialize...");
+  await get("/api/init");
+  console.log("✅ Init complete\n");
+
+  // Step 2: Login as super admin
+  console.log("Step 2: Login as super admin...");
+  const superLogin = await login("admin", "admin");
+  if (!superLogin) process.exit(1);
+  console.log();
+
+  // Step 3: Get aimagin org ID
+  console.log("Step 3: Find aimagin org...");
+  const orgs = await getOrgs();
+  const aimagin = orgs.find((o) => o.slug === "aimagin");
+  if (!aimagin) {
+    console.error("❌ Aimagin org not found. Check init.");
+    process.exit(1);
+  }
+  console.log(`✅ Found org: ${aimagin.name} (${aimagin.id})\n`);
+
+  // Step 4: Create org user
+  console.log("Step 4: Create org user...");
+  await createUserInOrg(aimagin.id, "cue", "admin123", "Admin");
+  console.log();
+
+  // Step 5: Login as org user
+  console.log("Step 5: Login as org user...");
+  const orgLogin = await login("cue", "admin123", "aimagin");
+  if (!orgLogin) process.exit(1);
+  console.log();
+
+  // Step 6: Create channels
+  console.log("Step 6: Create channels...");
+  await createChannel("sensor-room-a", "Temperature & humidity sensor in Room A");
+  await createChannel("sensor-room-b", "Temperature & humidity sensor in Room B");
+  console.log();
+
+  // Step 7: Create tables
+  console.log("Step 7: Create tables...");
+  await createTable("raw_sensor_data", [
+    { name: "timestamp", type: "DateTime64(3)" },
+    { name: "channel", type: "String" },
+    { name: "temperature", type: "Float64" },
+    { name: "humidity", type: "Float64" },
+  ], "Raw temperature and humidity from MQTT sensors");
+
+  await createTable("processed_sensor_data", [
+    { name: "timestamp", type: "DateTime64(3)" },
+    { name: "channel", type: "String" },
+    { name: "metric", type: "String" },
+    { name: "value", type: "Float64" },
+  ], "FFT frequencies and smoothed values");
+  console.log();
+
+  // Step 8: Create demo folder
+  console.log("Step 8: Create demo pages...");
+  const folder = await createPage("E2E Demo", "🧪", "dashboard", {}, null);
+  const folderId = folder?.id || folder?.page?.id;
+
+  // Step 9: Create pages from JSON configs
+  const pages = [
+    { file: "page-simulator.json", sort: 1 },
+    { file: "page-etl-service.json", sort: 2 },
+    { file: "page-dashboard.json", sort: 3 },
+  ];
+
+  for (const p of pages) {
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, p.file), "utf8"));
+    await createPage(raw.name, raw.icon, raw.page_type, raw.config, folderId);
+  }
+
+  console.log("\n" + "=".repeat(50));
+  console.log("✅ Demo scenario seeded successfully!");
+  console.log("=".repeat(50));
+  console.log("\nLogin:  org = aimagin, username = cue, password = admin123");
+  console.log("Then:   Workspace → E2E Demo folder");
+  console.log("\nPages:");
+  console.log("  🌡️ Sensor Simulator  — adjust temp/humidity, publish to MQTT");
+  console.log("  ⚙️ Sensor ETL Pipeline — visual flow, runs as service");
+  console.log("  📊 Sensor Dashboard  — live charts, historical data");
+}
+
+seed().catch((e) => {
+  console.error("Fatal:", e.message);
+  process.exit(1);
+});
