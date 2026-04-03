@@ -303,6 +303,14 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
                     {node.type === "transform" ? (node.config?.operation || "") : ""}
                     {node.type === "notify" ? (node.config?.title || "") : ""}
                     {node.type === "output" ? (node.config?.format || "table") : ""}
+                    {node.type === "mqtt_subscribe" ? (node.config?.channel || "no channel") : ""}
+                    {node.type === "mqtt_publish" ? (node.config?.channel || "no channel") : ""}
+                    {node.type === "ws_publish" ? (node.config?.channel || "no channel") : ""}
+                    {node.type === "fft" ? `${node.config?.column || "signal"} @${node.config?.sample_rate || 1}Hz` : ""}
+                    {node.type === "moving_average" ? `${node.config?.column || "value"} ${node.config?.window || 10}s` : ""}
+                    {node.type === "custom_code" ? "Python" : ""}
+                    {node.type === "statistics" ? (node.config?.column || "") : ""}
+                    {node.type === "anomaly_detection" ? (node.config?.column || "") : ""}
                   </text>
                   {/* Result badge */}
                   {result && (
