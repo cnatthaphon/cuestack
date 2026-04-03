@@ -38,6 +38,15 @@ async function get(path) {
   return { status: res.status, data: await res.json().catch(() => ({})) };
 }
 
+async function patch(path, body) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+
 // --- Steps ---
 
 async function login(username, password, orgSlug) {
@@ -101,12 +110,14 @@ async function createTable(name, columns, description) {
 }
 
 async function createPage(name, icon, pageType, config, parentId) {
-  const body = { name, icon, page_type: pageType, config };
+  // Step 1: Create page (API gives default empty config)
+  const body = { name, icon, page_type: pageType };
   if (parentId) body.parent_id = parentId;
   const res = await post("/api/pages", body);
+
+  let pageId;
   if (res.status === 200 || res.status === 201) {
-    console.log(`✅ Page: ${name} (${pageType})`);
-    return res.data;
+    pageId = res.data?.page?.id || res.data?.id;
   } else if (res.status === 409) {
     console.log(`⏭️  Page '${name}' already exists`);
     return null;
@@ -114,6 +125,20 @@ async function createPage(name, icon, pageType, config, parentId) {
     console.error(`❌ Create page failed (${res.status}):`, res.data);
     return null;
   }
+
+  // Step 2: Update with real config (same as editing in UI)
+  if (pageId && config && Object.keys(config).length > 0) {
+    const patchRes = await patch(`/api/pages/${pageId}`, { config });
+    if (patchRes.status === 200) {
+      console.log(`✅ Page: ${name} (${pageType}) — config saved`);
+    } else {
+      console.error(`❌ Page config update failed (${patchRes.status}):`, patchRes.data);
+    }
+  } else {
+    console.log(`✅ Page: ${name} (${pageType})`);
+  }
+
+  return { id: pageId, ...res.data };
 }
 
 // --- Main ---
