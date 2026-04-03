@@ -162,17 +162,17 @@ async function seed() {
   // Step 7: Create tables
   console.log("Step 7: Create tables...");
   await createTable("raw_sensor_data", [
-    { name: "timestamp", type: "DateTime64(3)" },
-    { name: "channel", type: "String" },
-    { name: "temperature", type: "Float64" },
-    { name: "humidity", type: "Float64" },
+    { name: "timestamp", type: "timestamp" },
+    { name: "channel", type: "text" },
+    { name: "temperature", type: "float" },
+    { name: "humidity", type: "float" },
   ], "Raw temperature and humidity from MQTT sensors");
 
   await createTable("processed_sensor_data", [
-    { name: "timestamp", type: "DateTime64(3)" },
-    { name: "channel", type: "String" },
-    { name: "metric", type: "String" },
-    { name: "value", type: "Float64" },
+    { name: "timestamp", type: "timestamp" },
+    { name: "channel", type: "text" },
+    { name: "metric", type: "text" },
+    { name: "value", type: "float" },
   ], "FFT frequencies and smoothed values");
   console.log();
 
