@@ -40,3 +40,7 @@ c.ServerApp.terminals_enabled = False
 # Hide launcher and file browser in JupyterLab
 c.LabApp.default_url = "/doc"  # default to single-document mode
 c.ContentsManager.allow_hidden = False
+
+# Disable news/update notifications popup
+c.LabApp.news_url = ""
+c.LabApp.check_for_updates_class = "jupyterlab.NeverCheckForUpdate"
