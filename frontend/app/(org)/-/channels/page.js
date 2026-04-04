@@ -64,8 +64,25 @@ export default function ChannelsPage() {
   };
 
   const deleteToken = async (id) => {
-    if (!confirm("Revoke this token?")) return;
+    if (!confirm("Revoke and delete this token? Connected devices will be disconnected.")) return;
     await fetch("/api/channels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete_token", token_id: id }) });
+    loadData();
+  };
+
+  const toggleToken = async (id, currentActive) => {
+    const action = currentActive ? "disable_token" : "enable_token";
+    await fetch("/api/channels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, token_id: id }) });
+    loadData();
+  };
+
+  const forceDisconnect = async (deviceId) => {
+    if (!confirm("Force disconnect this device?")) return;
+    await fetch("/api/mqtt/disconnect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: deviceId }) });
+    loadDevices();
+  };
+
+  const toggleChannel = async (id, currentActive) => {
+    await fetch(`/api/channels/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: !currentActive }) });
     loadData();
   };
 
@@ -163,6 +180,7 @@ export default function ChannelsPage() {
             actions={(row) => (
               <div style={{ display: "flex", gap: 4 }}>
                 <button onClick={(e) => { e.stopPropagation(); connectLive(row.name); }} style={{ ...actionBtn, color: "#3b82f6" }}>Live</button>
+                <button onClick={(e) => { e.stopPropagation(); toggleChannel(row.id, row.is_active); }} style={{ ...actionBtn, color: row.is_active ? "#d97706" : "#22c55e" }}>{row.is_active ? "Disable" : "Enable"}</button>
                 <button onClick={(e) => { e.stopPropagation(); deleteChannel(row.id); }} style={{ ...actionBtn, color: "#ef4444" }}>Delete</button>
               </div>
             )}
@@ -245,6 +263,7 @@ export default function ChannelsPage() {
             searchKeys={["device_id", "name", "device_type"]}
             actions={(row) => (
               <div style={{ display: "flex", gap: 4 }}>
+                {row.status === "online" && <button onClick={() => forceDisconnect(row.device_id)} style={{ ...actionBtn, color: "#d97706" }}>Disconnect</button>}
                 <button onClick={() => { const n = prompt("New name:", row.name); if (n) renameDevice(row.id, n); }} style={{ ...actionBtn, color: "#3b82f6" }}>Rename</button>
                 <button onClick={() => deleteDevice(row.id)} style={{ ...actionBtn, color: "#ef4444" }}>Remove</button>
               </div>
@@ -297,7 +316,10 @@ export default function ChannelsPage() {
             data={data.tokens}
             searchKeys={["name", "token_prefix"]}
             actions={(row) => (
-              <button onClick={() => deleteToken(row.id)} style={{ ...actionBtn, color: "#ef4444" }}>Revoke</button>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={() => toggleToken(row.id, row.is_active)} style={{ ...actionBtn, color: row.is_active ? "#d97706" : "#22c55e" }}>{row.is_active ? "Disable" : "Enable"}</button>
+                <button onClick={() => deleteToken(row.id)} style={{ ...actionBtn, color: "#ef4444" }}>Revoke</button>
+              </div>
             )}
             emptyMessage="No tokens yet. Generate one for each device or gateway."
           />

@@ -116,6 +116,31 @@ export async function POST(request) {
     return NextResponse.json({ ok: true });
   }
 
+  if (body.action === "disable_token" || body.action === "enable_token") {
+    const active = body.action === "enable_token";
+    await query("UPDATE channel_tokens SET is_active = $1 WHERE id = $2 AND org_id = $3",
+      [active, body.token_id, user.org_id]);
+
+    // Sync with Mosquitto
+    const tokenRow = await query("SELECT token_hash FROM channel_tokens WHERE id = $1", [body.token_id]);
+    if (tokenRow.rows[0]) {
+      const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
+      try {
+        await fetch(`${process.env.BACKEND_URL || "http://backend:8000"}/api/mqtt/sync-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Cookie: request.headers.get("cookie") || "" },
+          body: JSON.stringify({
+            token_hash_short: tokenRow.rows[0].token_hash.slice(0, 16),
+            org_short: orgShort,
+            permissions: [],
+            active,
+          }),
+        });
+      } catch (_) { /* best-effort */ }
+    }
+    return NextResponse.json({ ok: true, active });
+  }
+
   // Create channel
   const { name, description, channel_type } = body;
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
