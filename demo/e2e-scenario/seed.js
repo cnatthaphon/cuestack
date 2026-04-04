@@ -196,6 +196,22 @@ async function seed() {
   console.log("Step 6: Create channels...");
   await createChannel("sensor-room-a", "Temperature & humidity sensor in Room A");
   await createChannel("sensor-room-b", "Temperature & humidity sensor in Room B");
+
+  // Step 6b: Create channel token for device access (MQTT + WebSocket)
+  console.log("Step 6b: Create device token...");
+  const tokenRes = await post("/api/channels", {
+    action: "create_token",
+    name: "Demo Sensor Device",
+    permissions: ["publish", "subscribe"],
+  });
+  if (tokenRes.status === 201) {
+    console.log(`✅ Device token: ${tokenRes.data.token}`);
+    console.log(`   Use this token as MQTT username/password to connect devices`);
+    console.log(`   Topics: org/${aimagin.id.replace(/-/g, "").slice(0, 8)}/sensor-room-a`);
+    console.log(`           org/${aimagin.id.replace(/-/g, "").slice(0, 8)}/sensor-room-b`);
+  } else {
+    console.log(`⏭️  Token creation skipped (may already exist)`);
+  }
   console.log();
 
   // Step 7: Create tables
