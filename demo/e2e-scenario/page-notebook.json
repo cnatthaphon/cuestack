@@ -27,8 +27,8 @@
             "\n",
             "from cuestack import connect\n",
             "client = connect()\n",
-            "print(f\"Connected as: {client.me['username']}\")\n",
-            "print(f\"Organization: {client.me.get('org_name', 'N/A')}\")"
+            "print(f\"Connected as: {client.me()['username']}\")\n",
+            "print(f\"Organization: {client.me().get('org_name', 'N/A')}\")"
           ],
           "metadata": {},
           "outputs": [],
