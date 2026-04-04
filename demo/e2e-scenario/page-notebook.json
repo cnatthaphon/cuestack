@@ -1,0 +1,71 @@
+{
+  "name": "Sensor Analysis Report",
+  "icon": "📓",
+  "page_type": "notebook",
+  "config": {
+    "notebook_content": {
+      "cells": [
+        {
+          "cell_type": "markdown",
+          "source": "# Sensor Data Analysis Report\n\nThis notebook uses the CueStack Python SDK to query sensor data from ClickHouse and create visualizations.\n\n**Data sources:**\n- `data_events` table in ClickHouse (raw sensor readings)\n- Channels: `sensor-room-a`, `sensor-room-b`"
+        },
+        {
+          "cell_type": "code",
+          "source": "# Connect to CueStack platform\nimport os\nos.environ[\"CUESTACK_TOKEN\"] = \"\"  # Token refreshed automatically on open\n\nfrom cuestack import connect\nclient = connect()\nprint(f\"Connected as: {client.me['username']}\")\nprint(f\"Organization: {client.me.get('org_name', 'N/A')}\")"
+        },
+        {
+          "cell_type": "markdown",
+          "source": "## 1. Query Raw Sensor Data\n\nFetch the latest temperature and humidity readings from both rooms."
+        },
+        {
+          "cell_type": "code",
+          "source": "# Query recent events from ClickHouse\ndf_room_a = client.query_events(channel='sensor-room-a', limit=200)\ndf_room_b = client.query_events(channel='sensor-room-b', limit=200)\n\nprint(f\"Room A: {len(df_room_a)} records\")\nprint(f\"Room B: {len(df_room_b)} records\")\n\nif len(df_room_a) > 0:\n    print(f\"\\nRoom A sample:\")\n    display(df_room_a.head())"
+        },
+        {
+          "cell_type": "markdown",
+          "source": "## 2. Parse and Prepare Data\n\nExtract temperature and humidity from the JSON payload column."
+        },
+        {
+          "cell_type": "code",
+          "source": "import json\nimport pandas as pd\n\ndef parse_payload(df):\n    \"\"\"Extract temperature and humidity from payload JSON.\"\"\"\n    if len(df) == 0:\n        return df\n    records = []\n    for _, row in df.iterrows():\n        try:\n            payload = json.loads(row['payload']) if isinstance(row['payload'], str) else row['payload']\n            records.append({\n                'timestamp': pd.to_datetime(row['timestamp']),\n                'temperature': payload.get('temperature', 0),\n                'humidity': payload.get('humidity', 0),\n            })\n        except:\n            pass\n    return pd.DataFrame(records)\n\ndata_a = parse_payload(df_room_a)\ndata_b = parse_payload(df_room_b)\n\nprint(f\"Parsed Room A: {len(data_a)} rows\")\nprint(f\"Parsed Room B: {len(data_b)} rows\")\nif len(data_a) > 0:\n    print(f\"\\nRoom A stats:\")\n    display(data_a.describe())"
+        },
+        {
+          "cell_type": "markdown",
+          "source": "## 3. Temperature Visualization\n\nPlot temperature over time for both rooms."
+        },
+        {
+          "cell_type": "code",
+          "source": "import matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\nimport matplotlib.dates as mdates\n\nfig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)\n\nif len(data_a) > 0:\n    axes[0].plot(data_a['timestamp'], data_a['temperature'], color='#ef4444', linewidth=1, label='Temperature')\n    axes[0].fill_between(data_a['timestamp'], data_a['temperature'], alpha=0.1, color='#ef4444')\n    axes[0].set_ylabel('Temperature (°C)')\n    axes[0].set_title('Room A')\n    axes[0].legend()\n    axes[0].grid(True, alpha=0.3)\n\nif len(data_b) > 0:\n    axes[1].plot(data_b['timestamp'], data_b['temperature'], color='#3b82f6', linewidth=1, label='Temperature')\n    axes[1].fill_between(data_b['timestamp'], data_b['temperature'], alpha=0.1, color='#3b82f6')\n    axes[1].set_ylabel('Temperature (°C)')\n    axes[1].set_title('Room B')\n    axes[1].legend()\n    axes[1].grid(True, alpha=0.3)\n\nfig.suptitle('Temperature Over Time', fontsize=14, fontweight='bold')\nplt.tight_layout()\nplt.show()\nprint('Temperature chart rendered.')"
+        },
+        {
+          "cell_type": "markdown",
+          "source": "## 4. Humidity Visualization"
+        },
+        {
+          "cell_type": "code",
+          "source": "fig, ax = plt.subplots(figsize=(12, 4))\n\nif len(data_a) > 0:\n    ax.plot(data_a['timestamp'], data_a['humidity'], color='#ef4444', linewidth=1, alpha=0.8, label='Room A')\nif len(data_b) > 0:\n    ax.plot(data_b['timestamp'], data_b['humidity'], color='#3b82f6', linewidth=1, alpha=0.8, label='Room B')\n\nax.set_ylabel('Humidity (%)')\nax.set_title('Humidity Comparison', fontsize=14, fontweight='bold')\nax.legend()\nax.grid(True, alpha=0.3)\nplt.tight_layout()\nplt.show()\nprint('Humidity chart rendered.')"
+        },
+        {
+          "cell_type": "markdown",
+          "source": "## 5. Statistical Summary\n\nCompare key metrics between rooms."
+        },
+        {
+          "cell_type": "code",
+          "source": "summary = []\nfor name, data in [('Room A', data_a), ('Room B', data_b)]:\n    if len(data) > 0:\n        summary.append({\n            'Room': name,\n            'Records': len(data),\n            'Temp Mean': round(data['temperature'].mean(), 2),\n            'Temp Std': round(data['temperature'].std(), 2),\n            'Temp Min': round(data['temperature'].min(), 2),\n            'Temp Max': round(data['temperature'].max(), 2),\n            'Humid Mean': round(data['humidity'].mean(), 2),\n            'Humid Std': round(data['humidity'].std(), 2),\n        })\n\nif summary:\n    summary_df = pd.DataFrame(summary)\n    display(summary_df)\nelse:\n    print('No data available. Run the Sensor Simulator first.')"
+        },
+        {
+          "cell_type": "markdown",
+          "source": "## 6. Export Data\n\nDownload the data as SQLite for offline analysis."
+        },
+        {
+          "cell_type": "code",
+          "source": "# Export to SQLite\ntry:\n    db_path = client.export_sqlite(channel='sensor-room-a')\n    print(f'SQLite exported to: {db_path}')\n    print('Download from the Files page or use: client.files.download(path)')\nexcept Exception as e:\n    print(f'Export not available: {e}')\n    print('This feature requires the /api/v1/data/export endpoint.')"
+        },
+        {
+          "cell_type": "markdown",
+          "source": "---\n\n**Report generated by CueStack Platform**\n\nData pipeline: MQTT → ClickHouse → Python SDK → Jupyter Notebook"
+        }
+      ]
+    }
+  }
+}

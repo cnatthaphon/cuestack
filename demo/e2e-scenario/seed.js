@@ -257,6 +257,7 @@ async function seed() {
     { file: "page-simulator.json", sort: 1 },
     { file: "page-etl-service.json", sort: 2 },
     { file: "page-dashboard.json", sort: 3 },
+    { file: "page-notebook.json", sort: 4 },
   ];
 
   for (const p of pages) {
@@ -270,9 +271,10 @@ async function seed() {
   console.log("\nLogin:  org = aimagin, username = cue, password = admin123");
   console.log("Then:   Workspace → E2E Demo folder");
   console.log("\nPages:");
-  console.log("  🌡️ Sensor Simulator  — adjust temp/humidity, publish to MQTT");
-  console.log("  ⚙️ Sensor ETL Pipeline — visual flow, runs as service");
-  console.log("  📊 Sensor Dashboard  — live charts, historical data");
+  console.log("  🌡️ Sensor Simulator     — adjust temp/humidity, publish via MQTT");
+  console.log("  ⚙️ Sensor ETL Pipeline  — visual flow, runs as service");
+  console.log("  📊 Sensor Dashboard     — live data from 3 sources (WS, MQTT, ClickHouse)");
+  console.log("  📓 Sensor Analysis      — Jupyter notebook, Python SDK, charts from ClickHouse");
 }
 
 seed().catch((e) => {
