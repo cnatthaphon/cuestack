@@ -11,7 +11,7 @@ import json
 import logging
 import os
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import psycopg2
 import psycopg2.extras
@@ -308,7 +308,7 @@ def execute_flow_blocks(conn, org_id: str, blocks: list, user_id=None) -> tuple[
             # Insert generated data into a table
             table_name = config.get("table")
             if not table_name or not data:
-                messages.append(f"insert: no table or no data")
+                messages.append("insert: no table or no data")
                 continue
             real_name = real_table_name(org_id, table_name)
             # Get table columns

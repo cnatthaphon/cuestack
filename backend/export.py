@@ -1,10 +1,8 @@
 """Export data events to SQLite file for download."""
 
 import os
-import json
 import sqlite3
 import tempfile
-from datetime import datetime
 
 import clickhouse_client
 

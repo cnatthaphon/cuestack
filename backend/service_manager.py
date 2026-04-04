@@ -17,7 +17,6 @@ import logging
 import os
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timezone
 
 import psycopg2
@@ -248,8 +247,8 @@ def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
         elif ntype == "transform":
             expr = ncfg.get("expression", "")
             if expr:
-                lines.append(f"    # Transform")
-                lines.append(f"    result['_transformed'] = True")
+                lines.append("    # Transform")
+                lines.append("    result['_transformed'] = True")
         elif ntype == "anomaly_detection":
             lines.append("    # Anomaly detection (Z-score)")
             lines.append("    # Simple inline check")
@@ -260,19 +259,19 @@ def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
             if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(table)):
                 table = "sensor_data"
             lines.append(f"    # Insert into {table}")
-            lines.append(f"    try:")
+            lines.append("    try:")
             lines.append(f"        _tbl = f'org_{{ORG_SHORT}}_{table}'")
-            lines.append(f"        conn = psycopg2.connect(DATABASE_URL)")
-            lines.append(f"        with conn.cursor() as cur:")
-            lines.append(f"            cols = [k for k in result.keys() if not k.startswith('_')]")
-            lines.append(f"            vals = [result[k] for k in cols]")
-            lines.append(f"            placeholders = ','.join(['%s'] * len(cols))")
-            lines.append(f"            col_names = ','.join(cols)")
-            lines.append(f'            cur.execute(f\'INSERT INTO "{{_tbl}}" (org_id, {{col_names}}) VALUES (%s, {{placeholders}})\', [ORG_ID] + vals)')
-            lines.append(f"        conn.commit()")
-            lines.append(f"        conn.close()")
-            lines.append(f"    except Exception as e:")
-            lines.append(f"        logger.error(f'Insert error: {{e}}')")
+            lines.append("        conn = psycopg2.connect(DATABASE_URL)")
+            lines.append("        with conn.cursor() as cur:")
+            lines.append("            cols = [k for k in result.keys() if not k.startswith('_')]")
+            lines.append("            vals = [result[k] for k in cols]")
+            lines.append("            placeholders = ','.join(['%s'] * len(cols))")
+            lines.append("            col_names = ','.join(cols)")
+            lines.append('            cur.execute(f\'INSERT INTO "{_tbl}" (org_id, {col_names}) VALUES (%s, {placeholders})\', [ORG_ID] + vals)')
+            lines.append("        conn.commit()")
+            lines.append("        conn.close()")
+            lines.append("    except Exception as e:")
+            lines.append("        logger.error(f'Insert error: {e}')")
         elif ntype in ("ws_publish", "mqtt_publish"):
             channel = ncfg.get("channel", "dashboard/live")
             # SECURITY: sanitize channel name — alphanumeric, slashes, dots, dashes, underscores
@@ -280,19 +279,19 @@ def _generate_from_flow_graph(nodes: list, edges: list, page: dict) -> str:
             if not _re.match(r'^[a-zA-Z0-9._/\-]+$', str(channel)):
                 channel = "dashboard/live"
             lines.append(f"    # Publish to {channel}")
-            lines.append(f"    try:")
-            lines.append(f"        import urllib.request")
+            lines.append("    try:")
+            lines.append("        import urllib.request")
             lines.append(f"        _pub_data = json.dumps({{'channel': '{channel}', 'data': result}})")
-            lines.append(f"        _req = urllib.request.Request('http://localhost:8000/api/channels/publish',")
-            lines.append(f"            data=_pub_data.encode(), headers={{'Content-Type': 'application/json'}}, method='POST')")
-            lines.append(f"        urllib.request.urlopen(_req, timeout=3)")
-            lines.append(f"    except Exception:")
-            lines.append(f"        pass")
+            lines.append("        _req = urllib.request.Request('http://localhost:8000/api/channels/publish',")
+            lines.append("            data=_pub_data.encode(), headers={'Content-Type': 'application/json'}, method='POST')")
+            lines.append("        urllib.request.urlopen(_req, timeout=3)")
+            lines.append("    except Exception:")
+            lines.append("        pass")
         elif ntype == "custom_code":
             # SECURITY: custom code runs in isolated subprocess with timeout
             user_code = ncfg.get("code", "pass")
             # Escape the code for embedding in a string literal
-            escaped = user_code.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+            _ = user_code.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
             lines.append("    # Custom code block (sandboxed subprocess)")
             lines.append("    import subprocess as _sp, tempfile as _tf")
             lines.append(f"    _code = '''{user_code}'''")
