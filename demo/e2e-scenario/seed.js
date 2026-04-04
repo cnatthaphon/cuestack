@@ -199,18 +199,20 @@ async function seed() {
 
   // Step 6b: Create channel token for device access (MQTT + WebSocket)
   console.log("Step 6b: Create device token...");
+  let deviceToken = "";
   const tokenRes = await post("/api/channels", {
     action: "create_token",
     name: "Demo Sensor Device",
     permissions: ["publish", "subscribe"],
   });
   if (tokenRes.status === 201) {
-    console.log(`✅ Device token: ${tokenRes.data.token}`);
-    console.log(`   Use this token as MQTT username/password to connect devices`);
-    console.log(`   Topics: org/${aimagin.id.replace(/-/g, "").slice(0, 8)}/sensor-room-a`);
-    console.log(`           org/${aimagin.id.replace(/-/g, "").slice(0, 8)}/sensor-room-b`);
+    deviceToken = tokenRes.data.token;
+    const orgShort = aimagin.id.replace(/-/g, "").slice(0, 8);
+    console.log(`✅ Device token: ${deviceToken}`);
+    console.log(`   Topics: org/${orgShort}/sensor-room-a, org/${orgShort}/sensor-room-b`);
   } else {
     console.log(`⏭️  Token creation skipped (may already exist)`);
+    console.log(`   If simulator can't connect, create a new token in Channels → Credentials`);
   }
   console.log();
 
