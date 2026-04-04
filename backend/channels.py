@@ -106,15 +106,82 @@ async def disconnect(ws):
             _subscribers[key].discard(ws)
 
 
-async def _store_event(org_id: str, channel_name: str, data: dict):
-    """Store a channel event in ClickHouse (best-effort, non-blocking)."""
+# --- Batch buffer for ClickHouse inserts ---
+# Why batch? Single inserts at 1000 msg/sec = 1000 HTTP calls/sec (slow).
+# Batch buffer collects messages, flushes every 1s or 500 msgs (whichever first).
+# One HTTP call with 500 rows is 100x faster than 500 single inserts.
+_batch_buffer: list = []
+_batch_lock = asyncio.Lock()
+BATCH_SIZE = 500       # flush when buffer reaches this size
+BATCH_INTERVAL = 1.0   # flush every N seconds regardless of size
+_batch_task = None
+
+
+async def _flush_batch():
+    """Flush the batch buffer to ClickHouse."""
+    async with _batch_lock:
+        if not _batch_buffer:
+            return
+        batch = _batch_buffer.copy()
+        _batch_buffer.clear()
+
+    if not batch:
+        return
+
     try:
-        await clickhouse_client.insert_event(
-            org_id=org_id, channel=channel_name,
-            source="channel", payload=data,
-        )
+        # Build bulk insert: one HTTP call for all rows
+        rows = []
+        for event in batch:
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            payload_str = json.dumps(event["data"])
+            rows.append(
+                f"('{ts}', '{event['org_id']}', '{event['channel']}', 'channel', 'data', '{payload_str}', '{{}}')"
+            )
+        if rows:
+            values = ",\n".join(rows)
+            query = f"""INSERT INTO data_events (timestamp, org_id, channel, source, event_type, payload, metadata)
+            VALUES {values}"""
+
+            import httpx
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    clickhouse_client.CLICKHOUSE_URL,
+                    params={"database": clickhouse_client.CLICKHOUSE_DB, "query": query},
+                    auth=(clickhouse_client.CLICKHOUSE_USER, clickhouse_client.CLICKHOUSE_PASSWORD),
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+
+        logger.info(f"Batch flush: {len(batch)} events to ClickHouse")
     except Exception as e:
-        logger.debug(f"ClickHouse store failed (non-critical): {e}")
+        logger.warning(f"Batch flush failed ({len(batch)} events): {e}")
+
+
+async def _batch_flush_loop():
+    """Background task: flush batch buffer every BATCH_INTERVAL seconds."""
+    while True:
+        await asyncio.sleep(BATCH_INTERVAL)
+        await _flush_batch()
+
+
+def _ensure_batch_task():
+    """Start the background flush loop if not running."""
+    global _batch_task
+    if _batch_task is None or _batch_task.done():
+        _batch_task = asyncio.create_task(_batch_flush_loop())
+
+
+async def _buffer_event(org_id: str, channel_name: str, data: dict):
+    """Add event to batch buffer. Flushes automatically."""
+    _ensure_batch_task()
+    async with _batch_lock:
+        _batch_buffer.append({"org_id": org_id, "channel": channel_name, "data": data})
+        if len(_batch_buffer) >= BATCH_SIZE:
+            pass  # will be flushed by size check below
+
+    # Flush if buffer is full (don't wait for timer)
+    if len(_batch_buffer) >= BATCH_SIZE:
+        await _flush_batch()
 
 
 async def publish(org_id: str, channel_name: str, data: dict):
@@ -145,8 +212,8 @@ async def publish(org_id: str, channel_name: str, data: dict):
     except Exception:
         pass
 
-    # Store event in ClickHouse (fire-and-forget)
-    asyncio.create_task(_store_event(org_id, channel_name, data))
+    # Buffer event for batch insert to ClickHouse (fire-and-forget)
+    asyncio.create_task(_buffer_event(org_id, channel_name, data))
 
     # Broadcast to subscribers
     dead = set()
