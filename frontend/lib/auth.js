@@ -85,13 +85,38 @@ export async function getCurrentUser() {
 
   const result = await query(
     `SELECT u.id, u.username, u.role_id, u.org_id, u.is_super_admin,
-            r.name as role_name
+            r.name as role_name,
+            o.is_active as org_active,
+            o.license_expires_at,
+            o.plan as org_plan
      FROM users u
      LEFT JOIN roles r ON u.role_id = r.id
+     LEFT JOIN organizations o ON u.org_id = o.id
      WHERE u.id = $1`,
     [payload.sub]
   );
-  return result.rows[0] || null;
+  const user = result.rows[0] || null;
+  if (!user) return null;
+
+  // Super admin bypasses org checks
+  if (user.is_super_admin) return user;
+
+  // Check org is active
+  if (user.org_id && user.org_active === false) {
+    user._org_suspended = true;
+    user._suspend_reason = "Organization is deactivated";
+  }
+
+  // Check license expiry
+  if (user.license_expires_at) {
+    const expires = new Date(user.license_expires_at);
+    if (expires < new Date()) {
+      user._org_suspended = true;
+      user._suspend_reason = "License expired on " + expires.toLocaleDateString();
+    }
+  }
+
+  return user;
 }
 
 // --- Role Helpers ---
@@ -103,6 +128,16 @@ export function isSuperAdmin(user) {
 export function requireOrg(user) {
   if (!user || !user.org_id) return null;
   return user.org_id;
+}
+
+// --- Org License Check ---
+
+export function isOrgSuspended(user) {
+  return user?._org_suspended === true;
+}
+
+export function getOrgSuspendReason(user) {
+  return user?._suspend_reason || "Organization suspended";
 }
 
 // --- Rate Limiting (DB-backed via audit_log, survives restarts) ---

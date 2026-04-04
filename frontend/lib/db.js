@@ -27,6 +27,11 @@ export async function initDB() {
     )
   `);
 
+  // License expiry for org plans
+  await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS license_expires_at TIMESTAMPTZ`);
+  await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS max_users INTEGER DEFAULT 10`);
+  await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS max_devices INTEGER DEFAULT 50`);
+
   // Permissions: system (Aimagin-defined) + app (org-defined)
   await query(`
     CREATE TABLE IF NOT EXISTS permissions (

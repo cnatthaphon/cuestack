@@ -1,7 +1,10 @@
 import os
 import asyncio
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+import psycopg2
+import psycopg2.extras
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -15,6 +18,7 @@ from pipelines import (
 from scheduler import run_scheduler
 from mqtt_bridge import run_mqtt_bridge
 from service_manager import run_service_manager
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 import channels as ch
 import clickhouse_client
 import export as export_module
@@ -85,15 +89,43 @@ app.add_middleware(
 # --- Auth: verify JWT from Next.js cookie, extract org_id ---
 
 async def require_auth(request: Request):
-    """Verify JWT token from cookie. Returns payload with org_id."""
+    """Verify JWT token from cookie. Returns payload with org_id.
+    Also checks org license if org_id is present."""
     token = request.cookies.get("cuestack-session")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        return payload
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Skip license check for super admins
+    if payload.get("is_super_admin"):
+        return payload
+
+    # Check org is active and license not expired
+    org_id = payload.get("org_id")
+    if org_id:
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT is_active, license_expires_at FROM organizations WHERE id = %s",
+                    [org_id]
+                )
+                org = cur.fetchone()
+            conn.close()
+            if org:
+                if not org["is_active"]:
+                    raise HTTPException(status_code=403, detail="Organization is deactivated")
+                if org["license_expires_at"] and org["license_expires_at"] < datetime.now(timezone.utc):
+                    raise HTTPException(status_code=403, detail="Organization license expired")
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # DB error — allow request (fail open, not closed)
+
+    return payload
 
 
 def get_org_id(user: dict) -> str | None:
