@@ -69,11 +69,50 @@ export async function POST(request) {
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [user.org_id, body.name || "Device Token", hash, prefix, JSON.stringify(body.permissions || []), user.id]
     );
+
+    // Sync token to Mosquitto Dynamic Security for MQTT auth
+    const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
+    try {
+      await fetch(`${process.env.BACKEND_URL || "http://backend:8000"}/api/mqtt/sync-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: request.headers.get("cookie") || "" },
+        body: JSON.stringify({
+          token_hash_short: hash.slice(0, 16),
+          org_short: orgShort,
+          permissions: body.permissions || [],
+          active: true,
+        }),
+      });
+    } catch (_) { /* best-effort sync */ }
+
     return NextResponse.json({ token, prefix }, { status: 201 });
   }
 
   if (body.action === "delete_token") {
+    // Look up token hash before deleting so we can remove from Mosquitto
+    const tokenRow = await query(
+      "SELECT token_hash FROM channel_tokens WHERE id = $1 AND org_id = $2",
+      [body.token_id, user.org_id]
+    );
     await query("DELETE FROM channel_tokens WHERE id = $1 AND org_id = $2", [body.token_id, user.org_id]);
+
+    // Remove from Mosquitto dynsec
+    if (tokenRow.rows[0]) {
+      const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
+      try {
+        await fetch(`${process.env.BACKEND_URL || "http://backend:8000"}/api/mqtt/sync-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Cookie: request.headers.get("cookie") || "" },
+          body: JSON.stringify({
+            token_hash_short: tokenRow.rows[0].token_hash.slice(0, 16),
+            org_short: orgShort,
+            permissions: [],
+            active: false,
+          }),
+        });
+      } catch (_) { /* best-effort */ }
+    }
+
     return NextResponse.json({ ok: true });
   }
 

@@ -24,6 +24,8 @@ services:
       SCHEDULER_POLL_INTERVAL: ${SCHEDULER_POLL_INTERVAL:-60}
       MQTT_BROKER: mqtt
       MQTT_PORT: 1883
+      DYNSEC_ADMIN: ${DYNSEC_ADMIN:-admin}
+      DYNSEC_PASSWORD: ${DYNSEC_ADMIN_PASSWORD:-admin123}
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_DB: cuestack
       CLICKHOUSE_USER: cuestack
@@ -72,14 +74,18 @@ services:
 
   mqtt:
     image: eclipse-mosquitto:2
+    entrypoint: ["sh", "/mosquitto/config/init-dynsec.sh"]
+    environment:
+      DYNSEC_ADMIN_PASSWORD: ${DYNSEC_ADMIN_PASSWORD:-admin123}
     ports:
       - "1884:1883"
       - "9002:9001"
     volumes:
       - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mqtt/init-dynsec.sh:/mosquitto/config/init-dynsec.sh
       - mqtt_data:/mosquitto/data
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/broker/uptime' -C 1 -W 2 || exit 1"]
+      test: ["CMD-SHELL", "mosquitto_sub -u admin -P '$$DYNSEC_ADMIN_PASSWORD' -t '$$SYS/broker/uptime' -C 1 -W 2 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

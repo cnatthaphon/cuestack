@@ -18,6 +18,7 @@ from service_manager import run_service_manager
 import channels as ch
 import clickhouse_client
 import export as export_module
+import mqtt_dynsec
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
@@ -40,6 +41,10 @@ def get_mqtt_publisher():
                 mqtt_client.CallbackAPIVersion.VERSION2,
                 client_id="cuestack-cmd-publisher"
             )
+            _mqtt_publisher.username_pw_set(
+                "cuestack-cmd-publisher",
+                os.getenv("DYNSEC_PASSWORD", "admin123"),
+            )
             _mqtt_publisher.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
             _mqtt_publisher.loop_start()
         except Exception:
@@ -49,6 +54,13 @@ def get_mqtt_publisher():
 
 @asynccontextmanager
 async def lifespan(app):
+    # Ensure Mosquitto dynsec has internal service clients
+    try:
+        mqtt_dynsec.ensure_internal_clients()
+    except Exception as e:
+        import logging
+        logging.getLogger("main").warning(f"Dynsec init deferred (broker may not be ready): {e}")
+
     # Start background tasks
     scheduler_task = asyncio.create_task(run_scheduler())
     mqtt_task = asyncio.create_task(run_mqtt_bridge())
@@ -255,7 +267,7 @@ async def ws_channels(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
-    except Exception as e:
+    except Exception:
         pass
     finally:
         await ch.disconnect(websocket)
@@ -382,3 +394,34 @@ async def get_audit(
         entity_id=entity_id, limit=limit,
     )
     return {"events": events}
+
+
+# --- MQTT Dynamic Security Management ---
+
+@app.post("/api/mqtt/sync-token")
+async def sync_mqtt_token(request: Request, user=Depends(require_auth)):
+    """Sync a channel token to Mosquitto dynsec. Called by frontend after token CRUD."""
+    body = await request.json()
+    token_hash_short = body.get("token_hash_short", "")
+    org_short = body.get("org_short", "")
+    permissions = body.get("permissions", [])
+    active = body.get("active", True)
+
+    if not token_hash_short or not org_short:
+        raise HTTPException(status_code=400, detail="token_hash_short and org_short required")
+
+    mqtt_dynsec.sync_token(token_hash_short, org_short, permissions, active)
+    return {"ok": True}
+
+
+@app.post("/api/mqtt/disconnect")
+async def mqtt_disconnect(request: Request, user=Depends(require_auth)):
+    """Force disconnect an MQTT client."""
+    body = await request.json()
+    username = body.get("username", "")
+
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
+
+    mqtt_dynsec.disconnect_client(username)
+    return {"ok": True}

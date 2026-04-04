@@ -136,8 +136,12 @@ async def run_mqtt_bridge():
         except Exception as e:
             logger.error(f"Bridge error: {e}")
 
-    # Connect to MQTT broker with retry
+    # Connect to MQTT broker with retry (authenticate via dynsec)
     client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2, client_id="cuestack-bridge")
+    client.username_pw_set(
+        "cuestack-bridge",
+        os.getenv("DYNSEC_PASSWORD", "admin123"),
+    )
     client.on_connect = on_connect
     client.on_message = on_message
 

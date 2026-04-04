@@ -12,7 +12,6 @@ Architecture:
 import hashlib
 import logging
 import os
-from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
