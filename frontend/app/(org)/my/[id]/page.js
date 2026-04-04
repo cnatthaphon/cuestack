@@ -835,7 +835,7 @@ function renderOutput(output) {
   if (!output) return null;
   const otype = output.output_type;
   if (otype === "stream") {
-    return <pre style={{ margin: 0, padding: "4px 12px", fontSize: 12, fontFamily: "monospace", color: output.name === "stderr" ? "#e53e3e" : "#333", whiteSpace: "pre-wrap", background: "#fafafa" }}>{(output.text || []).join("")}</pre>;
+    return <pre style={{ margin: 0, padding: "4px 12px", fontSize: 12, fontFamily: "monospace", color: output.name === "stderr" ? "#e53e3e" : "#333", whiteSpace: "pre-wrap", background: "#fafafa" }}>{Array.isArray(output.text) ? output.text.join("") : (output.text || "")}</pre>;
   }
   if (otype === "error") {
     return <pre style={{ margin: 0, padding: "4px 12px", fontSize: 12, fontFamily: "monospace", color: "#e53e3e", whiteSpace: "pre-wrap", background: "#fff5f5" }}>{(output.traceback || []).join("\n").replace(/\x1b\[[0-9;]*m/g, "")}</pre>;
