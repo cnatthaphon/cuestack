@@ -110,17 +110,31 @@ async function createTable(name, columns, description) {
 }
 
 async function createPage(name, icon, pageType, config, parentId) {
-  // Step 1: Create page (API gives default empty config)
+  // Check if page already exists in this folder
+  const existingPages = await get("/api/pages");
+  const all = existingPages.data?.pages || existingPages.data || [];
+  const existing = all.find(p => p.name === name && p.parent_id === parentId);
+
+  let pageId;
+  if (existing) {
+    pageId = existing.id;
+    // Update config if it changed
+    if (config && Object.keys(config).length > 0) {
+      await patch(`/api/pages/${pageId}`, { config });
+      console.log(`⏭️  Page '${name}' exists — config updated`);
+    } else {
+      console.log(`⏭️  Page '${name}' already exists`);
+    }
+    return { id: pageId };
+  }
+
+  // Create new page
   const body = { name, icon, page_type: pageType };
   if (parentId) body.parent_id = parentId;
   const res = await post("/api/pages", body);
 
-  let pageId;
   if (res.status === 200 || res.status === 201) {
     pageId = res.data?.page?.id || res.data?.id;
-  } else if (res.status === 409) {
-    console.log(`⏭️  Page '${name}' already exists`);
-    return null;
   } else {
     console.error(`❌ Create page failed (${res.status}):`, res.data);
     return null;
@@ -203,21 +217,21 @@ async function seed() {
 
   // Step 8: Create demo folder
   console.log("Step 8: Create demo pages...");
-  // Create folder (entry_type = folder, not page)
-  const folderRes = await post("/api/pages", {
-    name: "E2E Demo", icon: "🧪", page_type: "dashboard", entry_type: "folder", config: {},
-  });
+  // Check if folder already exists
+  const existingPages = await get("/api/pages");
+  const allPages = existingPages.data?.pages || existingPages.data || [];
+  const existingFolder = allPages.find(p => p.name === "E2E Demo" && p.entry_type === "folder");
+
   let folderId;
-  if (folderRes.status === 201 || folderRes.status === 200) {
+  if (existingFolder) {
+    folderId = existingFolder.id;
+    console.log(`⏭️  Folder 'E2E Demo' already exists (${folderId})`);
+  } else {
+    const folderRes = await post("/api/pages", {
+      name: "E2E Demo", icon: "🧪", page_type: "dashboard", entry_type: "folder", config: {},
+    });
     folderId = folderRes.data?.id || folderRes.data?.page?.id;
     console.log(`✅ Folder: E2E Demo`);
-  } else {
-    // Already exists — find it
-    const existing = await get("/api/pages");
-    const pages = existing.data?.pages || existing.data || [];
-    const found = pages.find(p => p.name === "E2E Demo" && p.entry_type === "folder");
-    folderId = found?.id;
-    console.log(`⏭️  Folder 'E2E Demo' already exists`);
   }
 
   // Step 9: Create pages from JSON configs
