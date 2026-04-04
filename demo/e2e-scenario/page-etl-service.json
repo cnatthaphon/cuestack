@@ -6,26 +6,21 @@
     "is_service": true,
     "service_status": "running",
     "nodes": [
-      {"id": "mqtt1", "type": "mqtt_subscribe", "x": 50, "y": 50, "config": {"channel": "sensor-room-a"}},
-      {"id": "mqtt2", "type": "mqtt_subscribe", "x": 50, "y": 300, "config": {"channel": "sensor-room-b"}},
-      {"id": "store_raw", "type": "insert", "x": 350, "y": 175, "config": {"table": "raw_sensor_data"}},
-      {"id": "fft1", "type": "fft", "x": 350, "y": 50, "config": {"column": "temperature", "sample_rate": 1}},
-      {"id": "smooth1", "type": "moving_average", "x": 350, "y": 300, "config": {"column": "temperature", "window": 10}},
-      {"id": "store_proc", "type": "insert", "x": 650, "y": 175, "config": {"table": "processed_sensor_data"}},
-      {"id": "ws1", "type": "ws_publish", "x": 650, "y": 50, "config": {"channel": "sensor-room-a"}},
-      {"id": "ws2", "type": "ws_publish", "x": 650, "y": 300, "config": {"channel": "sensor-room-b"}}
+      {"id": "mqtt_in", "type": "mqtt_subscribe", "x": 50, "y": 150, "config": {"channels": ["sensor-room-a", "sensor-room-b"]}},
+      {"id": "store_raw", "type": "insert", "x": 300, "y": 50, "config": {"table": "raw_sensor_data"}},
+      {"id": "fft1", "type": "fft", "x": 300, "y": 150, "config": {"column": "temperature", "sample_rate": 1}},
+      {"id": "smooth1", "type": "moving_average", "x": 300, "y": 250, "config": {"column": "temperature", "window": 10}},
+      {"id": "store_proc", "type": "insert", "x": 550, "y": 200, "config": {"table": "processed_sensor_data"}},
+      {"id": "ws_out", "type": "ws_publish", "x": 550, "y": 100, "config": {"channels": ["sensor-room-a", "sensor-room-b"]}}
     ],
     "edges": [
-      {"from": "mqtt1", "to": "store_raw"},
-      {"from": "mqtt2", "to": "store_raw"},
-      {"from": "mqtt1", "to": "fft1"},
-      {"from": "mqtt1", "to": "smooth1"},
-      {"from": "mqtt2", "to": "fft1"},
-      {"from": "mqtt2", "to": "smooth1"},
+      {"from": "mqtt_in", "to": "store_raw"},
+      {"from": "mqtt_in", "to": "fft1"},
+      {"from": "mqtt_in", "to": "smooth1"},
       {"from": "fft1", "to": "store_proc"},
       {"from": "smooth1", "to": "store_proc"},
-      {"from": "fft1", "to": "ws1"},
-      {"from": "smooth1", "to": "ws2"}
+      {"from": "fft1", "to": "ws_out"},
+      {"from": "smooth1", "to": "ws_out"}
     ]
   }
 }
