@@ -3,7 +3,11 @@ import { getCurrentUser } from "../../../../lib/auth.js";
 import { hasFeature } from "../../../../lib/features.js";
 import { query } from "../../../../lib/db.js";
 
-const JUPYTER_INTERNAL = "http://jupyter:8888";
+const JUPYTERHUB_INTERNAL = "http://jupyterhub:8000";
+
+function userApiBase(orgShort) {
+  return `${JUPYTERHUB_INTERNAL}/jupyter/user/${orgShort}`;
+}
 
 // POST /api/notebooks/[name] — pull notebook content from Jupyter back to DB
 // Called when user clicks "Done" after editing in Jupyter
@@ -20,15 +24,21 @@ export async function POST(request, { params }) {
   if (!page_id) return NextResponse.json({ error: "page_id required" }, { status: 400 });
 
   const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
-  const nbPath = `org_${orgShort}/${encodeURIComponent(name)}.ipynb`;
+  // Per-org containers: no org subdirectory needed — each container has its own /workspace
+  const nbPath = `${encodeURIComponent(name)}.ipynb`;
+  const jupyterApi = userApiBase(orgShort);
 
-  // Pull content from Jupyter
+  // Pull content from the org's Jupyter server
   let nbContent = null;
   try {
-    const res = await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}?content=1`);
-    if (res.ok) {
-      const data = await res.json();
-      nbContent = data.content;
+    // Try new path first, then legacy path for migration
+    for (const tryPath of [nbPath, `org_${orgShort}/${encodeURIComponent(name)}.ipynb`]) {
+      const res = await fetch(`${jupyterApi}/api/contents/${tryPath}?content=1`);
+      if (res.ok) {
+        const data = await res.json();
+        nbContent = data.content;
+        break;
+      }
     }
   } catch {
     return NextResponse.json({ error: "Could not reach Jupyter" }, { status: 502 });
@@ -59,7 +69,7 @@ export async function POST(request, { params }) {
 
   // Clean up: delete the temp file from Jupyter (DB is source of truth now)
   try {
-    await fetch(`${JUPYTER_INTERNAL}/jupyter/api/contents/${nbPath}`, { method: "DELETE" });
+    await fetch(`${jupyterApi}/api/contents/${nbPath}`, { method: "DELETE" });
   } catch { /* non-critical */ }
 
   return NextResponse.json({ ok: true, cells: nbContent.cells?.length || 0 });

@@ -921,13 +921,12 @@ function NotebookRenderer({ page, isOwner, onReload }) {
     setError("");
     try {
       // Step 1: Force Jupyter to save the notebook via its API
-      // Send save command through the iframe's Jupyter API
+      // Send save command through JupyterHub to the user's server
       const orgShort = (page.org_id || "").replace(/-/g, "").slice(0, 8);
-      const savePath = `org_${orgShort}/${nbName}.ipynb`;
-      const host = window.location.port === "3000" ? `${window.location.hostname}:8080` : window.location.host;
+      const savePath = `${nbName}.ipynb`;
       try {
         // Trigger save via Jupyter REST API (reads current kernel state)
-        await fetch(`/jupyter/api/contents/${savePath}`, {
+        await fetch(`/jupyter/user/${orgShort}/api/contents/${savePath}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ type: "notebook" }),

@@ -20,7 +20,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-iot}:${POSTGRES_PASSWORD:-iot123}@db:5432/${POSTGRES_DB:-iotstack}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
-      JUPYTER_URL: http://jupyter:8888
+      JUPYTER_URL: http://jupyterhub:8000
       SCHEDULER_POLL_INTERVAL: ${SCHEDULER_POLL_INTERVAL:-60}
       MQTT_BROKER: mqtt
       MQTT_PORT: 1883
@@ -90,21 +90,24 @@ services:
       timeout: 5s
       retries: 3
 
-  jupyter:
-    build: ./jupyter
+  # JupyterHub — manages per-org notebook containers
+  jupyterhub:
+    build: ./jupyterhub
     environment:
-      # Only expose what notebooks need — no system secrets
-      CUESTACK_URL: http://nginx:80
-      # DATABASE_URL restricted to read-only jupyter user (no admin access)
-      DATABASE_URL: postgresql://jupyter_user:${JUPYTER_DB_PASSWORD:-jupyter_readonly_123}@db:5432/${POSTGRES_DB:-iotstack}
-    depends_on:
-      db:
-        condition: service_healthy
+      CUESTACK_URL: http://frontend:3000
+      DOCKER_HOST: unix:///var/run/docker.sock
     volumes:
-      - jupyter_workspaces:/workspace
-      - org_files:/files:ro
-    tmpfs:
-      - /tmp
+      - /var/run/docker.sock:/var/run/docker.sock
+      - jupyterhub_data:/data
+    depends_on:
+      - frontend
+
+  # User notebook image — built but not run directly.
+  # JupyterHub spawns containers from this image via DockerSpawner.
+  jupyter-user:
+    build: ./jupyter
+    image: cuestack-jupyter-user
+    profiles: ["build-only"]  # Don't start, just build the image
 
   clickhouse:
     image: clickhouse/clickhouse-server:24-alpine
@@ -131,7 +134,7 @@ services:
     depends_on:
       - frontend
       - backend
-      - jupyter
+      - jupyterhub
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
     healthcheck:
@@ -142,7 +145,7 @@ services:
 
 volumes:
   pgdata:
-  jupyter_workspaces:
+  jupyterhub_data:
   org_files:
   mqtt_data:
   clickhouse_data:

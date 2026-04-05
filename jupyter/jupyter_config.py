@@ -2,9 +2,8 @@ import os
 
 c = get_config()  # noqa: F821
 
-# Auth: disable token — platform handles auth via login + nginx proxy.
-# Jupyter is NOT exposed to the internet, only accessible through nginx
-# which requires platform authentication to reach /jupyter/*.
+# Auth: disable token — JupyterHub handles authentication.
+# When spawned by JupyterHub, the hub sets JUPYTERHUB_API_TOKEN etc.
 c.ServerApp.token = ""
 c.ServerApp.password = ""
 c.ServerApp.disable_check_xsrf = True
@@ -21,8 +20,9 @@ c.ServerApp.tornado_settings = {
 c.ServerApp.allow_origin = "*"
 c.ServerApp.allow_credentials = True
 
-# Base URL — proxied under /jupyter/
-c.ServerApp.base_url = "/jupyter/"
+# Base URL — when spawned by JupyterHub, JUPYTERHUB_SERVICE_PREFIX is set
+# automatically. Fall back to /jupyter/ for standalone testing.
+c.ServerApp.base_url = os.environ.get("JUPYTERHUB_SERVICE_PREFIX", "/jupyter/")
 
 # Disable logout (handled by platform)
 c.ServerApp.logout_redirect_url = "/"
@@ -30,8 +30,8 @@ c.ServerApp.logout_redirect_url = "/"
 # Workspace per org (set via env var, default /workspace)
 c.ServerApp.root_dir = os.environ.get("JUPYTER_WORKSPACE", "/workspace")
 
-# Auto-run startup script to inject DB connection
-c.InteractiveShellApp.exec_files = ["/root/.jupyter/startup.py"]
+# Auto-run startup script to inject SDK connection
+c.InteractiveShellApp.exec_files = ["/home/jupyter/.jupyter/startup.py"]
 
 # Disable terminal for security (users use notebooks only)
 c.ServerApp.terminals_enabled = False

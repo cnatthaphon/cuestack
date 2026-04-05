@@ -23,7 +23,7 @@ handler.setFormatter(logging.Formatter("%(asctime)s [scheduler] %(message)s"))
 logger.addHandler(handler)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
-JUPYTER_URL = os.getenv("JUPYTER_URL", "http://jupyter:8888")
+JUPYTER_URL = os.getenv("JUPYTER_URL", "http://jupyterhub:8000")
 POLL_INTERVAL = int(os.getenv("SCHEDULER_POLL_INTERVAL", "60"))
 
 # Advisory lock ID for the scheduler (prevents duplicate execution across replicas)
@@ -438,13 +438,13 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
         import urllib.request
         import urllib.error
         org_short = task["org_id"].replace("-", "")[:8]
-        dir_name = f"org_{org_short}"
         nb_name = (task["slug"] or task["page_name"].lower().replace(" ", "_")) + ".ipynb"
-        path = f"{dir_name}/{nb_name}"
+        # Per-org JupyterHub containers: /jupyter/user/<orgShort>/api/...
+        user_api = f"{JUPYTER_URL}/jupyter/user/{org_short}"
         try:
-            req = urllib.request.Request(f"{JUPYTER_URL}/jupyter/api/contents/{path}")
+            req = urllib.request.Request(f"{user_api}/api/contents/{nb_name}")
             urllib.request.urlopen(req, timeout=10)
-            return True, f"Notebook verified: {path}"
+            return True, f"Notebook verified: {nb_name}"
         except Exception as e:
             return False, f"Notebook error: {e}"
 
