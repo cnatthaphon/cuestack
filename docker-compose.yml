@@ -103,12 +103,8 @@ services:
     volumes:
       - jupyter_workspaces:/workspace
       - org_files:/files:ro
-    # Security: no extra capabilities, read-only root filesystem except workspace
-    read_only: true
     tmpfs:
       - /tmp
-      - /home/jupyter/.local
-      - /home/jupyter/.cache
 
   clickhouse:
     image: clickhouse/clickhouse-server:24-alpine

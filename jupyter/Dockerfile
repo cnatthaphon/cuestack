@@ -71,9 +71,11 @@ RUN chmod -R o-w /usr/local/lib/python3.12/site-packages/ 2>/dev/null || true
 
 WORKDIR /workspace
 
-# Switch to unprivileged user — can only write to /workspace and /home/jupyter
-USER jupyter
+# Entrypoint: fix permissions as root, then drop to jupyter user
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 8888
 
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser"]
+# Start as root → entrypoint fixes permissions → drops to jupyter user
+ENTRYPOINT ["/entrypoint.sh"]
