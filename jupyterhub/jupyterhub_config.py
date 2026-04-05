@@ -74,6 +74,7 @@ c.DockerSpawner.cpu_limit = 1.0
 # ---------------------------------------------------------------------------
 c.JupyterHub.hub_ip = '0.0.0.0'
 c.JupyterHub.hub_port = 8888
+c.JupyterHub.port = 8888
 c.JupyterHub.base_url = '/jupyter/'
 
 # The hub must be reachable from spawned containers via the Docker network.
