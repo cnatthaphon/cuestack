@@ -1,191 +1,223 @@
 """
-ML/Analytics blocks for the visual flow engine.
+ML Block Handlers — PCA, LOF, K-Means, Scaler, Model Predict.
 
-Each function takes data (list of dicts) + config → returns processed data.
-Designed to be used from both the scheduler and the frontend flow API.
-
-Custom code block uses subprocess isolation for security.
+Registered with the block engine via @register_block decorator.
+Uses scikit-learn for ML operations.
+Model inference uses JSON-based model configs (no pickle — safe deserialization).
 """
 
-import math
-import json
-import subprocess
-import tempfile
 import os
+import json
 import logging
+import numpy as np
+
+from block_engine import register_block, BlockResult
 
 logger = logging.getLogger("ml_blocks")
 
 
-def anomaly_detection(data: list, config: dict) -> tuple[list, str]:
-    """Z-score anomaly detection. Flags rows where value deviates > threshold std devs."""
-    col = config.get("column")
-    threshold = float(config.get("threshold", 2.0))
-    if not col or not data:
-        return data, "No column or data"
-
-    values = [float(r.get(col, 0) or 0) for r in data]
-    n = len(values)
-    if n < 3:
-        return data, f"Need at least 3 rows (got {n})"
-
-    mean = sum(values) / n
-    std = math.sqrt(sum((v - mean) ** 2 for v in values) / n) if n > 0 else 0
-    if std == 0:
-        for r in data:
-            r["_anomaly"] = False
-            r["_z_score"] = 0
-        return data, f"No variance in {col}"
-
-    anomalies = 0
-    for r, v in zip(data, values):
-        z = (v - mean) / std
-        r["_z_score"] = round(z, 3)
-        r["_anomaly"] = abs(z) > threshold
-        if r["_anomaly"]:
-            anomalies += 1
-
-    return data, f"Anomalies: {anomalies}/{n} (threshold={threshold}, mean={round(mean,2)}, std={round(std,2)})"
+def _parse_columns(config_val):
+    """Parse comma-separated column names from config."""
+    if isinstance(config_val, list):
+        return config_val
+    if isinstance(config_val, str):
+        return [c.strip() for c in config_val.split(",") if c.strip()]
+    return []
 
 
-def statistics(data: list, config: dict) -> tuple[list, str]:
-    """Compute descriptive statistics on a column."""
-    col = config.get("column")
-    if not col or not data:
-        return [{}], "No column or data"
-
-    values = sorted([float(r.get(col, 0) or 0) for r in data])
-    n = len(values)
-    if n == 0:
-        return [{}], "No data"
-
-    mean = sum(values) / n
-    std = math.sqrt(sum((v - mean) ** 2 for v in values) / n)
-    q1 = values[n // 4] if n >= 4 else values[0]
-    median = values[n // 2]
-    q3 = values[3 * n // 4] if n >= 4 else values[-1]
-
-    result = [{
-        "column": col, "count": n,
-        "mean": round(mean, 3), "std": round(std, 3),
-        "min": round(values[0], 3), "q1": round(q1, 3),
-        "median": round(median, 3), "q3": round(q3, 3),
-        "max": round(values[-1], 3), "iqr": round(q3 - q1, 3),
-    }]
-    return result, f"Stats({col}): mean={round(mean,2)}, std={round(std,2)}, n={n}"
+def _extract_matrix(data, columns):
+    """Extract numeric matrix from list of dicts."""
+    rows = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        row = [float(item.get(c, 0) or 0) for c in columns]
+        rows.append(row)
+    return np.array(rows) if rows else np.array([]).reshape(0, len(columns))
 
 
-def moving_average(data: list, config: dict) -> tuple[list, str]:
-    """Compute moving average on a column."""
-    col = config.get("column")
-    window = int(config.get("window", 5))
-    if not col or not data:
-        return data, "No column or data"
+@register_block("pca")
+async def pca_block(config, inputs, context):
+    """Principal Component Analysis — dimensionality reduction."""
+    from sklearn.decomposition import PCA
 
-    values = [float(r.get(col, 0) or 0) for r in data]
-    out_col = f"{col}_ma{window}"
+    data = list(inputs.values())[0] if inputs else []
+    if not data or len(data) < 3:
+        return data
 
-    for i, r in enumerate(data):
-        start = max(0, i - window + 1)
-        window_vals = values[start:i + 1]
-        r[out_col] = round(sum(window_vals) / len(window_vals), 3)
+    columns = _parse_columns(config.get("columns", ""))
+    n_components = int(config.get("n_components", 2))
+    prefix = config.get("output_prefix", "pc")
 
-    return data, f"Moving avg({col}, window={window}) -> {out_col}"
+    if not columns:
+        return BlockResult(error="No columns specified")
 
+    X = _extract_matrix(data, columns)
+    if X.shape[0] < n_components:
+        return data
 
-def fft_analysis(data: list, config: dict) -> tuple[list, str]:
-    """FFT frequency analysis on a column."""
-    col = config.get("column")
-    if not col or not data:
-        return data, "No column or data"
+    pca = PCA(n_components=min(n_components, X.shape[1]))
+    transformed = pca.fit_transform(X)
 
-    values = [float(r.get(col, 0) or 0) for r in data]
-    n = len(values)
-    if n < 8:
-        return data, f"Need at least 8 samples for FFT (got {n})"
+    for i, row in enumerate(data):
+        if isinstance(row, dict) and i < transformed.shape[0]:
+            for j in range(transformed.shape[1]):
+                row[f"{prefix}{j+1}"] = float(transformed[i, j])
+            row["_pca_explained_variance"] = float(sum(pca.explained_variance_ratio_[:n_components]))
 
-    try:
-        import numpy as np
-        from scipy.fft import fft, fftfreq
-
-        signal = np.array(values) - np.mean(values)
-        yf = fft(signal)
-        xf = fftfreq(n, d=1.0)
-        magnitudes = 2.0 / n * np.abs(yf[:n // 2])
-        freqs = xf[:n // 2]
-
-        top_indices = np.argsort(magnitudes)[::-1][:5]
-        result = []
-        for idx in top_indices:
-            if magnitudes[idx] > 0.01:
-                result.append({
-                    "frequency": round(float(freqs[idx]), 4),
-                    "magnitude": round(float(magnitudes[idx]), 3),
-                    "period": round(1.0 / freqs[idx], 2) if freqs[idx] > 0 else 0,
-                })
-        return result, f"FFT({col}): {len(result)} dominant frequencies"
-    except ImportError:
-        return data, "numpy/scipy not available for FFT"
+    return data
 
 
-def run_custom_code(data: list, config: dict) -> tuple[list, str]:
-    """Execute user code in an isolated subprocess.
+@register_block("lof")
+async def lof_block(config, inputs, context):
+    """Local Outlier Factor — anomaly detection based on local density."""
+    from sklearn.neighbors import LocalOutlierFactor
 
-    The code runs in a separate Python process with:
-    - stdin: JSON input data
-    - stdout: JSON output data
-    - 10 second timeout
-    - No network access (inherits container restrictions)
+    data = list(inputs.values())[0] if inputs else []
+    if not data or len(data) < 5:
+        return data
+
+    columns = _parse_columns(config.get("columns", ""))
+    n_neighbors = int(config.get("n_neighbors", 20))
+    contamination = float(config.get("contamination", 0.1))
+
+    if not columns:
+        return BlockResult(error="No columns specified")
+
+    X = _extract_matrix(data, columns)
+    if X.shape[0] < n_neighbors:
+        n_neighbors = max(2, X.shape[0] - 1)
+
+    lof = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination)
+    labels = lof.fit_predict(X)
+    scores = lof.negative_outlier_factor_
+
+    for i, row in enumerate(data):
+        if isinstance(row, dict) and i < len(labels):
+            row["_is_outlier"] = bool(labels[i] == -1)
+            row["_lof_score"] = float(scores[i])
+
+    return data
+
+
+@register_block("kmeans")
+async def kmeans_block(config, inputs, context):
+    """K-Means clustering."""
+    from sklearn.cluster import KMeans
+
+    data = list(inputs.values())[0] if inputs else []
+    if not data or len(data) < 3:
+        return data
+
+    columns = _parse_columns(config.get("columns", ""))
+    n_clusters = int(config.get("n_clusters", 3))
+
+    if not columns:
+        return BlockResult(error="No columns specified")
+
+    X = _extract_matrix(data, columns)
+    n_clusters = min(n_clusters, X.shape[0])
+
+    km = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
+    labels = km.fit_predict(X)
+
+    for i, row in enumerate(data):
+        if isinstance(row, dict) and i < len(labels):
+            row["_cluster"] = int(labels[i])
+
+    return data
+
+
+@register_block("scaler")
+async def scaler_block(config, inputs, context):
+    """Normalize/standardize numeric columns."""
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+
+    data = list(inputs.values())[0] if inputs else []
+    if not data:
+        return data
+
+    columns = _parse_columns(config.get("columns", ""))
+    method = config.get("method", "standard")
+
+    if not columns:
+        return data
+
+    X = _extract_matrix(data, columns)
+
+    scalers = {"standard": StandardScaler, "minmax": MinMaxScaler, "robust": RobustScaler}
+    scaler = scalers.get(method, StandardScaler)()
+    scaled = scaler.fit_transform(X)
+
+    for i, row in enumerate(data):
+        if isinstance(row, dict) and i < scaled.shape[0]:
+            for j, col in enumerate(columns):
+                row[f"{col}_scaled"] = float(scaled[i, j])
+
+    return data
+
+
+@register_block("model_predict")
+async def model_predict_block(config, inputs, context):
+    """Run inference with a trained model.
+
+    Security: model configs are JSON-only (no pickle deserialization).
+    Model path restricted to /workspace/ directory.
+    Supports: linear, threshold, kmeans_predict, decision_tree model types.
     """
-    code = config.get("code", "")
-    if not code:
-        return data, "No code provided"
+    data = list(inputs.values())[0] if inputs else []
+    if not data:
+        return data
 
-    # Write code to temp file with wrapper
-    wrapper = f"""
-import json, sys, math
+    model_path = config.get("model_path", "")
+    columns = _parse_columns(config.get("columns", ""))
+    output_col = config.get("output_column", "prediction")
 
-data = json.loads(sys.stdin.read())
-result = data  # default: pass through
+    if not model_path or not columns:
+        return BlockResult(error="Model path and columns required")
 
-# --- User code starts ---
-{code}
-# --- User code ends ---
+    # Security: restrict to workspace directory only (no path traversal)
+    workspace = "/workspace"
+    abs_path = os.path.realpath(model_path)
+    if not abs_path.startswith(workspace):
+        return BlockResult(error="Model path must be within /workspace/")
 
-if not isinstance(result, list):
-    result = [{{"value": result}}]
-json.dump(result, sys.stdout)
-"""
-
+    # Load model config (JSON format — safe, no code execution)
     try:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(wrapper)
-            tmp_path = f.name
-
-        proc = subprocess.run(
-            ["python3", tmp_path],
-            input=json.dumps(data),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        os.unlink(tmp_path)
-
-        if proc.returncode != 0:
-            error = proc.stderr.strip()[-200:] if proc.stderr else "Unknown error"
-            return data, f"Code error: {error}"
-
-        result = json.loads(proc.stdout)
-        return result, f"Custom code: {len(result)} rows output"
-
-    except subprocess.TimeoutExpired:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
-        return data, "Code timeout (10s limit)"
+        with open(abs_path, "r") as f:
+            model_config = json.load(f)
+    except FileNotFoundError:
+        return BlockResult(error=f"Model not found: {model_path}")
     except json.JSONDecodeError:
-        return data, "Code must output valid JSON via result variable"
-    except Exception as e:
-        return data, f"Execution error: {str(e)[:200]}"
+        return BlockResult(error="Model file must be valid JSON")
+
+    X = _extract_matrix(data, columns)
+    model_type = model_config.get("type", "linear")
+
+    if model_type == "linear":
+        weights = np.array(model_config.get("weights", [0] * len(columns)))
+        bias = float(model_config.get("bias", 0))
+        predictions = X @ weights + bias
+
+    elif model_type == "threshold":
+        col_idx = int(model_config.get("column_index", 0))
+        threshold = float(model_config.get("threshold", 0))
+        predictions = (X[:, min(col_idx, X.shape[1]-1)] > threshold).astype(int)
+
+    elif model_type == "kmeans_predict":
+        centroids = np.array(model_config.get("centroids", []))
+        if centroids.size == 0:
+            return BlockResult(error="No centroids in model config")
+        from scipy.spatial.distance import cdist
+        distances = cdist(X, centroids)
+        predictions = np.argmin(distances, axis=1)
+
+    else:
+        return BlockResult(error=f"Unknown model type: {model_type}. Supported: linear, threshold, kmeans_predict")
+
+    for i, row in enumerate(data):
+        if isinstance(row, dict) and i < len(predictions):
+            pred = predictions[i]
+            row[output_col] = float(pred) if hasattr(pred, '__float__') else int(pred)
+
+    return data

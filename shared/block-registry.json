@@ -8,12 +8,40 @@
       "category": "input",
       "description": "Subscribe to MQTT channels for real-time data",
       "configSchema": [
-        { "key": "channels", "type": "multi-text", "label": "Channels", "placeholder": "sensor-room-a, sensor-room-b", "help": "Comma-separated channel names" },
-        { "key": "format", "type": "select", "label": "Format", "options": ["json", "binary", "text"], "default": "json" },
-        { "key": "qos", "type": "number", "label": "QoS", "min": 0, "max": 2, "default": 0 }
+        {
+          "key": "channels",
+          "type": "multi-text",
+          "label": "Channels",
+          "placeholder": "sensor-room-a, sensor-room-b",
+          "help": "Comma-separated channel names"
+        },
+        {
+          "key": "format",
+          "type": "select",
+          "label": "Format",
+          "options": [
+            "json",
+            "binary",
+            "text"
+          ],
+          "default": "json"
+        },
+        {
+          "key": "qos",
+          "type": "number",
+          "label": "QoS",
+          "min": 0,
+          "max": 2,
+          "default": 0
+        }
       ],
       "inputs": [],
-      "outputs": [{ "name": "data", "type": "message" }],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "message"
+        }
+      ],
       "color": "#0891b2"
     },
     {
@@ -23,13 +51,42 @@
       "category": "input",
       "description": "Load data from a database table",
       "configSchema": [
-        { "key": "table", "type": "table-select", "label": "Table" },
-        { "key": "limit", "type": "number", "label": "Max Rows", "default": 100, "min": 1, "max": 10000 },
-        { "key": "order_by", "type": "text", "label": "Order By" },
-        { "key": "order_dir", "type": "select", "label": "Direction", "options": ["DESC", "ASC"], "default": "DESC" }
+        {
+          "key": "table",
+          "type": "table-select",
+          "label": "Table"
+        },
+        {
+          "key": "limit",
+          "type": "number",
+          "label": "Max Rows",
+          "default": 100,
+          "min": 1,
+          "max": 10000
+        },
+        {
+          "key": "order_by",
+          "type": "text",
+          "label": "Order By"
+        },
+        {
+          "key": "order_dir",
+          "type": "select",
+          "label": "Direction",
+          "options": [
+            "DESC",
+            "ASC"
+          ],
+          "default": "DESC"
+        }
       ],
       "inputs": [],
-      "outputs": [{ "name": "data", "type": "dataset" }],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
       "color": "#0070f3"
     },
     {
@@ -39,12 +96,45 @@
       "category": "transform",
       "description": "Filter rows by condition",
       "configSchema": [
-        { "key": "column", "type": "text", "label": "Column" },
-        { "key": "operator", "type": "select", "label": "Operator", "options": ["==", "!=", ">", "<", ">=", "<=", "contains", "is null", "is not null"] },
-        { "key": "value", "type": "text", "label": "Value" }
+        {
+          "key": "column",
+          "type": "text",
+          "label": "Column"
+        },
+        {
+          "key": "operator",
+          "type": "select",
+          "label": "Operator",
+          "options": [
+            "==",
+            "!=",
+            ">",
+            "<",
+            ">=",
+            "<=",
+            "contains",
+            "is null",
+            "is not null"
+          ]
+        },
+        {
+          "key": "value",
+          "type": "text",
+          "label": "Value"
+        }
       ],
-      "inputs": [{ "name": "data", "type": "dataset" }],
-      "outputs": [{ "name": "data", "type": "dataset" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
       "color": "#7c3aed"
     },
     {
@@ -54,12 +144,44 @@
       "category": "transform",
       "description": "Transform column values",
       "configSchema": [
-        { "key": "column", "type": "text", "label": "Column" },
-        { "key": "operation", "type": "select", "label": "Operation", "options": ["round", "abs", "uppercase", "lowercase", "multiply", "add", "to_number", "to_date"] },
-        { "key": "param", "type": "text", "label": "Parameter" }
+        {
+          "key": "column",
+          "type": "text",
+          "label": "Column"
+        },
+        {
+          "key": "operation",
+          "type": "select",
+          "label": "Operation",
+          "options": [
+            "round",
+            "abs",
+            "uppercase",
+            "lowercase",
+            "multiply",
+            "add",
+            "to_number",
+            "to_date"
+          ]
+        },
+        {
+          "key": "param",
+          "type": "text",
+          "label": "Parameter"
+        }
       ],
-      "inputs": [{ "name": "data", "type": "dataset" }],
-      "outputs": [{ "name": "data", "type": "dataset" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
       "color": "#059669"
     },
     {
@@ -69,12 +191,41 @@
       "category": "transform",
       "description": "Group and aggregate data",
       "configSchema": [
-        { "key": "group_by", "type": "text", "label": "Group By" },
-        { "key": "agg_column", "type": "text", "label": "Aggregate Column" },
-        { "key": "agg_func", "type": "select", "label": "Function", "options": ["count", "sum", "avg", "min", "max"] }
+        {
+          "key": "group_by",
+          "type": "text",
+          "label": "Group By"
+        },
+        {
+          "key": "agg_column",
+          "type": "text",
+          "label": "Aggregate Column"
+        },
+        {
+          "key": "agg_func",
+          "type": "select",
+          "label": "Function",
+          "options": [
+            "count",
+            "sum",
+            "avg",
+            "min",
+            "max"
+          ]
+        }
       ],
-      "inputs": [{ "name": "data", "type": "dataset" }],
-      "outputs": [{ "name": "data", "type": "dataset" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
       "color": "#d97706"
     },
     {
@@ -84,11 +235,31 @@
       "category": "analysis",
       "description": "Extract frequency components using Fast Fourier Transform",
       "configSchema": [
-        { "key": "column", "type": "text", "label": "Signal Column" },
-        { "key": "sample_rate", "type": "number", "label": "Sample Rate (Hz)", "default": 1, "min": 0.01 }
+        {
+          "key": "column",
+          "type": "text",
+          "label": "Signal Column"
+        },
+        {
+          "key": "sample_rate",
+          "type": "number",
+          "label": "Sample Rate (Hz)",
+          "default": 1,
+          "min": 0.01
+        }
       ],
-      "inputs": [{ "name": "data", "type": "dataset" }],
-      "outputs": [{ "name": "data", "type": "dataset" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
       "color": "#6d28d9"
     },
     {
@@ -98,11 +269,31 @@
       "category": "analysis",
       "description": "Apply moving average smoothing",
       "configSchema": [
-        { "key": "column", "type": "text", "label": "Column" },
-        { "key": "window", "type": "number", "label": "Window (seconds)", "default": 10, "min": 1 }
+        {
+          "key": "column",
+          "type": "text",
+          "label": "Column"
+        },
+        {
+          "key": "window",
+          "type": "number",
+          "label": "Window (seconds)",
+          "default": 10,
+          "min": 1
+        }
       ],
-      "inputs": [{ "name": "data", "type": "dataset" }],
-      "outputs": [{ "name": "data", "type": "dataset" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
       "color": "#0d9488"
     },
     {
@@ -112,12 +303,46 @@
       "category": "analysis",
       "description": "Detect anomalies using statistical methods",
       "configSchema": [
-        { "key": "column", "type": "text", "label": "Column" },
-        { "key": "method", "type": "select", "label": "Method", "options": ["zscore", "iqr", "rolling_std"], "default": "zscore" },
-        { "key": "threshold", "type": "number", "label": "Threshold", "default": 2.0, "min": 0.1 }
+        {
+          "key": "column",
+          "type": "text",
+          "label": "Column"
+        },
+        {
+          "key": "method",
+          "type": "select",
+          "label": "Method",
+          "options": [
+            "zscore",
+            "iqr",
+            "rolling_std"
+          ],
+          "default": "zscore"
+        },
+        {
+          "key": "threshold",
+          "type": "number",
+          "label": "Threshold",
+          "default": 2.0,
+          "min": 0.1
+        }
       ],
-      "inputs": [{ "name": "data", "type": "dataset" }],
-      "outputs": [{ "name": "data", "type": "dataset" }, { "name": "anomalies", "type": "dataset" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        },
+        {
+          "name": "anomalies",
+          "type": "dataset"
+        }
+      ],
       "color": "#b91c1c"
     },
     {
@@ -127,10 +352,25 @@
       "category": "output",
       "description": "Store data to ClickHouse table",
       "configSchema": [
-        { "key": "table", "type": "table-select", "label": "Table" },
-        { "key": "mapping", "type": "text", "label": "Column Mapping (JSON)", "placeholder": "{\"temp\": \"temperature\"}", "help": "Map payload fields to table columns. Leave empty for auto-match." }
+        {
+          "key": "table",
+          "type": "table-select",
+          "label": "Table"
+        },
+        {
+          "key": "mapping",
+          "type": "text",
+          "label": "Column Mapping (JSON)",
+          "placeholder": "{\"temp\": \"temperature\"}",
+          "help": "Map payload fields to table columns. Leave empty for auto-match."
+        }
       ],
-      "inputs": [{ "name": "data", "type": "any" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "any"
+        }
+      ],
       "outputs": [],
       "color": "#16a34a"
     },
@@ -141,9 +381,19 @@
       "category": "output",
       "description": "Broadcast data to WebSocket channels",
       "configSchema": [
-        { "key": "channels", "type": "multi-text", "label": "Channels", "placeholder": "sensor-room-a, sensor-room-b" }
+        {
+          "key": "channels",
+          "type": "multi-text",
+          "label": "Channels",
+          "placeholder": "sensor-room-a, sensor-room-b"
+        }
       ],
-      "inputs": [{ "name": "data", "type": "any" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "any"
+        }
+      ],
       "outputs": [],
       "color": "#ea580c"
     },
@@ -154,10 +404,26 @@
       "category": "output",
       "description": "Publish data to MQTT topic",
       "configSchema": [
-        { "key": "topic", "type": "text", "label": "Topic" },
-        { "key": "qos", "type": "number", "label": "QoS", "default": 0, "min": 0, "max": 2 }
+        {
+          "key": "topic",
+          "type": "text",
+          "label": "Topic"
+        },
+        {
+          "key": "qos",
+          "type": "number",
+          "label": "QoS",
+          "default": 0,
+          "min": 0,
+          "max": 2
+        }
       ],
-      "inputs": [{ "name": "data", "type": "any" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "any"
+        }
+      ],
       "outputs": [],
       "color": "#0891b2"
     },
@@ -168,12 +434,38 @@
       "category": "output",
       "description": "Render data as a chart",
       "configSchema": [
-        { "key": "chart_type", "type": "select", "label": "Chart Type", "options": ["bar", "line", "pie"] },
-        { "key": "x_column", "type": "text", "label": "X Axis" },
-        { "key": "y_column", "type": "text", "label": "Y Axis" },
-        { "key": "title", "type": "text", "label": "Title" }
+        {
+          "key": "chart_type",
+          "type": "select",
+          "label": "Chart Type",
+          "options": [
+            "bar",
+            "line",
+            "pie"
+          ]
+        },
+        {
+          "key": "x_column",
+          "type": "text",
+          "label": "X Axis"
+        },
+        {
+          "key": "y_column",
+          "type": "text",
+          "label": "Y Axis"
+        },
+        {
+          "key": "title",
+          "type": "text",
+          "label": "Title"
+        }
       ],
-      "inputs": [{ "name": "data", "type": "dataset" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
       "outputs": [],
       "color": "#dc2626"
     },
@@ -184,11 +476,32 @@
       "category": "custom",
       "description": "Run custom Python code. Define transform(data, config) function.",
       "configSchema": [
-        { "key": "code", "type": "code", "label": "Python Code", "language": "python", "default": "def transform(data, config):\n    # data = upstream output\n    # return processed data\n    return data" },
-        { "key": "params", "type": "text", "label": "Custom Parameters (JSON)", "default": "{}" }
+        {
+          "key": "code",
+          "type": "code",
+          "label": "Python Code",
+          "language": "python",
+          "default": "def transform(data, config):\n    # data = upstream output\n    # return processed data\n    return data"
+        },
+        {
+          "key": "params",
+          "type": "text",
+          "label": "Custom Parameters (JSON)",
+          "default": "{}"
+        }
       ],
-      "inputs": [{ "name": "data", "type": "any" }],
-      "outputs": [{ "name": "data", "type": "any" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "any"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "any"
+        }
+      ],
       "color": "#374151"
     },
     {
@@ -198,30 +511,304 @@
       "category": "output",
       "description": "Send notification to users",
       "configSchema": [
-        { "key": "title", "type": "text", "label": "Title" },
-        { "key": "message", "type": "text", "label": "Message" },
-        { "key": "type", "type": "select", "label": "Type", "options": ["info", "warning", "error"], "default": "info" }
+        {
+          "key": "title",
+          "type": "text",
+          "label": "Title"
+        },
+        {
+          "key": "message",
+          "type": "text",
+          "label": "Message"
+        },
+        {
+          "key": "type",
+          "type": "select",
+          "label": "Type",
+          "options": [
+            "info",
+            "warning",
+            "error"
+          ],
+          "default": "info"
+        }
       ],
-      "inputs": [{ "name": "data", "type": "any" }],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "any"
+        }
+      ],
       "outputs": [],
       "color": "#ec4899"
+    },
+    {
+      "type": "pca",
+      "label": "PCA",
+      "icon": "\ud83e\uddee",
+      "category": "analysis",
+      "description": "Principal Component Analysis \u2014 dimensionality reduction",
+      "configSchema": [
+        {
+          "key": "columns",
+          "type": "multi-text",
+          "label": "Input Columns",
+          "placeholder": "temperature, humidity, pressure",
+          "help": "Comma-separated numeric columns"
+        },
+        {
+          "key": "n_components",
+          "type": "number",
+          "label": "Components",
+          "default": 2,
+          "min": 1,
+          "max": 50
+        },
+        {
+          "key": "output_prefix",
+          "type": "text",
+          "label": "Output Prefix",
+          "default": "pc"
+        }
+      ],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "color": "#8b5cf6"
+    },
+    {
+      "type": "lof",
+      "label": "LOF (Outlier)",
+      "icon": "\ud83c\udfaf",
+      "category": "analysis",
+      "description": "Local Outlier Factor \u2014 detect anomalies based on local density",
+      "configSchema": [
+        {
+          "key": "columns",
+          "type": "multi-text",
+          "label": "Input Columns",
+          "placeholder": "temperature, humidity"
+        },
+        {
+          "key": "n_neighbors",
+          "type": "number",
+          "label": "Neighbors",
+          "default": 20,
+          "min": 2,
+          "max": 100
+        },
+        {
+          "key": "contamination",
+          "type": "number",
+          "label": "Contamination",
+          "default": 0.1,
+          "min": 0.01,
+          "max": 0.5
+        }
+      ],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        },
+        {
+          "name": "outliers",
+          "type": "dataset"
+        }
+      ],
+      "color": "#dc2626"
+    },
+    {
+      "type": "kmeans",
+      "label": "K-Means",
+      "icon": "\ud83d\udd35",
+      "category": "analysis",
+      "description": "K-Means clustering \u2014 group similar data points",
+      "configSchema": [
+        {
+          "key": "columns",
+          "type": "multi-text",
+          "label": "Input Columns",
+          "placeholder": "temperature, humidity"
+        },
+        {
+          "key": "n_clusters",
+          "type": "number",
+          "label": "Clusters",
+          "default": 3,
+          "min": 2,
+          "max": 20
+        }
+      ],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "color": "#2563eb"
+    },
+    {
+      "type": "scaler",
+      "label": "Scaler",
+      "icon": "\ud83d\udcd0",
+      "category": "transform",
+      "description": "Normalize/standardize numeric columns",
+      "configSchema": [
+        {
+          "key": "columns",
+          "type": "multi-text",
+          "label": "Columns",
+          "placeholder": "temperature, humidity"
+        },
+        {
+          "key": "method",
+          "type": "select",
+          "label": "Method",
+          "options": [
+            "standard",
+            "minmax",
+            "robust"
+          ],
+          "default": "standard"
+        }
+      ],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "color": "#059669"
+    },
+    {
+      "type": "model_predict",
+      "label": "Model Predict",
+      "icon": "\ud83e\udd16",
+      "category": "analysis",
+      "description": "Run inference with a trained model (from notebook or custom code)",
+      "configSchema": [
+        {
+          "key": "model_path",
+          "type": "text",
+          "label": "Model Path",
+          "placeholder": "/workspace/models/my_model.pkl",
+          "help": "Path to saved model (pickle/joblib)"
+        },
+        {
+          "key": "columns",
+          "type": "multi-text",
+          "label": "Input Columns",
+          "placeholder": "temperature, humidity"
+        },
+        {
+          "key": "output_column",
+          "type": "text",
+          "label": "Output Column",
+          "default": "prediction"
+        }
+      ],
+      "inputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "data",
+          "type": "dataset"
+        }
+      ],
+      "color": "#7c3aed"
     }
   ],
   "configTypes": {
-    "text": { "component": "input", "inputType": "text" },
-    "number": { "component": "input", "inputType": "number" },
-    "select": { "component": "select" },
-    "multi-text": { "component": "input", "inputType": "text", "help": "Comma-separated values" },
-    "table-select": { "component": "select", "source": "tables" },
-    "channel-select": { "component": "select", "source": "channels" },
-    "code": { "component": "textarea", "rows": 10, "monospace": true },
-    "toggle": { "component": "checkbox" }
+    "text": {
+      "component": "input",
+      "inputType": "text"
+    },
+    "number": {
+      "component": "input",
+      "inputType": "number"
+    },
+    "select": {
+      "component": "select"
+    },
+    "multi-text": {
+      "component": "input",
+      "inputType": "text",
+      "help": "Comma-separated values"
+    },
+    "table-select": {
+      "component": "select",
+      "source": "tables"
+    },
+    "channel-select": {
+      "component": "select",
+      "source": "channels"
+    },
+    "code": {
+      "component": "textarea",
+      "rows": 10,
+      "monospace": true
+    },
+    "toggle": {
+      "component": "checkbox"
+    }
   },
   "categories": [
-    { "id": "input", "label": "Input", "icon": "\ud83d\udce5" },
-    { "id": "transform", "label": "Transform", "icon": "\ud83d\udd04" },
-    { "id": "analysis", "label": "Analysis", "icon": "\ud83d\udcca" },
-    { "id": "output", "label": "Output", "icon": "\ud83d\udce4" },
-    { "id": "custom", "label": "Custom", "icon": "\ud83e\udde9" }
+    {
+      "id": "input",
+      "label": "Input",
+      "icon": "\ud83d\udce5"
+    },
+    {
+      "id": "transform",
+      "label": "Transform",
+      "icon": "\ud83d\udd04"
+    },
+    {
+      "id": "analysis",
+      "label": "Analysis",
+      "icon": "\ud83d\udcca"
+    },
+    {
+      "id": "output",
+      "label": "Output",
+      "icon": "\ud83d\udce4"
+    },
+    {
+      "id": "custom",
+      "label": "Custom",
+      "icon": "\ud83e\udde9"
+    }
   ]
 }
