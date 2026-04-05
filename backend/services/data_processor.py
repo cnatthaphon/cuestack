@@ -13,22 +13,22 @@ Features:
 - Auto-reconnects on DB/MQTT connection loss
 """
 
+import json
+import logging
+import math
 import os
 import sys
-import json
 import time
-import math
-import logging
-from datetime import datetime, timezone
 from collections import deque
+from datetime import datetime, timezone
 
 import psycopg2
 
 # Add parent dir for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from proto_codec import decode_sensor_data
 from mqtt_auth import register_device_heartbeat
+from proto_codec import decode_sensor_data
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [processor] %(message)s")
 logger = logging.getLogger()

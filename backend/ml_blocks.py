@@ -6,12 +6,13 @@ Uses scikit-learn for ML operations.
 Model inference uses JSON-based model configs (no pickle — safe deserialization).
 """
 
-import os
 import json
 import logging
+import os
+
 import numpy as np
 
-from block_engine import register_block, BlockResult
+from block_engine import BlockResult, register_block
 
 logger = logging.getLogger("ml_blocks")
 
@@ -131,7 +132,7 @@ async def kmeans_block(config, inputs, context):
 @register_block("scaler")
 async def scaler_block(config, inputs, context):
     """Normalize/standardize numeric columns."""
-    from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+    from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
     data = list(inputs.values())[0] if inputs else []
     if not data:

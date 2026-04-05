@@ -8,12 +8,44 @@ export const BLOCK_CATALOG = registry.blocks;
 export const CONFIG_TYPES = registry.configTypes;
 export const CATEGORIES = registry.categories;
 
+// ─── Org custom blocks (loaded at runtime from API) ─────────────────────────
+let _orgBlocks = [];
+let _orgBlocksLoaded = false;
+
+export async function loadOrgBlocks() {
+  try {
+    const res = await fetch('/api/blocks');
+    if (res.ok) {
+      const data = await res.json();
+      _orgBlocks = (data.blocks || []).filter(b => b._custom);
+      _orgBlocksLoaded = true;
+    }
+  } catch {
+    // Silently fail — org blocks are optional
+  }
+}
+
+export function getOrgBlocks() {
+  return _orgBlocks;
+}
+
+export function isOrgBlocksLoaded() {
+  return _orgBlocksLoaded;
+}
+
+/** Return all blocks: system + org custom */
+export function getAllBlocks() {
+  return [...BLOCK_CATALOG, ..._orgBlocks];
+}
+
+// ─── Lookup helpers ─────────────────────────────────────────────────────────
+
 export function getBlock(type) {
-  return BLOCK_CATALOG.find(b => b.type === type);
+  return getAllBlocks().find(b => b.type === type);
 }
 
 export function getBlocksByCategory(category) {
-  return BLOCK_CATALOG.filter(b => b.category === category);
+  return getAllBlocks().filter(b => b.category === category);
 }
 
 // Generate config summary text for display on nodes

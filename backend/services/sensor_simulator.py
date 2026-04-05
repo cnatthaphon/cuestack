@@ -14,19 +14,19 @@ Topic scheme:
   Respond:  org/{org_short}/ack/{device_id}      (protobuf CommandAck)
 """
 
+import json
+import logging
 import os
+import random
 import sys
 import time
-import random
-import logging
-import json
 from datetime import datetime, timezone
 
 # Add parent dir so we can import proto_codec and mqtt_auth
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from proto_codec import encode_sensor_data, decode_device_command, encode_command_ack
-from mqtt_auth import validate_device_token, register_device_heartbeat
+from mqtt_auth import register_device_heartbeat, validate_device_token
+from proto_codec import decode_device_command, encode_command_ack, encode_sensor_data
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [sensor-sim] %(message)s")
 logger = logging.getLogger()

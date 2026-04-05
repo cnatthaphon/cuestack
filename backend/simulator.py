@@ -6,12 +6,12 @@ Simulates a Bangkok weather station sending readings every few seconds.
 Data is protobuf-encoded (binary packed struct) to test the decode pipeline.
 """
 
-import os
-import time
-import random
 import json
-import struct
 import logging
+import os
+import random
+import struct
+import time
 
 logger = logging.getLogger("simulator")
 

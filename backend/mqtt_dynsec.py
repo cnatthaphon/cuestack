@@ -12,6 +12,7 @@ We send commands via MQTT publish to $CONTROL/dynamic-security/v1.
 import json
 import logging
 import os
+
 import paho.mqtt.client as mqtt_client
 
 logger = logging.getLogger("mqtt_dynsec")

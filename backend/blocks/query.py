@@ -7,8 +7,9 @@ Output: ctx.query_result (list of records)
 Security: ASVS V5.3.4 (parameterized queries via ClickHouse HTTP interface)
 """
 
-from .base import Block, PipelineContext
 import clickhouse_client
+
+from .base import Block, PipelineContext
 
 
 class QueryBlock(Block):

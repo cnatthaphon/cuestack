@@ -1,13 +1,16 @@
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from blocks.base import PipelineContext
 from pipelines import (
-    create_ingest_pipeline, create_query_pipeline,
-    create_summary_pipeline, create_export_pipeline,
+    create_export_pipeline,
+    create_ingest_pipeline,
+    create_query_pipeline,
+    create_summary_pipeline,
 )
 
 

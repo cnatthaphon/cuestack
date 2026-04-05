@@ -435,8 +435,8 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
 
     elif page_type == "notebook":
         # Notebook execution via Jupyter API
-        import urllib.request
         import urllib.error
+        import urllib.request
         org_short = task["org_id"].replace("-", "")[:8]
         nb_name = (task["slug"] or task["page_name"].lower().replace(" ", "_")) + ".ipynb"
         # Per-org JupyterHub containers: /jupyter/user/<orgShort>/api/...

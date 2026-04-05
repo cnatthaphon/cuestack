@@ -1,12 +1,13 @@
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from blocks.base import PipelineContext, Pipeline
-from blocks.validate import ValidateBlock
+from blocks.base import Pipeline, PipelineContext
 from blocks.transform import TransformBlock
+from blocks.validate import ValidateBlock
 
 
 @pytest.mark.asyncio

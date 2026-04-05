@@ -232,6 +232,28 @@ async function executeFlow(orgId, userId, blocks) {
           results.push({ block: "Notify", message: `Sent: ${config.title}` });
         }
       }
+
+      // Org custom blocks — delegate to backend Python engine
+      else if (type.startsWith("custom_")) {
+        try {
+          const backendUrl = process.env.BACKEND_URL || "http://backend:8000";
+          const resp = await fetch(`${backendUrl}/api/flow/execute-block`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ org_id: orgId, block_type: type, config, data }),
+          });
+          if (resp.ok) {
+            const result = await resp.json();
+            data = result.data ?? data;
+            results.push({ block: type, message: result.message || `Custom block ${type} executed`, rows: Array.isArray(data) ? data : undefined });
+          } else {
+            const err = await resp.json().catch(() => ({}));
+            results.push({ block: type, error: err.error || `Backend error (${resp.status})` });
+          }
+        } catch (e) {
+          results.push({ block: type, error: `Custom block error: ${e.message}` });
+        }
+      }
     } catch (e) {
       results.push({ block: type, error: e.message });
     }

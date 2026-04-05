@@ -1,17 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { BLOCK_CATALOG, getBlock } from "../../../../lib/flow-blocks.js";
+import { BLOCK_CATALOG, getBlock, getAllBlocks, loadOrgBlocks, isOrgBlocksLoaded } from "../../../../lib/flow-blocks.js";
 
 const CATEGORIES = [
   { id: "input", label: "Input", color: "#0070f3" },
   { id: "transform", label: "Transform", color: "#f59e0b" },
   { id: "output", label: "Output", color: "#38a169" },
+  { id: "custom", label: "Custom", color: "#6b7280" },
 ];
 
 export default function FlowEditor({ initialBlocks, tables, onSave, onRun, runResults }) {
   const [blocks, setBlocks] = useState(initialBlocks || []);
   const [selectedIdx, setSelectedIdx] = useState(null);
+  const [allBlocks, setAllBlocks] = useState(getAllBlocks());
+
+  // Load org custom blocks on mount
+  useEffect(() => {
+    if (!isOrgBlocksLoaded()) {
+      loadOrgBlocks().then(() => setAllBlocks(getAllBlocks()));
+    }
+  }, []);
 
   useEffect(() => { if (onSave) onSave(blocks); }, [blocks]);
 
@@ -71,7 +80,7 @@ export default function FlowEditor({ initialBlocks, tables, onSave, onRun, runRe
         {CATEGORIES.map((cat) => (
           <div key={cat.id} style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>{cat.label}</div>
-            {BLOCK_CATALOG.filter((b) => b.category === cat.id).map((b) => (
+            {allBlocks.filter((b) => b.category === cat.id).map((b) => (
               <button key={b.type} onClick={() => addBlock(b.type)} style={{
                 display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "6px 8px",
                 background: "#fff", border: `1px solid ${cat.color}30`, borderLeft: `3px solid ${cat.color}`,

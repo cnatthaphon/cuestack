@@ -1,10 +1,11 @@
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from blocks.base import Block, PipelineContext, Pipeline
+from blocks.base import Block, Pipeline, PipelineContext
 
 
 @pytest.mark.asyncio

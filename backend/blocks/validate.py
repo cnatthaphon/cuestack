@@ -8,6 +8,7 @@ Security: ASVS V5.1.3 (input validation), V13.1.1 (JSON schema)
 """
 
 from datetime import datetime
+
 from .base import Block, PipelineContext
 
 REQUIRED_FIELDS = {"device_id", "timestamp", "value"}

@@ -1,13 +1,14 @@
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from blocks.base import PipelineContext, Pipeline
-from blocks.query import QueryBlock
 from blocks.aggregate import AggregateBlock
+from blocks.base import Pipeline, PipelineContext
 from blocks.format import FormatBlock
+from blocks.query import QueryBlock
 
 
 @pytest.mark.asyncio

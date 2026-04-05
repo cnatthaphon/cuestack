@@ -11,14 +11,14 @@ Also registers device heartbeats in org_devices table.
 """
 
 import asyncio
+import base64
 import json
 import logging
 import os
-import base64
 from datetime import datetime, timezone
 
-from proto_codec import decode_sensor_data
 from mqtt_auth import register_device_heartbeat
+from proto_codec import decode_sensor_data
 
 logger = logging.getLogger("mqtt_bridge")
 logger.setLevel(logging.INFO)
@@ -66,9 +66,10 @@ async def run_mqtt_bridge():
         logger.error("paho-mqtt not installed, MQTT bridge disabled")
         return
 
-    import channels as ch
     import psycopg2
     import psycopg2.extras
+
+    import channels as ch
 
     DATABASE_URL = os.getenv("DATABASE_URL", "")
 

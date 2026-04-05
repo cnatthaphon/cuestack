@@ -8,8 +8,13 @@ EXPORT:  Query → Aggregate → Format(csv)
 """
 
 from blocks import (
-    Pipeline, ValidateBlock, TransformBlock, StoreBlock,
-    QueryBlock, AggregateBlock, FormatBlock,
+    AggregateBlock,
+    FormatBlock,
+    Pipeline,
+    QueryBlock,
+    StoreBlock,
+    TransformBlock,
+    ValidateBlock,
 )
 
 

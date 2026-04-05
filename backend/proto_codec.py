@@ -8,7 +8,6 @@ Schema: sensor_data.proto (SensorData, DeviceCommand, CommandAck)
 import struct
 import time
 
-
 # Since we want to avoid protoc compilation in Docker, we define messages
 # using the protobuf runtime directly. This is equivalent to the .proto file.
 

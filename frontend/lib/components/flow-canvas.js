@@ -2,18 +2,24 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 
-import { BLOCK_CATALOG, CATEGORIES, getBlock, getConfigSummary } from '../flow-blocks.js';
+import { BLOCK_CATALOG, CATEGORIES, getBlock, getConfigSummary, getAllBlocks, loadOrgBlocks, isOrgBlocksLoaded } from '../flow-blocks.js';
 
-// ─── Node type definitions (driven by shared block registry) ─────────────────
-const NODE_TYPES = BLOCK_CATALOG.map(b => ({
-  id: b.type,
-  label: b.label,
-  icon: b.icon,
-  color: b.color,
-  inputs: b.inputs.length,
-  outputs: b.outputs.length,
-  category: CATEGORIES.find(c => c.id === b.category)?.label || b.category,
-}));
+// ─── Node type definitions (driven by shared block registry + org custom) ────
+function buildNodeTypes() {
+  return getAllBlocks().map(b => ({
+    id: b.type,
+    label: b.label,
+    icon: b.icon,
+    color: b.color,
+    inputs: b.inputs.length,
+    outputs: b.outputs.length,
+    category: CATEGORIES.find(c => c.id === b.category)?.label || b.category,
+    _custom: !!b._custom,
+  }));
+}
+
+// Initial node types (system blocks only — org blocks loaded async)
+let NODE_TYPES = buildNodeTypes();
 
 const NODE_W = 180;
 const NODE_H = 56;
@@ -31,13 +37,25 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
   const [showCatalog, setShowCatalog] = useState(false);
   const svgRef = useRef(null);
 
+  const [nodeTypes, setNodeTypes] = useState(NODE_TYPES);
+
+  // Load org custom blocks on mount
+  useEffect(() => {
+    if (!isOrgBlocksLoaded()) {
+      loadOrgBlocks().then(() => {
+        NODE_TYPES = buildNodeTypes();
+        setNodeTypes(NODE_TYPES);
+      });
+    }
+  }, []);
+
   // Sync with parent
   useEffect(() => { setNodes(initNodes || []); }, [initNodes]);
   useEffect(() => { setEdges(initEdges || []); }, [initEdges]);
 
   // ─── Node operations ──────────────────────────────────────────────────────
   const addNode = (typeId, x, y) => {
-    const nt = NODE_TYPES.find((t) => t.id === typeId);
+    const nt = nodeTypes.find((t) => t.id === typeId);
     if (!nt) return;
     const id = `node_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const config = {};
@@ -196,10 +214,10 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
         {/* Node catalog dropdown */}
         {showCatalog && (
           <div style={{ position: "absolute", top: 40, left: 8, zIndex: 20, background: "#fff", border: "1px solid #ddd", borderRadius: 8, padding: 8, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", width: 200 }}>
-            {["Input", "Process", "ML", "Output"].map((cat) => (
+            {[...new Set(nodeTypes.map(t => t.category))].map((cat) => (
               <div key={cat}>
                 <div style={{ fontSize: 10, color: "#999", padding: "4px 8px", textTransform: "uppercase" }}>{cat}</div>
-                {NODE_TYPES.filter((t) => t.category === cat).map((t) => (
+                {nodeTypes.filter((t) => t.category === cat).map((t) => (
                   <button key={t.id} onClick={() => addNode(t.id, 200 + Math.random() * 200, 100 + Math.random() * 200)}
                     style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 8px", background: "none", border: "none", cursor: "pointer", fontSize: 12, borderRadius: 4, textAlign: "left" }}
                     onMouseEnter={(e) => e.target.style.background = "#f0f0f0"} onMouseLeave={(e) => e.target.style.background = "none"}>
@@ -229,8 +247,8 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
               const fromNode = nodes.find((n) => n.id === edge.from);
               const toNode = nodes.find((n) => n.id === edge.to);
               if (!fromNode || !toNode) return null;
-              const fromNT = NODE_TYPES.find((t) => t.id === fromNode.type);
-              const toNT = NODE_TYPES.find((t) => t.id === toNode.type);
+              const fromNT = nodeTypes.find((t) => t.id === fromNode.type);
+              const toNT = nodeTypes.find((t) => t.id === toNode.type);
               const from = getOutputPort(fromNode, edge.fromPort || 0, fromNT?.outputs || 1);
               const to = getInputPort(toNode, edge.toPort || 0, toNT?.inputs || 1);
               const midY = (from.y + to.y) / 2;
@@ -254,7 +272,7 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
             {connecting && (() => {
               const fromNode = nodes.find((n) => n.id === connecting.nodeId);
               if (!fromNode) return null;
-              const fromNT = NODE_TYPES.find((t) => t.id === fromNode.type);
+              const fromNT = nodeTypes.find((t) => t.id === fromNode.type);
               const from = connecting.portType === "out"
                 ? getOutputPort(fromNode, connecting.portIdx, fromNT?.outputs || 1)
                 : getInputPort(fromNode, connecting.portIdx, fromNT?.inputs || 1);
@@ -265,7 +283,7 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
 
             {/* Nodes */}
             {nodes.map((node) => {
-              const nt = NODE_TYPES.find((t) => t.id === node.type) || NODE_TYPES[0];
+              const nt = nodeTypes.find((t) => t.id === node.type) || nodeTypes[0];
               const isSel = selected === node.id;
               const result = getNodeResult(node.id);
               return (

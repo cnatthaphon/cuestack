@@ -1,23 +1,26 @@
-import os
 import asyncio
-from datetime import datetime, timezone
+import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from datetime import datetime, timezone
+
 import psycopg2
 import psycopg2.extras
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from jose import JWTError, jwt
 from pydantic import BaseModel
-from jose import jwt, JWTError
 
 from blocks.base import PipelineContext
+from mqtt_bridge import run_mqtt_bridge
 from pipelines import (
-    create_ingest_pipeline, create_query_pipeline,
+    create_ingest_pipeline,
+    create_query_pipeline,
     create_summary_pipeline,
 )
 from scheduler import run_scheduler
-from mqtt_bridge import run_mqtt_bridge
 from service_manager import run_service_manager
+
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 import channels as ch
 import clickhouse_client
@@ -457,3 +460,41 @@ async def mqtt_disconnect(request: Request, user=Depends(require_auth)):
 
     mqtt_dynsec.disconnect_client(username)
     return {"ok": True}
+
+
+# ── Org Custom Block execution ───────────────────────────────────────────────
+
+@app.post("/api/flow/execute-block")
+async def execute_custom_block(request: Request):
+    """Execute a single org custom block (called by frontend flow executor)."""
+    from block_engine import _BLOCK_HANDLERS, BlockContext, BlockResult, load_org_blocks
+
+    body = await request.json()
+    org_id = body.get("org_id")
+    block_type = body.get("block_type")
+    config = body.get("config", {})
+    data = body.get("data")
+
+    if not org_id or not block_type:
+        raise HTTPException(status_code=400, detail="org_id and block_type required")
+
+    if not block_type.startswith("custom_"):
+        raise HTTPException(status_code=400, detail="Only custom blocks can be executed via this endpoint")
+
+    # Load org blocks into registry
+    await load_org_blocks(org_id)
+
+    handler = _BLOCK_HANDLERS.get(block_type)
+    if not handler:
+        raise HTTPException(status_code=404, detail=f"Custom block '{block_type}' not found for this org")
+
+    context = BlockContext(org_id=org_id)
+    try:
+        result = await handler(config, {"data": data}, context)
+        if isinstance(result, BlockResult):
+            if result.error:
+                return {"error": result.error}
+            return {"data": result.data, "message": f"Custom block {block_type} executed"}
+        return {"data": result, "message": f"Custom block {block_type} executed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

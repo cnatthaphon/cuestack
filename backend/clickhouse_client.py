@@ -1,8 +1,9 @@
-import os
 import json
 import logging
-import httpx
+import os
 from datetime import datetime, timezone
+
+import httpx
 
 logger = logging.getLogger("clickhouse")
 

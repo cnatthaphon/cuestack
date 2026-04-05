@@ -324,6 +324,30 @@ export async function initDB() {
   `);
   await query(`CREATE INDEX IF NOT EXISTS idx_channels_org ON org_channels (org_id, is_active)`);
 
+  // Org custom blocks — reusable blocks created by org admins
+  await query(`
+    CREATE TABLE IF NOT EXISTS org_custom_blocks (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+      type VARCHAR(100) NOT NULL,
+      label VARCHAR(100) NOT NULL,
+      icon VARCHAR(10) DEFAULT '🧩',
+      category VARCHAR(20) DEFAULT 'custom',
+      description VARCHAR(500),
+      config_schema JSONB DEFAULT '[]',
+      inputs JSONB DEFAULT '[{"name": "data", "type": "any"}]',
+      outputs JSONB DEFAULT '[{"name": "data", "type": "any"}]',
+      code TEXT NOT NULL DEFAULT 'def transform(data, config):\n    return data',
+      color VARCHAR(20) DEFAULT '#6b7280',
+      is_active BOOLEAN DEFAULT true,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, type)
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_custom_blocks_org ON org_custom_blocks (org_id, is_active)`);
+
   // Audit log — who did what when (compliance)
   await query(`
     CREATE TABLE IF NOT EXISTS audit_log (

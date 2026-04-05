@@ -13,7 +13,7 @@ Each block implements: execute(config, inputs, context) -> output
 
 import json
 import logging
-import asyncio
+import os
 from collections import defaultdict
 
 logger = logging.getLogger("block_engine")
@@ -79,6 +79,59 @@ def topological_sort(nodes, edges):
     return order
 
 
+async def load_org_blocks(org_id):
+    """Load custom blocks for an org from DB and register them.
+
+    Called before each flow execution so the org's custom block types
+    are available to the block engine.  Registrations are idempotent
+    (re-registering the same type just overwrites the handler).
+    """
+    import psycopg2
+    import psycopg2.extras
+
+    db_url = os.getenv("DATABASE_URL", "")
+    if not db_url:
+        logger.warning("DATABASE_URL not set — skipping org custom block load")
+        return
+
+    try:
+        conn = psycopg2.connect(db_url)
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT type, code FROM org_custom_blocks WHERE org_id = %s AND is_active = true",
+                [str(org_id)],
+            )
+            blocks = cur.fetchall()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to load org custom blocks: {e}")
+        return
+
+    for block in blocks:
+        block_type = block["type"]
+        code = block["code"]
+
+        # Register a handler that executes the custom code in a restricted namespace
+        async def custom_handler(config, inputs, context, _code=code):
+            data = list(inputs.values())[0] if inputs else None
+            safe_builtins = {
+                "len": len, "range": range, "str": str, "int": int, "float": float,
+                "list": list, "dict": dict, "tuple": tuple, "set": set, "bool": bool,
+                "sum": sum, "min": min, "max": max, "round": round, "abs": abs,
+                "sorted": sorted, "enumerate": enumerate, "zip": zip, "map": map,
+                "filter": filter, "isinstance": isinstance, "type": type, "print": print,
+                "True": True, "False": False, "None": None,
+            }
+            namespace = {"__builtins__": safe_builtins, "data": data, "config": config}
+            exec(_code, namespace)
+            if "transform" in namespace:
+                return namespace["transform"](data, config)
+            return data
+
+        _BLOCK_HANDLERS[block_type] = custom_handler
+        logger.info(f"Registered org custom block: {block_type}")
+
+
 async def execute_flow(nodes, edges, context):
     """Execute a visual flow pipeline.
 
@@ -90,6 +143,10 @@ async def execute_flow(nodes, edges, context):
     Returns:
         dict of {node_id: BlockResult}
     """
+    # Load org custom blocks before execution
+    if context and context.org_id:
+        await load_org_blocks(context.org_id)
+
     node_map = {n["id"]: n for n in nodes}
     execution_order = topological_sort(nodes, edges)
 

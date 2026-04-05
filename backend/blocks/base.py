@@ -6,8 +6,8 @@ PipelineContext is the shared data bus between blocks (like Simulink signals).
 """
 
 from dataclasses import dataclass, field
-from typing import Any
 from datetime import datetime, timezone
+from typing import Any
 
 
 @dataclass

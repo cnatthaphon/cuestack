@@ -8,11 +8,13 @@ Any data goes in — sensor readings, API responses, webhook payloads, service o
 All stored as: timestamp, org_id, channel, source, payload (JSON).
 """
 
-from .base import Block, PipelineContext
 import json
 import os
-import httpx
 from datetime import datetime, timezone
+
+import httpx
+
+from .base import Block, PipelineContext
 
 CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "http://clickhouse:8123")
 CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB", "cuestack")
