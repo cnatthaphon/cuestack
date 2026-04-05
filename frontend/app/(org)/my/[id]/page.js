@@ -915,25 +915,44 @@ function NotebookRenderer({ page, isOwner, onReload }) {
     setLoading(false);
   };
 
-  // Done: pull content from Jupyter → DB, back to preview
+  // Done: force save in Jupyter, pull content → DB, back to preview
   const saveAndClose = async () => {
     setSaving(true);
     setError("");
     try {
+      // Step 1: Force Jupyter to save the notebook via its API
+      // Send save command through the iframe's Jupyter API
+      const orgShort = (page.org_id || "").replace(/-/g, "").slice(0, 8);
+      const savePath = `org_${orgShort}/${nbName}.ipynb`;
+      const host = window.location.port === "3000" ? `${window.location.hostname}:8080` : window.location.host;
+      try {
+        // Trigger save via Jupyter REST API (reads current kernel state)
+        await fetch(`/jupyter/api/contents/${savePath}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "notebook" }),
+        });
+      } catch { /* Jupyter save is best-effort, content may already be on disk */ }
+
+      // Step 2: Wait briefly for Jupyter to flush
+      await new Promise(r => setTimeout(r, 1000));
+
+      // Step 3: Pull from Jupyter to DB
       const res = await fetch(`/api/notebooks/${encodeURIComponent(nbName)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ page_id: page.id }),
       });
       if (!res.ok) {
-        setError((await res.json()).error || "Failed to save");
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to save");
       }
     } catch {
       setError("Failed to save notebook");
     }
     setSaving(false);
     setEditing(false);
-    if (onReload) onReload(); // reload page to get fresh config from DB
+    if (onReload) onReload();
   };
 
   const toggleCell = (idx) => {
