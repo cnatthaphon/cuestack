@@ -55,14 +55,30 @@ c.DockerSpawner.image = 'cuestack-jupyter-user'
 c.DockerSpawner.network_name = 'cuestack_default'
 c.DockerSpawner.remove = True  # Remove container when stopped
 
-# Per-org volume mount — username is the org_short identifier
+# Per-org volume mount — each org gets isolated volume
+# The container ONLY sees /workspace (their own data)
 c.DockerSpawner.volumes = {
     'jupyter-{username}': '/workspace',
 }
 
 # Environment passed into every spawned user container
+# Only expose what notebooks need — no system secrets
 c.DockerSpawner.environment = {
     'CUESTACK_URL': 'http://nginx:80',
+}
+
+# Security: read-only filesystem except workspace and temp dirs
+# Users can't modify system files, install packages system-wide, etc.
+c.DockerSpawner.extra_create_kwargs = {
+    'read_only': True,
+}
+c.DockerSpawner.extra_host_config = {
+    'tmpfs': {
+        '/tmp': 'size=100M',
+        '/home/jupyter/.local': 'size=200M',
+        '/home/jupyter/.cache': 'size=100M',
+        '/home/jupyter/.jupyter': 'size=50M',
+    },
 }
 
 # Resource limits per org container
