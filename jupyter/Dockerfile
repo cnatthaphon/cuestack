@@ -27,7 +27,9 @@ RUN mkdir -p /workspace
 # Hide file browser, launcher, menus — platform manages notebook files
 # 1. Single-document layout
 RUN mkdir -p /root/.jupyter/lab/user-settings/@jupyterlab/application-extension && \
-    echo '{ "layout": "single-document" }' > /root/.jupyter/lab/user-settings/@jupyterlab/application-extension/shell.jupyterlab-settings
+    echo '{ "layout": "single-document" }' > /root/.jupyter/lab/user-settings/@jupyterlab/application-extension/shell.jupyterlab-settings && \
+    mkdir -p /root/.jupyter/lab/user-settings/@jupyterlab/apputils-extension && \
+    echo '{ "news": false }' > /root/.jupyter/lab/user-settings/@jupyterlab/apputils-extension/notification.jupyterlab-settings
 
 # 2. Inject CSS to hide file browser/menu into ALL index.html files JupyterLab uses
 COPY hide-ui.css /tmp/hide-ui.css
