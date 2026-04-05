@@ -259,6 +259,7 @@ async function seed() {
     { file: "page-service.json", sort: 3 },
     { file: "page-dashboard.json", sort: 4 },
     { file: "page-notebook.json", sort: 5 },
+    { file: "page-security-test.json", sort: 6 },
   ];
 
   for (const p of pages) {
