@@ -156,6 +156,14 @@ c.JupyterHub.hub_connect_ip = 'jupyterhub'
 # ---------------------------------------------------------------------------
 c.JupyterHub.admin_access = False
 
+# API token for platform to manage user servers (spawn, stop, etc.)
+# This token is used by the frontend notebook API to start/stop org containers
+PLATFORM_API_TOKEN = os.environ.get('JUPYTERHUB_API_TOKEN', 'cuestack-hub-api-token-change-in-prod')
+c.JupyterHub.services.append({
+    'name': 'cuestack-platform',
+    'api_token': PLATFORM_API_TOKEN,
+})
+
 # ---------------------------------------------------------------------------
 # Idle culling — stop org containers after 30 min idle
 # ---------------------------------------------------------------------------
