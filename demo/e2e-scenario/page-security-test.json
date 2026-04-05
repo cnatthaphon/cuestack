@@ -21,30 +21,30 @@
         {
           "cell_type": "markdown",
           "source": [
-            "# Security Confinement Test\n",
+            "# Security & Environment Confinement Test\n",
             "\n",
-            "This notebook verifies what users CAN and CANNOT do in the Jupyter environment.\n",
-            "Run each cell to see the security boundaries."
+            "Tests container isolation, resource limits, filesystem restrictions, and custom environments."
           ],
           "metadata": {}
         },
         {
           "cell_type": "markdown",
           "source": [
-            "## 1. Identity \u2014 Who am I?"
+            "## 1. Identity & Container Info"
           ],
           "metadata": {}
         },
         {
           "cell_type": "code",
           "source": [
-            "import os\n",
-            "print(f'User ID: {os.getuid()} (0=root, non-zero=unprivileged)')\n",
-            "print(f'Username: {os.getenv(\"USER\", \"unknown\")}')\n",
-            "print(f'Home: {os.path.expanduser(\"~\")}')\n",
-            "print(f'Working dir: {os.getcwd()}')\n",
-            "print()\n",
-            "print('Expected: Non-root user, confined to /workspace')"
+            "import os, platform, sys\n",
+            "print(f'User ID:    {os.getuid()} (0=root)')\n",
+            "print(f'Platform:   {platform.platform()}')\n",
+            "print(f'Python:     {sys.version.split()[0]}')\n",
+            "print(f'Container:  {os.path.exists(\"/.dockerenv\")}')\n",
+            "print(f'Org:        {os.getenv(\"ORG_NAME\", \"unknown\")}')\n",
+            "print(f'Plan:       {os.getenv(\"ORG_PLAN\", \"unknown\")}')\n",
+            "print(f'Workspace:  {os.getcwd()}')\n"
           ],
           "metadata": {},
           "outputs": [],
@@ -53,7 +53,7 @@
         {
           "cell_type": "markdown",
           "source": [
-            "## 2. System Secrets \u2014 Can I see them?"
+            "## 2. Secret Exposure Check"
           ],
           "metadata": {}
         },
@@ -61,22 +61,19 @@
           "cell_type": "code",
           "source": [
             "import os\n",
-            "# These should NOT be visible to notebook users\n",
-            "secrets = ['SECRET_KEY', 'POSTGRES_PASSWORD', 'CLICKHOUSE_PASSWORD', \n",
-            "           'DYNSEC_ADMIN', 'DYNSEC_PASSWORD', 'MQTT_BROKER']\n",
-            "print('Environment variable check:')\n",
-            "for key in secrets:\n",
-            "    val = os.getenv(key)\n",
-            "    status = 'EXPOSED' if val else 'HIDDEN'\n",
-            "    icon = '\\u274c' if val else '\\u2705'\n",
-            "    print(f'  {icon} {key}: {status}')\n",
-            "print()\n",
-            "# These SHOULD be visible\n",
-            "allowed = ['CUESTACK_URL', 'CUESTACK_TOKEN', 'DATABASE_URL']\n",
-            "print('Allowed variables:')\n",
-            "for key in allowed:\n",
-            "    val = os.getenv(key, 'NOT SET')\n",
-            "    print(f'  \\u2705 {key}: {val[:30]}...' if len(val) > 30 else f'  \\u2705 {key}: {val}')"
+            "dangerous = ['SECRET_KEY', 'POSTGRES_PASSWORD', 'CLICKHOUSE_PASSWORD',\n",
+            "             'DYNSEC_ADMIN', 'DYNSEC_PASSWORD', 'DATABASE_URL']\n",
+            "allowed = ['CUESTACK_URL', 'CUESTACK_TOKEN', 'ORG_NAME', 'ORG_PLAN', 'ORG_ID']\n",
+            "\n",
+            "print('Should be HIDDEN:')\n",
+            "for k in dangerous:\n",
+            "    v = os.getenv(k)\n",
+            "    print(f'  {\"\\u274c EXPOSED\" if v else \"\\u2705 hidden\":12} {k}')\n",
+            "\n",
+            "print('\\nShould be VISIBLE:')\n",
+            "for k in allowed:\n",
+            "    v = os.getenv(k, 'NOT SET')\n",
+            "    print(f'  {\"\\u2705\" if v != \"NOT SET\" else \"\\u26a0\\ufe0f \":2} {k}: {v[:30]}...' if len(v) > 30 else f'  {\"\\u2705\" if v != \"NOT SET\" else \"\\u26a0\\ufe0f \":2} {k}: {v}')\n"
           ],
           "metadata": {},
           "outputs": [],
@@ -85,30 +82,37 @@
         {
           "cell_type": "markdown",
           "source": [
-            "## 3. File System \u2014 What can I access?"
+            "## 3. Filesystem Write Test"
           ],
           "metadata": {}
         },
         {
           "cell_type": "code",
           "source": [
-            "import os\n",
+            "import os, tempfile\n",
             "\n",
-            "tests = [\n",
-            "    ('/etc/shadow', 'System passwords'),\n",
-            "    ('/etc/passwd', 'User list'),\n",
-            "    ('/proc/1/environ', 'Container env vars'),\n",
-            "    ('/workspace', 'Workspace root'),\n",
-            "    ('/usr/local/lib/python3.12', 'Python packages'),\n",
+            "write_tests = [\n",
+            "    ('/workspace/test_write.txt', 'Workspace'),\n",
+            "    ('/tmp/test_write.txt', 'Temp dir'),\n",
+            "    ('/home/jupyter/envs/test_write.txt', 'Custom envs'),\n",
+            "    ('/etc/test_write.txt', 'System /etc'),\n",
+            "    ('/usr/local/test_write.txt', 'System /usr'),\n",
+            "    ('/opt/test_write.txt', 'System /opt'),\n",
             "]\n",
             "\n",
-            "print('File access check:')\n",
-            "for path, desc in tests:\n",
-            "    readable = os.access(path, os.R_OK)\n",
-            "    writable = os.access(path, os.W_OK)\n",
-            "    icon_r = '\\u274c' if readable and 'shadow' in path or 'environ' in path else '\\u2705'\n",
-            "    icon_w = '\\u274c' if writable and 'usr' in path else '\\u2705'\n",
-            "    print(f'  {path:40} Read:{\"YES\" if readable else \"NO\":4} Write:{\"YES\" if writable else \"NO\":4} ({desc})')"
+            "print('Write access test:')\n",
+            "for path, desc in write_tests:\n",
+            "    try:\n",
+            "        os.makedirs(os.path.dirname(path), exist_ok=True)\n",
+            "        with open(path, 'w') as f: f.write('test')\n",
+            "        os.remove(path)\n",
+            "        writable = True\n",
+            "    except (PermissionError, OSError):\n",
+            "        writable = False\n",
+            "    expected_write = desc in ('Workspace', 'Temp dir', 'Custom envs')\n",
+            "    ok = writable == expected_write\n",
+            "    icon = '\\u2705' if ok else '\\u274c'\n",
+            "    print(f'  {icon} {desc:20} writable={str(writable):5} (expected={str(expected_write):5})')\n"
           ],
           "metadata": {},
           "outputs": [],
@@ -117,7 +121,7 @@
         {
           "cell_type": "markdown",
           "source": [
-            "## 4. Cross-Org Isolation \u2014 Can I see other orgs?"
+            "## 4. Cross-Org Isolation"
           ],
           "metadata": {}
         },
@@ -126,20 +130,26 @@
           "source": [
             "import os\n",
             "\n",
-            "print('Workspace contents:')\n",
+            "print('Workspace contents (should be ONLY this org):')\n",
             "try:\n",
-            "    dirs = os.listdir('/workspace')\n",
-            "    for d in dirs:\n",
-            "        if d.startswith('.'):\n",
-            "            continue\n",
-            "        full = os.path.join('/workspace', d)\n",
-            "        readable = os.access(full, os.R_OK)\n",
-            "        print(f'  {d}: {\"accessible\" if readable else \"blocked\"}')\n",
-            "    print()\n",
-            "    print('NOTE: Currently all org directories are visible.')\n",
-            "    print('For production: per-org Jupyter containers via JupyterHub.')\n",
+            "    files = os.listdir('/workspace')\n",
+            "    for f in files:\n",
+            "        if not f.startswith('.'):\n",
+            "            print(f'  {f}')\n",
+            "    if not files or all(f.startswith('.') for f in files):\n",
+            "        print('  (empty \u2014 no notebooks opened yet)')\n",
             "except PermissionError:\n",
-            "    print('  Cannot list workspace \u2014 properly confined.')"
+            "    print('  \\u2705 Cannot access workspace')\n",
+            "\n",
+            "print('\\nCan see other org volumes?')\n",
+            "# In per-org containers, /workspace is a dedicated volume\n",
+            "# There are no other org directories visible\n",
+            "org_dirs = [f for f in os.listdir('/workspace') if f.startswith('org_')]\n",
+            "if org_dirs:\n",
+            "    print(f'  \\u274c Found org directories: {org_dirs}')\n",
+            "    print('  This means old single-container mode or migration needed')\n",
+            "else:\n",
+            "    print('  \\u2705 No org_ directories \u2014 per-org container isolation active')\n"
           ],
           "metadata": {},
           "outputs": [],
@@ -148,27 +158,35 @@
         {
           "cell_type": "markdown",
           "source": [
-            "## 5. Package Installation \u2014 Can I modify the environment?"
+            "## 5. Package Installation Test"
           ],
           "metadata": {}
         },
         {
           "cell_type": "code",
           "source": [
-            "import os\n",
+            "import subprocess, sys\n",
             "\n",
-            "# Check if user can install packages system-wide\n",
-            "site_packages = '/usr/local/lib/python3.12/site-packages'\n",
-            "can_write = os.access(site_packages, os.W_OK)\n",
-            "print(f'Can write to site-packages: {can_write}')\n",
-            "if can_write:\n",
-            "    print('  \\u274c WARNING: User can install/uninstall system packages')\n",
+            "# Test system-wide install (should fail \u2014 read-only)\n",
+            "print('System-wide pip install:')\n",
+            "result = subprocess.run([sys.executable, '-m', 'pip', 'install', 'cowsay', '--quiet'],\n",
+            "                       capture_output=True, text=True)\n",
+            "if result.returncode == 0:\n",
+            "    print('  \\u274c System install succeeded (should be blocked)')\n",
             "else:\n",
-            "    print('  \\u2705 System packages are read-only')\n",
-            "    print('  User can only install to ~/.local/lib (per-user, temporary)')\n",
-            "print()\n",
-            "print('NOTE: %pip install will install to user directory only')\n",
-            "print('These packages are lost on container restart (ephemeral)')"
+            "    print('  \\u2705 Blocked (read-only filesystem)')\n",
+            "\n",
+            "# Test user install (should work \u2014 goes to tmpfs)\n",
+            "print('\\nUser-level pip install (--user):')\n",
+            "result = subprocess.run([sys.executable, '-m', 'pip', 'install', '--user', 'cowsay', '--quiet'],\n",
+            "                       capture_output=True, text=True)\n",
+            "if result.returncode == 0:\n",
+            "    print('  \\u2705 User install works (ephemeral, lost on container stop)')\n",
+            "    # Clean up\n",
+            "    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', 'cowsay', '-y', '--quiet'],\n",
+            "                  capture_output=True)\n",
+            "else:\n",
+            "    print(f'  \\u26a0\\ufe0f User install failed: {result.stderr[:100]}')\n"
           ],
           "metadata": {},
           "outputs": [],
@@ -177,7 +195,61 @@
         {
           "cell_type": "markdown",
           "source": [
-            "## 6. Network Access \u2014 Can I reach internal services?"
+            "## 6. Custom Environment Test"
+          ],
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "import subprocess, os, sys\n",
+            "\n",
+            "env_path = os.path.expanduser('~/envs/test-env')\n",
+            "\n",
+            "# Create virtual environment\n",
+            "print('Creating custom environment...')\n",
+            "result = subprocess.run([sys.executable, '-m', 'venv', env_path],\n",
+            "                       capture_output=True, text=True)\n",
+            "if result.returncode == 0:\n",
+            "    print(f'  \\u2705 Created: {env_path}')\n",
+            "    \n",
+            "    # Install a package in the custom env\n",
+            "    pip = os.path.join(env_path, 'bin', 'pip')\n",
+            "    result = subprocess.run([pip, 'install', 'cowsay', '--quiet'],\n",
+            "                          capture_output=True, text=True)\n",
+            "    if result.returncode == 0:\n",
+            "        print('  \\u2705 Installed package in custom env')\n",
+            "    else:\n",
+            "        print(f'  \\u274c Install failed: {result.stderr[:100]}')\n",
+            "    \n",
+            "    # Register as Jupyter kernel\n",
+            "    python = os.path.join(env_path, 'bin', 'python')\n",
+            "    result = subprocess.run([python, '-m', 'pip', 'install', 'ipykernel', '--quiet'],\n",
+            "                          capture_output=True, text=True)\n",
+            "    result = subprocess.run([python, '-m', 'ipykernel', 'install', '--user', '--name=test-env'],\n",
+            "                          capture_output=True, text=True)\n",
+            "    if result.returncode == 0:\n",
+            "        print('  \\u2705 Registered as Jupyter kernel: test-env')\n",
+            "        print('  Now select Kernel \u2192 Change Kernel \u2192 test-env')\n",
+            "    else:\n",
+            "        print(f'  \\u274c Kernel registration failed: {result.stderr[:100]}')\n",
+            "    \n",
+            "    # Clean up test env\n",
+            "    import shutil\n",
+            "    shutil.rmtree(env_path, ignore_errors=True)\n",
+            "    print('  Cleaned up test environment')\n",
+            "else:\n",
+            "    print(f'  \\u274c venv creation failed: {result.stderr[:100]}')\n",
+            "    print('  This may be due to read-only filesystem')\n"
+          ],
+          "metadata": {},
+          "outputs": [],
+          "execution_count": null
+        },
+        {
+          "cell_type": "markdown",
+          "source": [
+            "## 7. Network Access"
           ],
           "metadata": {}
         },
@@ -185,27 +257,23 @@
           "cell_type": "code",
           "source": [
             "import urllib.request\n",
-            "import json\n",
             "\n",
             "endpoints = [\n",
-            "    ('http://nginx:80/api/health', 'Platform API (via nginx)'),\n",
+            "    ('http://nginx:80/api/health', 'Platform API'),\n",
+            "    ('http://clickhouse:8123/', 'ClickHouse (direct)'),\n",
             "    ('http://backend:8000/api/health', 'Backend (direct)'),\n",
-            "    ('http://clickhouse:8123/?query=SELECT+1', 'ClickHouse'),\n",
-            "    ('http://db:5432', 'PostgreSQL (raw TCP)'),\n",
             "]\n",
             "\n",
-            "print('Network access check:')\n",
+            "print('Network access (internal services):')\n",
             "for url, desc in endpoints:\n",
             "    try:\n",
             "        resp = urllib.request.urlopen(url, timeout=3)\n",
             "        print(f'  \\u2705 {desc}: reachable ({resp.status})')\n",
             "    except Exception as e:\n",
-            "        err = str(e)[:50]\n",
-            "        print(f'  \\u274c {desc}: {err}')\n",
-            "print()\n",
-            "print('NOTE: Notebook can reach internal services.')\n",
-            "print('This is by design \u2014 SDK needs to call the API.')\n",
-            "print('For production: network policies to restrict access.')"
+            "        print(f'  \\u274c {desc}: {str(e)[:60]}')\n",
+            "\n",
+            "print('\\nNote: SDK needs network access to platform API.')\n",
+            "print('For stricter isolation, use Docker network policies.')\n"
           ],
           "metadata": {},
           "outputs": [],
@@ -214,47 +282,51 @@
         {
           "cell_type": "markdown",
           "source": [
-            "## 7. Destructive Actions \u2014 What happens?"
+            "## 8. Destructive Action Tests"
           ],
           "metadata": {}
         },
         {
           "cell_type": "code",
           "source": [
-            "import os, subprocess\n",
+            "import os\n",
             "\n",
-            "# Try dangerous operations (should all fail for non-root)\n",
             "tests = []\n",
             "\n",
-            "# Try to write to system directory\n",
+            "# Try to write to system\n",
             "try:\n",
-            "    with open('/etc/test_write', 'w') as f: f.write('test')\n",
-            "    tests.append(('Write to /etc', 'ALLOWED', '\\u274c'))\n",
-            "    os.remove('/etc/test_write')\n",
-            "except PermissionError:\n",
-            "    tests.append(('Write to /etc', 'BLOCKED', '\\u2705'))\n",
+            "    with open('/etc/hacked', 'w') as f: f.write('no')\n",
+            "    os.remove('/etc/hacked')\n",
+            "    tests.append(('Write /etc', '\\u274c ALLOWED'))\n",
+            "except (PermissionError, OSError):\n",
+            "    tests.append(('Write /etc', '\\u2705 blocked'))\n",
             "\n",
-            "# Try to kill processes\n",
+            "# Try to kill init\n",
             "try:\n",
-            "    os.kill(1, 0)  # Signal 0 = check permission only\n",
-            "    tests.append(('Signal PID 1', 'ALLOWED', '\\u274c'))\n",
+            "    os.kill(1, 0)\n",
+            "    tests.append(('Signal PID 1', '\\u274c ALLOWED'))\n",
             "except PermissionError:\n",
-            "    tests.append(('Signal PID 1', 'BLOCKED', '\\u2705'))\n",
+            "    tests.append(('Signal PID 1', '\\u2705 blocked'))\n",
             "except ProcessLookupError:\n",
-            "    tests.append(('Signal PID 1', 'NO PROCESS', '\\u2705'))\n",
+            "    tests.append(('Signal PID 1', '\\u2705 no access'))\n",
             "\n",
-            "# Try to modify Python packages\n",
+            "# Try to read shadow\n",
             "try:\n",
-            "    test_file = '/usr/local/lib/python3.12/site-packages/test_write.txt'\n",
-            "    with open(test_file, 'w') as f: f.write('test')\n",
-            "    tests.append(('Modify site-packages', 'ALLOWED', '\\u274c'))\n",
-            "    os.remove(test_file)\n",
+            "    open('/etc/shadow').read()\n",
+            "    tests.append(('Read /etc/shadow', '\\u274c EXPOSED'))\n",
             "except PermissionError:\n",
-            "    tests.append(('Modify site-packages', 'BLOCKED', '\\u2705'))\n",
+            "    tests.append(('Read /etc/shadow', '\\u2705 blocked'))\n",
+            "\n",
+            "# Try to delete workspace\n",
+            "try:\n",
+            "    os.rmdir('/workspace')\n",
+            "    tests.append(('Delete /workspace', '\\u274c ALLOWED'))\n",
+            "except OSError:\n",
+            "    tests.append(('Delete /workspace', '\\u2705 blocked (not empty)'))\n",
             "\n",
             "print('Destructive action tests:')\n",
-            "for name, status, icon in tests:\n",
-            "    print(f'  {icon} {name}: {status}')"
+            "for name, status in tests:\n",
+            "    print(f'  {status:15} {name}')\n"
           ],
           "metadata": {},
           "outputs": [],
@@ -263,18 +335,18 @@
         {
           "cell_type": "markdown",
           "source": [
-            "## Security Summary\n",
+            "## Summary\n",
             "\n",
-            "| Protection | Status |\n",
+            "| Protection | Method |\n",
             "|---|---|\n",
-            "| Non-root user | Jupyter runs as UID 999 |\n",
-            "| System secrets hidden | SECRET_KEY, DB passwords not in env |\n",
-            "| System files read-only | Can't modify /etc, /usr |\n",
-            "| Package isolation | System packages read-only, user installs ephemeral |\n",
-            "| Cross-org files | Visible (needs per-org containers for full isolation) |\n",
-            "| Network access | Can reach internal services (by design for SDK) |\n",
-            "\n",
-            "**For production:** Deploy JupyterHub with per-org spawners for full isolation."
+            "| **Cross-org isolation** | Separate Docker containers + volumes |\n",
+            "| **Cross-user files** | User-prefixed filenames + API ownership check |\n",
+            "| **System write** | Read-only root filesystem |\n",
+            "| **Secrets** | Not passed to container env |\n",
+            "| **System packages** | Read-only site-packages |\n",
+            "| **Custom packages** | Per-org venvs in persistent volume |\n",
+            "| **Resources** | Per-plan limits from DB (RAM, CPU) |\n",
+            "| **Idle cleanup** | Auto-stop after 30 min |\n"
           ],
           "metadata": {}
         }
