@@ -322,8 +322,20 @@ async def custom_code_block(config, inputs, context):
     except json.JSONDecodeError:
         custom_params = {}
 
-    # Execute in sandboxed namespace
-    namespace = {"data": data, "config": custom_params}
+    # Execute in restricted namespace — no file access, no imports, no system calls
+    safe_builtins = {
+        "len": len, "range": range, "str": str, "int": int, "float": float,
+        "list": list, "dict": dict, "tuple": tuple, "set": set, "bool": bool,
+        "sum": sum, "min": min, "max": max, "round": round, "abs": abs,
+        "sorted": sorted, "enumerate": enumerate, "zip": zip, "map": map,
+        "filter": filter, "isinstance": isinstance, "type": type, "print": print,
+        "True": True, "False": False, "None": None,
+    }
+    namespace = {
+        "__builtins__": safe_builtins,
+        "data": data,
+        "config": custom_params,
+    }
     exec(code, namespace)
 
     if "transform" in namespace:
