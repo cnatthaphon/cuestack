@@ -31,7 +31,11 @@ RUN groupadd -r jupyter && useradd -r -g jupyter -m -d /home/jupyter jupyter
 RUN mkdir -p /workspace && chown -R jupyter:jupyter /workspace
 
 # Jupyter config directory for the jupyter user
-RUN mkdir -p /home/jupyter/.jupyter /home/jupyter/.local
+RUN mkdir -p /home/jupyter/.jupyter /home/jupyter/.local /home/jupyter/envs
+
+# Install ipykernel for custom environment support
+# Users can create venvs and register them as Jupyter kernels
+RUN pip install --no-cache-dir ipykernel
 
 # Hide file browser, launcher, menus — platform manages notebook files
 # 1. Single-document layout + disable news popup

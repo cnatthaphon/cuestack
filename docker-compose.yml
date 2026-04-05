@@ -96,11 +96,14 @@ services:
     environment:
       CUESTACK_URL: http://frontend:3000
       DOCKER_HOST: unix:///var/run/docker.sock
+      DATABASE_URL: postgresql://${POSTGRES_USER:-iot}:${POSTGRES_PASSWORD:-iot123}@db:5432/${POSTGRES_DB:-iotstack}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - jupyterhub_data:/data
     depends_on:
-      - frontend
+      db:
+        condition: service_healthy
+      frontend:
 
   # User notebook image — built but not run directly.
   # JupyterHub spawns containers from this image via DockerSpawner.

@@ -1,36 +1,33 @@
 import os
+import json
 from dockerspawner import DockerSpawner
 from jupyterhub.auth import Authenticator
-from tornado import gen
 import requests
 
 c = get_config()  # noqa: F821
 
+PLATFORM_URL = os.environ.get('CUESTACK_URL', 'http://frontend:3000')
+PLATFORM_DB = os.environ.get('DATABASE_URL', '')
+
 # ---------------------------------------------------------------------------
-# Custom authenticator — validates CueStack JWT via the platform API
+# Custom authenticator — validates CueStack JWT, returns org info
 # ---------------------------------------------------------------------------
 class CueStackAuthenticator(Authenticator):
     """Authenticate via CueStack platform JWT.
-
-    The notebook API passes org_short as username and the session cookie
-    value as password.  We validate against /api/auth/me and return
-    the org_short identifier so JupyterHub treats each *org* as a user
-    (per-org isolation, not per-person).
+    Returns org_short as username (per-org container isolation).
+    Stores org plan/limits in auth_state for the spawner to read.
     """
+    enable_auth_state = True
 
     async def authenticate(self, handler, data):
-        """Validate username/password against CueStack API."""
         username = data.get('username', '')
         token = data.get('password', '')
-
         if not token:
             return None
 
-        # Validate token against CueStack backend
         try:
-            platform_url = os.environ.get('CUESTACK_URL', 'http://frontend:3000')
             resp = requests.get(
-                f'{platform_url}/api/auth/me',
+                f'{PLATFORM_URL}/api/auth/me',
                 cookies={'cuestack-session': token},
                 timeout=5,
             )
@@ -38,37 +35,102 @@ class CueStackAuthenticator(Authenticator):
                 user_data = resp.json()
                 org_id = user_data.get('user', {}).get('org_id', '')
                 org_short = org_id.replace('-', '')[:8]
-                # Return org_short as the JupyterHub username (per-org isolation)
-                return org_short
+                org = user_data.get('org', {})
+                return {
+                    'name': org_short,
+                    'auth_state': {
+                        'org_id': org_id,
+                        'org_name': org.get('name', ''),
+                        'plan': org.get('plan', 'free'),
+                        'token': token,
+                    }
+                }
         except Exception:
             pass
         return None
 
-
 c.JupyterHub.authenticator_class = CueStackAuthenticator
 
 # ---------------------------------------------------------------------------
-# Docker spawner — one container per org
+# Custom spawner — reads org limits from DB, supports custom envs
 # ---------------------------------------------------------------------------
-c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
+class CueStackSpawner(DockerSpawner):
+    """Spawner that reads resource limits from org plan in the database."""
+
+    # Default resource limits per plan
+    PLAN_LIMITS = {
+        'free': {'mem': '256M', 'cpu': 0.5, 'storage': '1G'},
+        'starter': {'mem': '512M', 'cpu': 1.0, 'storage': '5G'},
+        'professional': {'mem': '1G', 'cpu': 2.0, 'storage': '20G'},
+        'enterprise': {'mem': '2G', 'cpu': 4.0, 'storage': '50G'},
+    }
+
+    async def start(self):
+        """Read org limits from auth_state, then spawn container."""
+        auth_state = await self.user.get_auth_state()
+        plan = (auth_state or {}).get('plan', 'free')
+        org_id = (auth_state or {}).get('org_id', '')
+        org_name = (auth_state or {}).get('org_name', '')
+
+        # Get limits from plan (or override from DB)
+        limits = self.PLAN_LIMITS.get(plan, self.PLAN_LIMITS['free'])
+
+        # Try to read custom limits from DB
+        if PLATFORM_DB:
+            try:
+                import psycopg2
+                import psycopg2.extras
+                conn = psycopg2.connect(PLATFORM_DB)
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(
+                        "SELECT plan, max_users, max_devices, storage_limit_mb FROM organizations WHERE id = %s",
+                        [org_id]
+                    )
+                    org_row = cur.fetchone()
+                    if org_row:
+                        plan = org_row.get('plan', plan)
+                        limits = self.PLAN_LIMITS.get(plan, limits)
+                        # Override storage if custom limit set
+                        if org_row.get('storage_limit_mb'):
+                            limits = {**limits, 'storage': f"{org_row['storage_limit_mb']}M"}
+                conn.close()
+            except Exception as e:
+                self.log.warning(f"Failed to read org limits from DB: {e}")
+
+        # Apply resource limits
+        self.mem_limit = limits['mem']
+        self.cpu_limit = limits['cpu']
+
+        # Set org info in container environment
+        self.environment.update({
+            'ORG_ID': org_id,
+            'ORG_NAME': org_name,
+            'ORG_PLAN': plan,
+        })
+
+        self.log.info(f"Spawning container for org {org_name} ({plan}): "
+                      f"mem={limits['mem']}, cpu={limits['cpu']}")
+
+        return await super().start()
+
+
+c.JupyterHub.spawner_class = CueStackSpawner
 c.DockerSpawner.image = 'cuestack-jupyter-user'
 c.DockerSpawner.network_name = 'cuestack_default'
-c.DockerSpawner.remove = True  # Remove container when stopped
+c.DockerSpawner.remove = True
 
-# Per-org volume mount — each org gets isolated volume
-# The container ONLY sees /workspace (their own data)
+# Per-org volume — isolated filesystem per org
 c.DockerSpawner.volumes = {
     'jupyter-{username}': '/workspace',
+    'jupyter-{username}-envs': '/home/jupyter/envs',  # Custom Python environments persist
 }
 
-# Environment passed into every spawned user container
-# Only expose what notebooks need — no system secrets
+# Base environment for all containers
 c.DockerSpawner.environment = {
     'CUESTACK_URL': 'http://nginx:80',
 }
 
-# Security: read-only filesystem except workspace and temp dirs
-# Users can't modify system files, install packages system-wide, etc.
+# Security: read-only root filesystem
 c.DockerSpawner.extra_create_kwargs = {
     'read_only': True,
 }
@@ -81,19 +143,12 @@ c.DockerSpawner.extra_host_config = {
     },
 }
 
-# Resource limits per org container
-c.DockerSpawner.mem_limit = '512M'
-c.DockerSpawner.cpu_limit = 1.0
-
 # ---------------------------------------------------------------------------
 # Hub networking
 # ---------------------------------------------------------------------------
 c.JupyterHub.hub_ip = '0.0.0.0'
 c.JupyterHub.hub_port = 8081
 c.JupyterHub.base_url = '/jupyter/'
-
-# The hub must be reachable from spawned containers via the Docker network.
-# 'jupyterhub' is the compose service name which Docker DNS resolves.
 c.JupyterHub.hub_connect_ip = 'jupyterhub'
 
 # ---------------------------------------------------------------------------
