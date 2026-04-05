@@ -920,23 +920,10 @@ function NotebookRenderer({ page, isOwner, onReload }) {
     setSaving(true);
     setError("");
     try {
-      // Step 1: Force Jupyter to save the notebook via its API
-      // Send save command through JupyterHub to the user's server
-      const orgShort = (page.org_id || "").replace(/-/g, "").slice(0, 8);
-      const savePath = `${nbName}.ipynb`;
-      try {
-        // Trigger save via Jupyter REST API (reads current kernel state)
-        await fetch(`/jupyter/user/${orgShort}/api/contents/${savePath}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "notebook" }),
-        });
-      } catch { /* Jupyter save is best-effort, content may already be on disk */ }
+      // Wait for Jupyter to auto-save (notebooks auto-save every few seconds)
+      await new Promise(r => setTimeout(r, 2000));
 
-      // Step 2: Wait briefly for Jupyter to flush
-      await new Promise(r => setTimeout(r, 1000));
-
-      // Step 3: Pull from Jupyter to DB
+      // Pull from Jupyter to DB (server handles file path with user ID)
       const res = await fetch(`/api/notebooks/${encodeURIComponent(nbName)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -114,23 +114,32 @@ export async function POST(request) {
     .setExpirationTime("24h")
     .sign(SECRET);
 
-  // Load notebook content from page config (DB is source of truth)
+  // Verify page ownership — only owner or shared users can open in Jupyter
   let nbContent = null;
   if (page_id) {
     const result = await query(
-      `SELECT config FROM user_pages WHERE id = $1 AND org_id = $2`,
+      `SELECT config, user_id, visibility, shared_with FROM user_pages WHERE id = $1 AND org_id = $2`,
       [page_id, user.org_id]
     );
     if (result.rows.length > 0) {
-      const cfg = typeof result.rows[0].config === "string"
-        ? JSON.parse(result.rows[0].config) : (result.rows[0].config || {});
+      const pageRow = result.rows[0];
+      // Ownership check
+      const isOwner = pageRow.user_id === user.id;
+      const isShared = (pageRow.shared_with || []).some(s => s.type === "user" && s.id === user.id);
+      if (!isOwner && !isShared && pageRow.visibility === "private") {
+        return NextResponse.json({ error: "Access denied — not the page owner" }, { status: 403 });
+      }
+      // Load content
+      const cfg = typeof pageRow.config === "string"
+        ? JSON.parse(pageRow.config) : (pageRow.config || {});
       nbContent = cfg.notebook_content || null;
     }
   }
 
   const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
   const sessionName = name || "notebook";
-  const nbPath = `${sessionName}.ipynb`;
+  // Include user ID in filename — prevents other users from guessing/accessing
+  const nbPath = `u${user.id}_${sessionName}.ipynb`;
 
   // Ensure the org's Jupyter server is running
   try {

@@ -24,8 +24,8 @@ export async function POST(request, { params }) {
   if (!page_id) return NextResponse.json({ error: "page_id required" }, { status: 400 });
 
   const orgShort = user.org_id.replace(/-/g, "").slice(0, 8);
-  // Per-org containers: no org subdirectory needed — each container has its own /workspace
-  const nbPath = `${encodeURIComponent(name)}.ipynb`;
+  // Include user ID in filename — matches the open API naming
+  const nbPath = `u${user.id}_${encodeURIComponent(name)}.ipynb`;
   const jupyterApi = userApiBase(orgShort);
 
   // Pull content from the org's Jupyter server
