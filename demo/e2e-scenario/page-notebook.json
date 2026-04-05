@@ -4,254 +4,6 @@
   "page_type": "notebook",
   "config": {
     "notebook_content": {
-      "cells": [
-        {
-          "cell_type": "markdown",
-          "source": [
-            "# Sensor Data Analysis Report\n",
-            "\n",
-            "This notebook uses the CueStack Python SDK to query sensor data from ClickHouse and create visualizations.\n",
-            "\n",
-            "**Data sources:**\n",
-            "- `data_events` table in ClickHouse (raw sensor readings)\n",
-            "- Channels: `sensor-room-a`, `sensor-room-b`"
-          ],
-          "metadata": {}
-        },
-        {
-          "cell_type": "code",
-          "source": [
-            "# Connect to CueStack platform\n",
-            "import os\n",
-            "os.environ[\"CUESTACK_TOKEN\"] = \"\"  # Token refreshed automatically on open\n",
-            "\n",
-            "from cuestack import connect\n",
-            "client = connect()\n",
-            "print(f\"Connected as: {client.me()['user']['username']}\")\n",
-            "print(f\"Organization: {client.me().get('org', {}).get('name', 'N/A')}\")"
-          ],
-          "metadata": {},
-          "outputs": [],
-          "execution_count": null
-        },
-        {
-          "cell_type": "markdown",
-          "source": [
-            "## 1. Query Raw Sensor Data\n",
-            "\n",
-            "Fetch the latest temperature and humidity readings from both rooms."
-          ],
-          "metadata": {}
-        },
-        {
-          "cell_type": "code",
-          "source": [
-            "# Query recent events from ClickHouse\n",
-            "df_room_a = client.query_events(channel='sensor-room-a', limit=200)\n",
-            "df_room_b = client.query_events(channel='sensor-room-b', limit=200)\n",
-            "\n",
-            "print(f\"Room A: {len(df_room_a)} records\")\n",
-            "print(f\"Room B: {len(df_room_b)} records\")\n",
-            "\n",
-            "if len(df_room_a) > 0:\n",
-            "    print(f\"\\nRoom A sample:\")\n",
-            "    display(df_room_a.head())"
-          ],
-          "metadata": {},
-          "outputs": [],
-          "execution_count": null
-        },
-        {
-          "cell_type": "markdown",
-          "source": [
-            "## 2. Parse and Prepare Data\n",
-            "\n",
-            "Extract temperature and humidity from the JSON payload column."
-          ],
-          "metadata": {}
-        },
-        {
-          "cell_type": "code",
-          "source": [
-            "import json\n",
-            "import pandas as pd\n",
-            "\n",
-            "def parse_payload(df):\n",
-            "    \"\"\"Extract temperature and humidity from payload JSON.\"\"\"\n",
-            "    if len(df) == 0:\n",
-            "        return df\n",
-            "    records = []\n",
-            "    for _, row in df.iterrows():\n",
-            "        try:\n",
-            "            payload = json.loads(row['payload']) if isinstance(row['payload'], str) else row['payload']\n",
-            "            records.append({\n",
-            "                'timestamp': pd.to_datetime(row['timestamp']),\n",
-            "                'temperature': payload.get('temperature', 0),\n",
-            "                'humidity': payload.get('humidity', 0),\n",
-            "            })\n",
-            "        except:\n",
-            "            pass\n",
-            "    return pd.DataFrame(records)\n",
-            "\n",
-            "data_a = parse_payload(df_room_a)\n",
-            "data_b = parse_payload(df_room_b)\n",
-            "\n",
-            "print(f\"Parsed Room A: {len(data_a)} rows\")\n",
-            "print(f\"Parsed Room B: {len(data_b)} rows\")\n",
-            "if len(data_a) > 0:\n",
-            "    print(f\"\\nRoom A stats:\")\n",
-            "    display(data_a.describe())"
-          ],
-          "metadata": {},
-          "outputs": [],
-          "execution_count": null
-        },
-        {
-          "cell_type": "markdown",
-          "source": [
-            "## 3. Temperature Visualization\n",
-            "\n",
-            "Plot temperature over time for both rooms."
-          ],
-          "metadata": {}
-        },
-        {
-          "cell_type": "code",
-          "source": [
-            "import matplotlib\n",
-            "matplotlib.use('Agg')\n",
-            "import matplotlib.pyplot as plt\n",
-            "import matplotlib.dates as mdates\n",
-            "\n",
-            "fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)\n",
-            "\n",
-            "if len(data_a) > 0:\n",
-            "    axes[0].plot(data_a['timestamp'], data_a['temperature'], color='#ef4444', linewidth=1, label='Temperature')\n",
-            "    axes[0].fill_between(data_a['timestamp'], data_a['temperature'], alpha=0.1, color='#ef4444')\n",
-            "    axes[0].set_ylabel('Temperature (\u00b0C)')\n",
-            "    axes[0].set_title('Room A')\n",
-            "    axes[0].legend()\n",
-            "    axes[0].grid(True, alpha=0.3)\n",
-            "\n",
-            "if len(data_b) > 0:\n",
-            "    axes[1].plot(data_b['timestamp'], data_b['temperature'], color='#3b82f6', linewidth=1, label='Temperature')\n",
-            "    axes[1].fill_between(data_b['timestamp'], data_b['temperature'], alpha=0.1, color='#3b82f6')\n",
-            "    axes[1].set_ylabel('Temperature (\u00b0C)')\n",
-            "    axes[1].set_title('Room B')\n",
-            "    axes[1].legend()\n",
-            "    axes[1].grid(True, alpha=0.3)\n",
-            "\n",
-            "fig.suptitle('Temperature Over Time', fontsize=14, fontweight='bold')\n",
-            "plt.tight_layout()\n",
-            "plt.show()\n",
-            "print('Temperature chart rendered.')"
-          ],
-          "metadata": {},
-          "outputs": [],
-          "execution_count": null
-        },
-        {
-          "cell_type": "markdown",
-          "source": [
-            "## 4. Humidity Visualization"
-          ],
-          "metadata": {}
-        },
-        {
-          "cell_type": "code",
-          "source": [
-            "fig, ax = plt.subplots(figsize=(12, 4))\n",
-            "\n",
-            "if len(data_a) > 0:\n",
-            "    ax.plot(data_a['timestamp'], data_a['humidity'], color='#ef4444', linewidth=1, alpha=0.8, label='Room A')\n",
-            "if len(data_b) > 0:\n",
-            "    ax.plot(data_b['timestamp'], data_b['humidity'], color='#3b82f6', linewidth=1, alpha=0.8, label='Room B')\n",
-            "\n",
-            "ax.set_ylabel('Humidity (%)')\n",
-            "ax.set_title('Humidity Comparison', fontsize=14, fontweight='bold')\n",
-            "ax.legend()\n",
-            "ax.grid(True, alpha=0.3)\n",
-            "plt.tight_layout()\n",
-            "plt.show()\n",
-            "print('Humidity chart rendered.')"
-          ],
-          "metadata": {},
-          "outputs": [],
-          "execution_count": null
-        },
-        {
-          "cell_type": "markdown",
-          "source": [
-            "## 5. Statistical Summary\n",
-            "\n",
-            "Compare key metrics between rooms."
-          ],
-          "metadata": {}
-        },
-        {
-          "cell_type": "code",
-          "source": [
-            "summary = []\n",
-            "for name, data in [('Room A', data_a), ('Room B', data_b)]:\n",
-            "    if len(data) > 0:\n",
-            "        summary.append({\n",
-            "            'Room': name,\n",
-            "            'Records': len(data),\n",
-            "            'Temp Mean': round(data['temperature'].mean(), 2),\n",
-            "            'Temp Std': round(data['temperature'].std(), 2),\n",
-            "            'Temp Min': round(data['temperature'].min(), 2),\n",
-            "            'Temp Max': round(data['temperature'].max(), 2),\n",
-            "            'Humid Mean': round(data['humidity'].mean(), 2),\n",
-            "            'Humid Std': round(data['humidity'].std(), 2),\n",
-            "        })\n",
-            "\n",
-            "if summary:\n",
-            "    summary_df = pd.DataFrame(summary)\n",
-            "    display(summary_df)\n",
-            "else:\n",
-            "    print('No data available. Run the Sensor Simulator first.')"
-          ],
-          "metadata": {},
-          "outputs": [],
-          "execution_count": null
-        },
-        {
-          "cell_type": "markdown",
-          "source": [
-            "## 6. Export Data\n",
-            "\n",
-            "Download the data as SQLite for offline analysis."
-          ],
-          "metadata": {}
-        },
-        {
-          "cell_type": "code",
-          "source": [
-            "# Export to SQLite\n",
-            "try:\n",
-            "    db_path = client.export_sqlite(channel='sensor-room-a')\n",
-            "    print(f'SQLite exported to: {db_path}')\n",
-            "    print('Download from the Files page or use: client.files.download(path)')\n",
-            "except Exception as e:\n",
-            "    print(f'Export not available: {e}')\n",
-            "    print('This feature requires the /api/v1/data/export endpoint.')"
-          ],
-          "metadata": {},
-          "outputs": [],
-          "execution_count": null
-        },
-        {
-          "cell_type": "markdown",
-          "source": [
-            "---\n",
-            "\n",
-            "**Report generated by CueStack Platform**\n",
-            "\n",
-            "Data pipeline: MQTT \u2192 ClickHouse \u2192 Python SDK \u2192 Jupyter Notebook"
-          ],
-          "metadata": {}
-        }
-      ],
       "nbformat": 4,
       "nbformat_minor": 5,
       "metadata": {
@@ -264,7 +16,264 @@
           "name": "python",
           "version": "3.12.0"
         }
-      }
+      },
+      "cells": [
+        {
+          "cell_type": "markdown",
+          "source": [
+            "# Sensor Data Analysis Report\n",
+            "\n",
+            "End-to-end analysis using CueStack Python SDK \u2192 ClickHouse \u2192 pandas \u2192 matplotlib/seaborn\n",
+            "\n",
+            "**Pipeline:** MQTT Devices \u2192 ClickHouse \u2192 Python SDK \u2192 Visualization"
+          ],
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# Step 1: Connect to CueStack\n",
+            "import os\n",
+            "os.environ[\"CUESTACK_TOKEN\"] = \"\"  # Auto-refreshed on open\n",
+            "\n",
+            "from cuestack import connect\n",
+            "client = connect()\n",
+            "user = client.me()\n",
+            "print(f\"Connected as: {user['user']['username']}\")\n",
+            "print(f\"Organization: {user['org']['name']} ({user['org']['plan']})\")\n",
+            "print(f\"Permissions: {len(user['user']['permissions'])} granted\")"
+          ],
+          "metadata": {},
+          "outputs": [],
+          "execution_count": null
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# Step 2: Query raw sensor data from ClickHouse\n",
+            "import json\n",
+            "import pandas as pd\n",
+            "import warnings\n",
+            "warnings.filterwarnings('ignore')\n",
+            "\n",
+            "df_a = client.query_events(channel='sensor-room-a', limit=500)\n",
+            "df_b = client.query_events(channel='sensor-room-b', limit=500)\n",
+            "\n",
+            "print(f'Room A: {len(df_a)} events')\n",
+            "print(f'Room B: {len(df_b)} events')\n",
+            "\n",
+            "if len(df_a) > 0:\n",
+            "    print(f'\\nColumns: {list(df_a.columns)}')\n",
+            "    df_a.head(3)"
+          ],
+          "metadata": {},
+          "outputs": [],
+          "execution_count": null
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# Step 3: Parse JSON payloads into structured DataFrame\n",
+            "def parse_sensor_data(df, room_name):\n",
+            "    if len(df) == 0:\n",
+            "        return pd.DataFrame()\n",
+            "    records = []\n",
+            "    for _, row in df.iterrows():\n",
+            "        try:\n",
+            "            p = json.loads(row['payload']) if isinstance(row['payload'], str) else row['payload']\n",
+            "            records.append({\n",
+            "                'timestamp': pd.to_datetime(row['timestamp']),\n",
+            "                'room': room_name,\n",
+            "                'temperature': float(p.get('temperature', 0)),\n",
+            "                'humidity': float(p.get('humidity', 0)),\n",
+            "            })\n",
+            "        except: pass\n",
+            "    return pd.DataFrame(records).sort_values('timestamp')\n",
+            "\n",
+            "room_a = parse_sensor_data(df_a, 'Room A')\n",
+            "room_b = parse_sensor_data(df_b, 'Room B')\n",
+            "all_data = pd.concat([room_a, room_b], ignore_index=True)\n",
+            "\n",
+            "print(f'Parsed: Room A={len(room_a)}, Room B={len(room_b)}, Total={len(all_data)}')\n",
+            "if len(all_data) > 0:\n",
+            "    all_data.describe().round(2)"
+          ],
+          "metadata": {},
+          "outputs": [],
+          "execution_count": null
+        },
+        {
+          "cell_type": "markdown",
+          "source": [
+            "## Temperature Analysis"
+          ],
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# Step 4: Temperature time-series\n",
+            "import matplotlib\n",
+            "matplotlib.use('Agg')\n",
+            "import matplotlib.pyplot as plt\n",
+            "import matplotlib.dates as mdates\n",
+            "\n",
+            "plt.style.use('seaborn-v0_8-whitegrid')\n",
+            "\n",
+            "fig, axes = plt.subplots(2, 2, figsize=(14, 8))\n",
+            "\n",
+            "# Top-left: Temperature time-series\n",
+            "ax = axes[0, 0]\n",
+            "if len(room_a) > 0:\n",
+            "    ax.plot(room_a['timestamp'], room_a['temperature'], color='#ef4444', linewidth=0.8, alpha=0.8, label='Room A')\n",
+            "if len(room_b) > 0:\n",
+            "    ax.plot(room_b['timestamp'], room_b['temperature'], color='#3b82f6', linewidth=0.8, alpha=0.8, label='Room B')\n",
+            "ax.set_ylabel('Temperature (\u00b0C)')\n",
+            "ax.set_title('Temperature Over Time', fontweight='bold')\n",
+            "ax.legend(fontsize=8)\n",
+            "\n",
+            "# Top-right: Temperature distribution\n",
+            "ax = axes[0, 1]\n",
+            "if len(room_a) > 0:\n",
+            "    ax.hist(room_a['temperature'], bins=30, alpha=0.6, color='#ef4444', label='Room A', density=True)\n",
+            "if len(room_b) > 0:\n",
+            "    ax.hist(room_b['temperature'], bins=30, alpha=0.6, color='#3b82f6', label='Room B', density=True)\n",
+            "ax.set_xlabel('Temperature (\u00b0C)')\n",
+            "ax.set_ylabel('Density')\n",
+            "ax.set_title('Temperature Distribution', fontweight='bold')\n",
+            "ax.legend(fontsize=8)\n",
+            "\n",
+            "# Bottom-left: Humidity time-series\n",
+            "ax = axes[1, 0]\n",
+            "if len(room_a) > 0:\n",
+            "    ax.plot(room_a['timestamp'], room_a['humidity'], color='#ef4444', linewidth=0.8, alpha=0.8, label='Room A')\n",
+            "if len(room_b) > 0:\n",
+            "    ax.plot(room_b['timestamp'], room_b['humidity'], color='#3b82f6', linewidth=0.8, alpha=0.8, label='Room B')\n",
+            "ax.set_ylabel('Humidity (%)')\n",
+            "ax.set_title('Humidity Over Time', fontweight='bold')\n",
+            "ax.legend(fontsize=8)\n",
+            "\n",
+            "# Bottom-right: Temp vs Humidity scatter\n",
+            "ax = axes[1, 1]\n",
+            "if len(all_data) > 0:\n",
+            "    for room, color in [('Room A', '#ef4444'), ('Room B', '#3b82f6')]:\n",
+            "        d = all_data[all_data['room'] == room]\n",
+            "        if len(d) > 0:\n",
+            "            ax.scatter(d['temperature'], d['humidity'], c=color, alpha=0.4, s=10, label=room)\n",
+            "ax.set_xlabel('Temperature (\u00b0C)')\n",
+            "ax.set_ylabel('Humidity (%)')\n",
+            "ax.set_title('Temperature vs Humidity', fontweight='bold')\n",
+            "ax.legend(fontsize=8)\n",
+            "\n",
+            "plt.suptitle('Sensor Data Overview', fontsize=16, fontweight='bold', y=1.02)\n",
+            "plt.tight_layout()\n",
+            "plt.show()"
+          ],
+          "metadata": {},
+          "outputs": [],
+          "execution_count": null
+        },
+        {
+          "cell_type": "markdown",
+          "source": [
+            "## Statistical Summary"
+          ],
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# Step 5: Comparison table\n",
+            "summary = []\n",
+            "for name, data in [('Room A', room_a), ('Room B', room_b)]:\n",
+            "    if len(data) > 0:\n",
+            "        summary.append({\n",
+            "            'Room': name,\n",
+            "            'Records': len(data),\n",
+            "            'Temp \u03bc': f\"{data['temperature'].mean():.1f}\u00b0C\",\n",
+            "            'Temp \u03c3': f\"{data['temperature'].std():.2f}\",\n",
+            "            'Temp Range': f\"{data['temperature'].min():.1f} - {data['temperature'].max():.1f}\",\n",
+            "            'Humid \u03bc': f\"{data['humidity'].mean():.1f}%\",\n",
+            "            'Humid \u03c3': f\"{data['humidity'].std():.2f}\",\n",
+            "            'Duration': f\"{(data['timestamp'].max() - data['timestamp'].min()).total_seconds():.0f}s\",\n",
+            "        })\n",
+            "\n",
+            "if summary:\n",
+            "    pd.DataFrame(summary).style.set_properties(**{'text-align': 'center'})\n",
+            "else:\n",
+            "    print('No data. Run the Sensor Simulator first.')"
+          ],
+          "metadata": {},
+          "outputs": [],
+          "execution_count": null
+        },
+        {
+          "cell_type": "markdown",
+          "source": [
+            "## Rolling Statistics & Anomaly Detection"
+          ],
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# Step 6: Rolling mean + std bands\n",
+            "fig, axes = plt.subplots(1, 2, figsize=(14, 4))\n",
+            "\n",
+            "for idx, (name, data, color) in enumerate([('Room A', room_a, '#ef4444'), ('Room B', room_b, '#3b82f6')]):\n",
+            "    ax = axes[idx]\n",
+            "    if len(data) < 10:\n",
+            "        ax.text(0.5, 0.5, 'Not enough data', ha='center', va='center', transform=ax.transAxes)\n",
+            "        ax.set_title(name)\n",
+            "        continue\n",
+            "    d = data.set_index('timestamp').sort_index()\n",
+            "    window = min(20, len(d) // 3)\n",
+            "    if window < 3: window = 3\n",
+            "    roll_mean = d['temperature'].rolling(window).mean()\n",
+            "    roll_std = d['temperature'].rolling(window).std()\n",
+            "    ax.plot(d.index, d['temperature'], color=color, alpha=0.3, linewidth=0.5, label='Raw')\n",
+            "    ax.plot(d.index, roll_mean, color=color, linewidth=2, label=f'Rolling Mean ({window})')\n",
+            "    ax.fill_between(d.index, roll_mean - 2*roll_std, roll_mean + 2*roll_std, alpha=0.1, color=color, label='\u00b12\u03c3 band')\n",
+            "    # Mark anomalies (outside 2\u03c3)\n",
+            "    anomalies = d[(d['temperature'] > roll_mean + 2*roll_std) | (d['temperature'] < roll_mean - 2*roll_std)]\n",
+            "    if len(anomalies) > 0:\n",
+            "        ax.scatter(anomalies.index, anomalies['temperature'], color='red', s=20, zorder=5, label=f'Anomalies ({len(anomalies)})')\n",
+            "    ax.set_title(f'{name} \u2014 Rolling Analysis', fontweight='bold')\n",
+            "    ax.set_ylabel('Temperature (\u00b0C)')\n",
+            "    ax.legend(fontsize=7)\n",
+            "\n",
+            "plt.tight_layout()\n",
+            "plt.show()"
+          ],
+          "metadata": {},
+          "outputs": [],
+          "execution_count": null
+        },
+        {
+          "cell_type": "markdown",
+          "source": [
+            "## Data Export"
+          ],
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# Step 7: Export summary\n",
+            "print('=== Analysis Complete ===')\n",
+            "print(f'Total events analyzed: {len(all_data)}')\n",
+            "print(f'Rooms: {all_data[\"room\"].nunique() if len(all_data) > 0 else 0}')\n",
+            "if len(all_data) > 0:\n",
+            "    print(f'Time range: {all_data[\"timestamp\"].min()} \u2192 {all_data[\"timestamp\"].max()}')\n",
+            "print()\n",
+            "print('Data pipeline: MQTT \u2192 ClickHouse \u2192 Python SDK \u2192 pandas \u2192 matplotlib')\n",
+            "print('All data queried from CueStack platform \u2014 no direct DB access.')"
+          ],
+          "metadata": {},
+          "outputs": [],
+          "execution_count": null
+        }
+      ]
     }
   }
 }
