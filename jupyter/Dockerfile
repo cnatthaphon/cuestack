@@ -19,24 +19,30 @@ RUN pip install --no-cache-dir \
     requests \
     httpx
 
-# Install CueStack SDK
+# Install CueStack SDK (system-wide, read-only for users)
 COPY cuestack/ /opt/cuestack/cuestack/
 RUN echo 'from setuptools import setup; setup(name="cuestack", version="0.1", packages=["cuestack"])' > /opt/cuestack/setup.py && \
     pip install -e /opt/cuestack
 
-# Create workspace directory
-RUN mkdir -p /workspace
+# --- Security: create unprivileged user ---
+RUN groupadd -r jupyter && useradd -r -g jupyter -m -d /home/jupyter jupyter
+
+# Create workspace directory owned by jupyter user
+RUN mkdir -p /workspace && chown -R jupyter:jupyter /workspace
+
+# Jupyter config directory for the jupyter user
+RUN mkdir -p /home/jupyter/.jupyter /home/jupyter/.local
 
 # Hide file browser, launcher, menus — platform manages notebook files
-# 1. Single-document layout
-RUN mkdir -p /root/.jupyter/lab/user-settings/@jupyterlab/application-extension && \
-    echo '{ "layout": "single-document" }' > /root/.jupyter/lab/user-settings/@jupyterlab/application-extension/shell.jupyterlab-settings && \
-    mkdir -p /root/.jupyter/lab/user-settings/@jupyterlab/apputils-extension && \
-    echo '{ "news": false }' > /root/.jupyter/lab/user-settings/@jupyterlab/apputils-extension/notification.jupyterlab-settings && \
+# 1. Single-document layout + disable news popup
+RUN mkdir -p /home/jupyter/.jupyter/lab/user-settings/@jupyterlab/application-extension && \
+    echo '{ "layout": "single-document" }' > /home/jupyter/.jupyter/lab/user-settings/@jupyterlab/application-extension/shell.jupyterlab-settings && \
+    mkdir -p /home/jupyter/.jupyter/lab/user-settings/@jupyterlab/apputils-extension && \
+    echo '{ "news": false }' > /home/jupyter/.jupyter/lab/user-settings/@jupyterlab/apputils-extension/notification.jupyterlab-settings && \
     mkdir -p /usr/local/share/jupyter/lab/settings && \
     echo '{ "@jupyterlab/apputils-extension:notification": { "fetchNews": "false" } }' > /usr/local/share/jupyter/lab/settings/overrides.json
 
-# 2. Inject CSS to hide file browser/menu into ALL index.html files JupyterLab uses
+# 2. Inject CSS to hide file browser/menu/shutdown
 COPY hide-ui.css /tmp/hide-ui.css
 RUN python3 << 'PYEOF'
 import glob, os
@@ -54,12 +60,20 @@ for path in targets:
 PYEOF
 
 # Jupyter config
-RUN mkdir -p /root/.jupyter
-COPY jupyter_config.py /root/.jupyter/jupyter_lab_config.py
-COPY startup.py /root/.jupyter/startup.py
+COPY jupyter_config.py /home/jupyter/.jupyter/jupyter_lab_config.py
+COPY startup.py /home/jupyter/.jupyter/startup.py
+
+# Set ownership
+RUN chown -R jupyter:jupyter /home/jupyter
+
+# Make system dirs read-only for jupyter user (can't modify installed packages)
+RUN chmod -R o-w /usr/local/lib/python3.12/site-packages/ 2>/dev/null || true
 
 WORKDIR /workspace
 
+# Switch to unprivileged user — can only write to /workspace and /home/jupyter
+USER jupyter
+
 EXPOSE 8888
 
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser"]

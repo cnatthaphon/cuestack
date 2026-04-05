@@ -93,6 +93,9 @@ services:
   jupyter:
     build: ./jupyter
     environment:
+      # Only expose what notebooks need — no system secrets
+      CUESTACK_URL: http://nginx:80
+      # DATABASE_URL restricted to read-only jupyter user (no admin access)
       DATABASE_URL: postgresql://jupyter_user:${JUPYTER_DB_PASSWORD:-jupyter_readonly_123}@db:5432/${POSTGRES_DB:-iotstack}
     depends_on:
       db:
@@ -100,6 +103,12 @@ services:
     volumes:
       - jupyter_workspaces:/workspace
       - org_files:/files:ro
+    # Security: no extra capabilities, read-only root filesystem except workspace
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/jupyter/.local
+      - /home/jupyter/.cache
 
   clickhouse:
     image: clickhouse/clickhouse-server:24-alpine
