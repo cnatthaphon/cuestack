@@ -135,6 +135,26 @@ Channel (publish)
                       └── Export (SQLite download)
 ```
 
+## Block Engine
+
+CueStack uses a schema-driven block engine for visual programming. Every block is defined by a contract:
+
+```json
+{
+  "type": "my_block",
+  "configSchema": [...],
+  "inputs": [...],
+  "outputs": [...],
+  "execute": "..."
+}
+```
+
+Built-in blocks: MQTT Subscribe, Data Source, Filter, Transform, Aggregate, FFT, Moving Average, Anomaly Detection, Insert to DB, WS Broadcast, MQTT Publish, Chart, Custom Code, Notify.
+
+Custom blocks: users write Python `transform(data, config)` functions in the Custom Code block, or register new block types via the block registry.
+
+Block registry: `shared/block-registry.json` — single source of truth for both frontend UI and backend execution.
+
 ## Security
 
 Built with security in mind:
@@ -162,6 +182,8 @@ cuestack/
 │   ├── export.py         # SQLite export
 │   ├── blocks/           # Pipeline blocks (validate, transform, store, query)
 │   └── services/         # Scheduled services, ML
+├── shared/               # Shared definitions (block registry)
+│   └── block-registry.json  # Block definitions for frontend + backend
 ├── clickhouse/           # ClickHouse init schema
 │   └── init.sql          # data_events + audit_log tables
 ├── jupyter/              # JupyterLab container

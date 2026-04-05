@@ -2,31 +2,18 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 
-// ─── Node type definitions ────────────────────────────────────────────────────
-const NODE_TYPES = [
-  { id: "data_source", label: "Data Source", icon: "\u{1F4BE}", color: "#0070f3", inputs: 0, outputs: 1, category: "Input" },
-  { id: "generate", label: "Generate", icon: "\u{1F3B2}", color: "#8b5cf6", inputs: 0, outputs: 1, category: "Input" },
-  { id: "mqtt_subscribe", label: "MQTT Subscribe", icon: "\u{1F4E1}", color: "#0891b2", inputs: 0, outputs: 1, category: "Input" },
-  { id: "filter", label: "Filter", icon: "\u{1F50D}", color: "#7c3aed", inputs: 1, outputs: 1, category: "Process" },
-  { id: "transform", label: "Transform", icon: "\u2699", color: "#059669", inputs: 1, outputs: 1, category: "Process" },
-  { id: "decode_protobuf", label: "Decode Protobuf", icon: "\u{1F510}", color: "#4f46e5", inputs: 1, outputs: 1, category: "Process" },
-  { id: "aggregate", label: "Aggregate", icon: "\u{1F4CA}", color: "#d97706", inputs: 1, outputs: 1, category: "Process" },
-  { id: "join", label: "Join", icon: "\u{1F517}", color: "#06b6d4", inputs: 2, outputs: 1, category: "Process" },
-  { id: "anomaly_detection", label: "Anomaly Detect", icon: "\u{26A0}", color: "#b91c1c", inputs: 1, outputs: 1, category: "ML" },
-  { id: "statistics", label: "Statistics", icon: "\u{1F4CA}", color: "#7c3aed", inputs: 1, outputs: 1, category: "ML" },
-  { id: "moving_average", label: "Moving Avg", icon: "\u{1F4C8}", color: "#0d9488", inputs: 1, outputs: 1, category: "ML" },
-  { id: "fft", label: "FFT Analysis", icon: "\u{1F50A}", color: "#6d28d9", inputs: 1, outputs: 1, category: "ML" },
-  { id: "custom_code", label: "Custom Code", icon: "\u{1F4BB}", color: "#374151", inputs: 1, outputs: 1, category: "ML" },
-  { id: "insert", label: "Insert to DB", icon: "\u{1F4E5}", color: "#16a34a", inputs: 1, outputs: 0, category: "Output" },
-  { id: "ws_publish", label: "WS Broadcast", icon: "\u{1F4E2}", color: "#ea580c", inputs: 1, outputs: 0, category: "Output" },
-  { id: "mqtt_publish", label: "MQTT Publish", icon: "\u{1F4E4}", color: "#0891b2", inputs: 1, outputs: 0, category: "Output" },
-  { id: "output", label: "Output", icon: "\u{1F4E4}", color: "#dc2626", inputs: 1, outputs: 0, category: "Output" },
-  { id: "notify", label: "Notify", icon: "\u{1F514}", color: "#ec4899", inputs: 1, outputs: 0, category: "Output" },
-];
+import { BLOCK_CATALOG, CATEGORIES, getBlock, getConfigSummary } from '../flow-blocks.js';
 
-const OPERATORS = ["=", "!=", ">", "<", ">=", "<=", "contains", "is null", "is not null"];
-const AGGREGATIONS = ["count", "sum", "avg", "min", "max"];
-const TRANSFORMS = ["round", "uppercase", "lowercase", "abs", "to_number", "to_date"];
+// ─── Node type definitions (driven by shared block registry) ─────────────────
+const NODE_TYPES = BLOCK_CATALOG.map(b => ({
+  id: b.type,
+  label: b.label,
+  icon: b.icon,
+  color: b.color,
+  inputs: b.inputs.length,
+  outputs: b.outputs.length,
+  category: CATEGORIES.find(c => c.id === b.category)?.label || b.category,
+}));
 
 const NODE_W = 180;
 const NODE_H = 56;
@@ -293,24 +280,9 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
                   {/* Icon + label */}
                   <text x={node.x + 14} y={node.y + 22} fontSize={14}>{nt.icon}</text>
                   <text x={node.x + 32} y={node.y + 22} fontSize={11} fontWeight={600} fill="#333">{nt.label}</text>
-                  {/* Config summary */}
+                  {/* Config summary — auto-generated from registry */}
                   <text x={node.x + 32} y={node.y + 38} fontSize={9} fill="#999">
-                    {node.type === "data_source" ? (node.config?.table || "no table") : ""}
-                    {node.type === "generate" ? `${node.config?.count || 0} rows` : ""}
-                    {node.type === "filter" ? `${node.config?.column || "?"} ${node.config?.operator || "="}` : ""}
-                    {node.type === "aggregate" ? (node.config?.aggregation || "count") : ""}
-                    {node.type === "insert" ? (node.config?.table ? `→ ${node.config.table}` : "no table") : ""}
-                    {node.type === "transform" ? (node.config?.operation || "") : ""}
-                    {node.type === "notify" ? (node.config?.title || "") : ""}
-                    {node.type === "output" ? (node.config?.format || "table") : ""}
-                    {node.type === "mqtt_subscribe" ? (Array.isArray(node.config?.channels) ? node.config.channels.join(", ") : node.config?.channel || "no channel") : ""}
-                    {node.type === "mqtt_publish" ? (Array.isArray(node.config?.channels) ? node.config.channels.join(", ") : node.config?.channel || "no channel") : ""}
-                    {node.type === "ws_publish" ? (Array.isArray(node.config?.channels) ? node.config.channels.join(", ") : node.config?.channel || "no channel") : ""}
-                    {node.type === "fft" ? `${node.config?.column || "signal"} @${node.config?.sample_rate || 1}Hz` : ""}
-                    {node.type === "moving_average" ? `${node.config?.column || "value"} ${node.config?.window || 10}s` : ""}
-                    {node.type === "custom_code" ? "Python" : ""}
-                    {node.type === "statistics" ? (node.config?.column || "") : ""}
-                    {node.type === "anomaly_detection" ? (node.config?.column || "") : ""}
+                    {getConfigSummary(node)}
                   </text>
                   {/* Result badge */}
                   {result && (
@@ -378,9 +350,10 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
   );
 }
 
-// ─── Node properties panel ────────────────────────────────────────────────────
+// ─── Node properties panel (registry-driven) ────────────────────────────────
 function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }) {
   const nt = NODE_TYPES.find((t) => t.id === node.type);
+  const block = getBlock(node.type);
   const cfg = node.config || {};
 
   return (
@@ -394,225 +367,65 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {node.type === "data_source" && <>
-          <Field label="Table">
-            <select value={cfg.table || ""} onChange={(e) => onUpdate("table", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select table...</option>
-              {(tables || []).map((t) => <option key={t.id || t.name} value={t.name}>{t.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Limit">
-            <input type="number" value={cfg.limit || 100} onChange={(e) => onUpdate("limit", parseInt(e.target.value) || 100)} disabled={readOnly} style={propInput} />
-          </Field>
-        </>}
+        {block?.configSchema?.map((field) => {
+          const value = cfg[field.key] ?? field.default ?? '';
+          const key = field.key;
 
-        {node.type === "generate" && <>
-          <Field label="Count">
-            <input type="number" value={cfg.count || 1} onChange={(e) => onUpdate("count", parseInt(e.target.value) || 1)} disabled={readOnly} style={propInput} />
-          </Field>
-          <Field label="Fields (JSON)">
-            <textarea value={typeof cfg.fields === "object" ? JSON.stringify(cfg.fields, null, 2) : "{}"}
-              onChange={(e) => { try { onUpdate("fields", JSON.parse(e.target.value)); } catch {} }}
-              disabled={readOnly} style={{ ...propInput, fontFamily: "monospace", fontSize: 10, minHeight: 80, resize: "vertical" }} />
-          </Field>
-        </>}
+          if (field.type === 'table-select') {
+            return (
+              <Field key={key} label={field.label}>
+                <select value={value} onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly} style={propInput}>
+                  <option value="">Select table...</option>
+                  {(tables || []).map((t) => <option key={t.id || t.name} value={t.name}>{t.name}</option>)}
+                </select>
+              </Field>
+            );
+          }
 
-        {node.type === "filter" && <>
-          <Field label="Column">
-            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select...</option>
-              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Operator">
-            <select value={cfg.operator || "="} onChange={(e) => onUpdate("operator", e.target.value)} disabled={readOnly} style={propInput}>
-              {OPERATORS.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
-          </Field>
-          {!["is null", "is not null"].includes(cfg.operator) && (
-            <Field label="Value">
-              <input value={cfg.value || ""} onChange={(e) => onUpdate("value", e.target.value)} disabled={readOnly} style={propInput} />
+          if (field.type === 'select') {
+            return (
+              <Field key={key} label={field.label}>
+                <select value={value} onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly} style={propInput}>
+                  {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </Field>
+            );
+          }
+
+          if (field.type === 'number') {
+            return (
+              <Field key={key} label={field.label}>
+                <input type="number" value={value} min={field.min} max={field.max}
+                  onChange={(e) => onUpdate(key, Number(e.target.value))} disabled={readOnly} style={propInput} />
+              </Field>
+            );
+          }
+
+          if (field.type === 'code') {
+            return (
+              <Field key={key} label={field.label}>
+                <textarea value={value} rows={field.rows || 8}
+                  onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly}
+                  style={{ ...propInput, fontFamily: "monospace", fontSize: 10, minHeight: 120, resize: "vertical" }} />
+              </Field>
+            );
+          }
+
+          // Default: text input (also handles multi-text)
+          return (
+            <Field key={key} label={field.label}>
+              <input type="text" value={value} placeholder={field.placeholder || ''}
+                onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly} style={propInput} />
+              {field.help && <span style={{ fontSize: 9, color: '#999' }}>{field.help}</span>}
             </Field>
-          )}
-        </>}
-
-        {node.type === "transform" && <>
-          <Field label="Operation">
-            <select value={cfg.operation || ""} onChange={(e) => onUpdate("operation", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select...</option>
-              {TRANSFORMS.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Field>
-          <Field label="Column">
-            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select...</option>
-              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-        </>}
-
-        {node.type === "aggregate" && <>
-          <Field label="Aggregation">
-            <select value={cfg.aggregation || "count"} onChange={(e) => onUpdate("aggregation", e.target.value)} disabled={readOnly} style={propInput}>
-              {AGGREGATIONS.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </Field>
-          <Field label="Column">
-            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select...</option>
-              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Group By">
-            <input value={cfg.group_by || ""} onChange={(e) => onUpdate("group_by", e.target.value)} placeholder="column name" disabled={readOnly} style={propInput} />
-          </Field>
-        </>}
-
-        {node.type === "insert" && <>
-          <Field label="Target Table">
-            <select value={cfg.table || ""} onChange={(e) => onUpdate("table", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select table...</option>
-              {(tables || []).map((t) => <option key={t.id || t.name} value={t.name}>{t.name}</option>)}
-            </select>
-          </Field>
-        </>}
-
-        {node.type === "output" && <>
-          <Field label="Format">
-            <select value={cfg.format || "table"} onChange={(e) => onUpdate("format", e.target.value)} disabled={readOnly} style={propInput}>
-              {["table", "json", "csv", "chart"].map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </Field>
-        </>}
-
-        {node.type === "notify" && <>
-          <Field label="Title">
-            <input value={cfg.title || ""} onChange={(e) => onUpdate("title", e.target.value)} disabled={readOnly} style={propInput} />
-          </Field>
-          <Field label="Message">
-            <input value={cfg.message || ""} onChange={(e) => onUpdate("message", e.target.value)} disabled={readOnly} style={propInput} />
-          </Field>
-          <Field label="Type">
-            <select value={cfg.type || "info"} onChange={(e) => onUpdate("type", e.target.value)} disabled={readOnly} style={propInput}>
-              {["info", "success", "warning", "error"].map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Field>
-        </>}
-
-        {node.type === "join" && <>
-          <Field label="Join Type">
-            <select value={cfg.join_type || "inner"} onChange={(e) => onUpdate("join_type", e.target.value)} disabled={readOnly} style={propInput}>
-              {["inner", "left", "full"].map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Field>
-          <Field label="Join Key">
-            <input value={cfg.join_key || ""} onChange={(e) => onUpdate("join_key", e.target.value)} placeholder="column name" disabled={readOnly} style={propInput} />
-          </Field>
-        </>}
-
-        {node.type === "anomaly_detection" && <>
-          <Field label="Column">
-            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select...</option>
-              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Threshold (std devs)">
-            <input type="number" step="0.1" value={cfg.threshold || 2.0} onChange={(e) => onUpdate("threshold", parseFloat(e.target.value))} disabled={readOnly} style={propInput} />
-          </Field>
-          <div style={{ fontSize: 10, color: "#999", padding: "4px 0" }}>Adds _anomaly (bool) and _z_score columns</div>
-        </>}
-
-        {node.type === "statistics" && <>
-          <Field label="Column">
-            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select...</option>
-              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <div style={{ fontSize: 10, color: "#999", padding: "4px 0" }}>Outputs: count, mean, std, min, q1, median, q3, max, iqr</div>
-        </>}
-
-        {node.type === "moving_average" && <>
-          <Field label="Column">
-            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select...</option>
-              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Window Size">
-            <input type="number" value={cfg.window || 5} onChange={(e) => onUpdate("window", parseInt(e.target.value))} disabled={readOnly} style={propInput} />
-          </Field>
-        </>}
-
-        {node.type === "fft" && <>
-          <Field label="Column">
-            <select value={cfg.column || ""} onChange={(e) => onUpdate("column", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="">Select...</option>
-              {sourceCols.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <div style={{ fontSize: 10, color: "#999", padding: "4px 0" }}>Outputs dominant frequencies + magnitudes. Needs 8+ samples.</div>
-        </>}
-
-        {node.type === "custom_code" && <>
-          <Field label="Python Code">
-            <textarea value={cfg.code || "# data = list of dicts from upstream\n# Set result = your output\nresult = [r for r in data if r.get('temperature', 0) > 30]"}
-              onChange={(e) => onUpdate("code", e.target.value)} disabled={readOnly}
-              style={{ ...propInput, fontFamily: "monospace", fontSize: 10, minHeight: 120, resize: "vertical" }} />
-          </Field>
-          <div style={{ fontSize: 10, color: "#999", padding: "4px 0" }}>
-            Input: <code>data</code> (list of dicts). Set <code>result</code> as output.<br />
-            Available: math, json, len, range, sorted, sum, min, max.<br />
-            Runs in isolated subprocess (10s timeout).
-          </div>
-        </>}
-
-        {node.type === "mqtt_subscribe" && <>
-          <Field label="Topic">
-            <input value={cfg.topic || ""} onChange={(e) => onUpdate("topic", e.target.value)} placeholder="sensors/weather" disabled={readOnly} style={propInput} />
-          </Field>
-          <Field label="Format">
-            <select value={cfg.format || "json"} onChange={(e) => onUpdate("format", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="json">JSON</option>
-              <option value="protobuf">Protobuf (binary)</option>
-            </select>
-          </Field>
-        </>}
-
-        {node.type === "decode_protobuf" && <>
-          <Field label="Schema">
-            <select value={cfg.schema || "sensor_data"} onChange={(e) => onUpdate("schema", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="sensor_data">Sensor Data (temp, humidity, pressure)</option>
-              <option value="custom">Custom (define fields)</option>
-            </select>
-          </Field>
-          {cfg.schema === "custom" && (
-            <Field label="Fields (JSON)">
-              <textarea value={typeof cfg.fields === "object" ? JSON.stringify(cfg.fields) : "{}"} onChange={(e) => { try { onUpdate("fields", JSON.parse(e.target.value)); } catch {} }}
-                disabled={readOnly} style={{ ...propInput, fontFamily: "monospace", fontSize: 10, minHeight: 60 }} />
-            </Field>
-          )}
-        </>}
-
-        {node.type === "ws_publish" && <>
-          <Field label="Channel">
-            <input value={cfg.channel || ""} onChange={(e) => onUpdate("channel", e.target.value)} placeholder="dashboard/live" disabled={readOnly} style={propInput} />
-          </Field>
-        </>}
-
-        {node.type === "mqtt_publish" && <>
-          <Field label="Topic">
-            <input value={cfg.topic || ""} onChange={(e) => onUpdate("topic", e.target.value)} placeholder="devices/ack" disabled={readOnly} style={propInput} />
-          </Field>
-          <Field label="Payload">
-            <select value={cfg.payload_type || "json"} onChange={(e) => onUpdate("payload_type", e.target.value)} disabled={readOnly} style={propInput}>
-              <option value="json">JSON</option>
-              <option value="protobuf">Protobuf</option>
-            </select>
-          </Field>
-        </>}
+          );
+        })}
       </div>
+
+      {/* Description from registry */}
+      {block?.description && (
+        <div style={{ fontSize: 10, color: "#999", padding: "8px 0 0" }}>{block.description}</div>
+      )}
 
       {/* Result preview */}
       {result && (
