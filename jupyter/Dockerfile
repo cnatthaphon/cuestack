@@ -12,9 +12,12 @@ RUN pip install --no-cache-dir \
     pandas \
     numpy \
     matplotlib \
+    seaborn \
     plotly \
     scikit-learn \
-    requests
+    scipy \
+    requests \
+    httpx
 
 # Install CueStack SDK
 COPY cuestack/ /opt/cuestack/cuestack/
