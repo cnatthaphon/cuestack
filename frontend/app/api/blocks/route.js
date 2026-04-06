@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../lib/auth.js";
 import { query } from "../../../lib/db.js";
-import registry from "../../../../shared/block-registry.json";
+import registry from "../../../lib/block-registry.json";
 
 // GET — list system blocks + org custom blocks (merged)
 export async function GET() {

@@ -2,7 +2,7 @@
 // This is the single source of truth for block definitions.
 // Both frontend (UI) and backend (execution) read this.
 
-import registry from '../../shared/block-registry.json';
+import registry from './block-registry.json';
 
 export const BLOCK_CATALOG = registry.blocks;
 export const CONFIG_TYPES = registry.configTypes;
