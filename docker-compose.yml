@@ -106,6 +106,7 @@ services:
       db:
         condition: service_healthy
       frontend:
+        condition: service_started
 
   # User notebook image — built but not run directly.
   # JupyterHub spawns containers from this image via DockerSpawner.
