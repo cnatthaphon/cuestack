@@ -99,6 +99,7 @@ services:
       DOCKER_HOST: unix:///var/run/docker.sock
       DATABASE_URL: postgresql://${POSTGRES_USER:-iot}:${POSTGRES_PASSWORD:-iot123}@db:5432/${POSTGRES_DB:-iotstack}
       JUPYTERHUB_API_TOKEN: ${JUPYTERHUB_API_TOKEN:-cuestack-hub-api-token-change-in-prod}
+      JUPYTERHUB_CRYPT_KEY: ${JUPYTERHUB_CRYPT_KEY:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - jupyterhub_data:/data
