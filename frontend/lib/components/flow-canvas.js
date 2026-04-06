@@ -294,12 +294,12 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
                     style={{ cursor: readOnly ? "default" : "grab", filter: isSel ? "drop-shadow(0 2px 4px rgba(0,0,0,0.1))" : "none" }}
                     onMouseDown={(e) => !readOnly && onNodeMouseDown(e, node.id)} />
                   {/* Color accent */}
-                  <rect x={node.x} y={node.y} width={4} height={NODE_H} rx={2} fill={nt.color} />
-                  {/* Icon + label */}
-                  <text x={node.x + 14} y={node.y + 22} fontSize={14}>{nt.icon}</text>
-                  <text x={node.x + 32} y={node.y + 22} fontSize={11} fontWeight={600} fill="#333">{nt.label}</text>
-                  {/* Config summary — auto-generated from registry */}
-                  <text x={node.x + 32} y={node.y + 38} fontSize={9} fill="#999">
+                  <rect x={node.x} y={node.y} width={4} height={NODE_H} rx={2} fill={nt.color} style={{ pointerEvents: "none" }} />
+                  {/* Icon + label — pointerEvents none so clicks pass to background rect */}
+                  <text x={node.x + 14} y={node.y + 22} fontSize={14} style={{ pointerEvents: "none" }}>{nt.icon}</text>
+                  <text x={node.x + 32} y={node.y + 22} fontSize={11} fontWeight={600} fill="#333" style={{ pointerEvents: "none" }}>{nt.label}</text>
+                  {/* Config summary */}
+                  <text x={node.x + 32} y={node.y + 38} fontSize={9} fill="#999" style={{ pointerEvents: "none" }}>
                     {getConfigSummary(node)}
                   </text>
                   {/* Result badge */}
