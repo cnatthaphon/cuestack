@@ -390,11 +390,15 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
           const key = field.key;
 
           if (field.type === 'table-select') {
+            const tableList = tables || [];
+            const hasCurrentValue = value && tableList.some(t => t.name === value);
             return (
               <Field key={key} label={field.label}>
                 <select value={value} onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly} style={propInput}>
                   <option value="">Select table...</option>
-                  {(tables || []).map((t) => <option key={t.id || t.name} value={t.name}>{t.name}</option>)}
+                  {/* Show saved value even if tables haven't loaded */}
+                  {value && !hasCurrentValue && <option value={value}>{value}</option>}
+                  {tableList.map((t) => <option key={t.id || t.name} value={t.name}>{t.name}</option>)}
                 </select>
               </Field>
             );
