@@ -1,0 +1,92 @@
+{
+  "name": "Dynamic ETL Pipeline",
+  "icon": "\ud83e\udde9",
+  "page_type": "visual",
+  "config": {
+    "nodes": [
+      {
+        "id": "mqtt1",
+        "type": "mqtt_subscribe",
+        "x": 50,
+        "y": 100,
+        "config": {
+          "channels": "sensors/+/data",
+          "format": "json"
+        }
+      },
+      {
+        "id": "transform1",
+        "type": "transform",
+        "x": 300,
+        "y": 100,
+        "config": {
+          "column": "temperature",
+          "operation": "round",
+          "param": "1"
+        }
+      },
+      {
+        "id": "filter1",
+        "type": "filter",
+        "x": 550,
+        "y": 50,
+        "config": {
+          "column": "temperature",
+          "operator": ">",
+          "value": "30"
+        }
+      },
+      {
+        "id": "anomaly1",
+        "type": "anomaly_detection",
+        "x": 550,
+        "y": 200,
+        "config": {
+          "column": "temperature",
+          "method": "zscore",
+          "threshold": "2.0"
+        }
+      },
+      {
+        "id": "insert1",
+        "type": "insert",
+        "x": 800,
+        "y": 50,
+        "config": {
+          "table": "high_temp_alerts",
+          "column_mapping": "temperature \u2192 temp_value\nhumidity \u2192 humid_value\ndevice_id \u2192 source_device"
+        }
+      },
+      {
+        "id": "insert2",
+        "type": "insert",
+        "x": 800,
+        "y": 200,
+        "config": {
+          "table": "anomaly_log",
+          "column_mapping": "temperature \u2192 value\n_anomaly \u2192 is_anomaly\n_anomaly_score \u2192 score"
+        }
+      },
+      {
+        "id": "notify1",
+        "type": "notify",
+        "x": 800,
+        "y": 350,
+        "config": {
+          "title": "High Temperature Alert",
+          "message": "Temperature exceeded 30\u00b0C threshold",
+          "type": "warning"
+        }
+      }
+    ],
+    "edges": [
+      { "from": "mqtt1", "to": "transform1" },
+      { "from": "transform1", "to": "filter1" },
+      { "from": "transform1", "to": "anomaly1" },
+      { "from": "filter1", "to": "insert1" },
+      { "from": "filter1", "to": "notify1" },
+      { "from": "anomaly1", "to": "insert2" }
+    ],
+    "_description": "Dynamic ETL: MQTT sensors \u2192 transform \u2192 filter high temps + detect anomalies \u2192 insert to separate tables with column mapping \u2192 notify on alerts"
+  }
+}

@@ -6,14 +6,16 @@ import { useUser } from "../../../../lib/user-context.js";
 import DataTable, { DateTimeCell } from "../../../../lib/components/data-table.js";
 
 const CRON_LABELS = {
+  "* * * * *": "Every 1 min",
   "*/5 * * * *": "Every 5 min",
+  "*/10 * * * *": "Every 10 min",
   "*/15 * * * *": "Every 15 min",
   "*/30 * * * *": "Every 30 min",
   "0 * * * *": "Every hour",
   "0 */6 * * *": "Every 6 hours",
-  "0 0 * * *": "Daily at midnight",
-  "0 8 * * *": "Daily at 8 AM",
-  "0 0 * * 1": "Weekly (Mon)",
+  "0 0 * * *": "Daily midnight",
+  "0 8 * * *": "Daily 8 AM",
+  "0 0 * * 1": "Weekly Mon",
 };
 
 function cronLabel(cron) {

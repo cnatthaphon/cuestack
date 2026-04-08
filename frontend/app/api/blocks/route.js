@@ -11,29 +11,33 @@ export async function GET() {
   // System blocks (from registry file)
   const systemBlocks = registry.blocks.map(b => ({ ...b, _custom: false }));
 
-  // Org custom blocks (from DB)
-  const result = await query(
-    `SELECT * FROM org_custom_blocks WHERE org_id = $1 AND is_active = true ORDER BY label`,
-    [user.org_id]
-  );
-
-  const orgBlocks = result.rows.map(row => ({
-    id: row.id,
-    type: row.type,
-    label: row.label,
-    icon: row.icon || "🧩",
-    category: row.category || "custom",
-    description: row.description || "",
-    configSchema: row.config_schema || [],
-    inputs: row.inputs || [{ name: "data", type: "any" }],
-    outputs: row.outputs || [{ name: "data", type: "any" }],
-    code: row.code,
-    color: row.color || "#6b7280",
-    created_by: row.created_by,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    _custom: true,
-  }));
+  // Org custom blocks (from DB — may not exist on fresh installs)
+  let orgBlocks = [];
+  try {
+    const result = await query(
+      `SELECT * FROM org_custom_blocks WHERE org_id = $1 AND is_active = true ORDER BY label`,
+      [user.org_id]
+    );
+    orgBlocks = result.rows.map(row => ({
+      id: row.id,
+      type: row.type,
+      label: row.label,
+      icon: row.icon || "🧩",
+      category: row.category || "custom",
+      description: row.description || "",
+      configSchema: row.config_schema || [],
+      inputs: row.inputs || [{ name: "data", type: "any" }],
+      outputs: row.outputs || [{ name: "data", type: "any" }],
+      code: row.code,
+      color: row.color || "#6b7280",
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      _custom: true,
+    }));
+  } catch {
+    // Table may not exist yet — return system blocks only
+  }
 
   return NextResponse.json({
     blocks: [...systemBlocks, ...orgBlocks],

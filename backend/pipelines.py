@@ -22,13 +22,13 @@ def create_ingest_pipeline(db_pool=None):
     return Pipeline("ingest", [
         ValidateBlock(),
         TransformBlock(),
-        StoreBlock(db_pool),
+        StoreBlock(),
     ])
 
 
 def create_query_pipeline(db_pool=None):
     return Pipeline("query", [
-        QueryBlock(db_pool),
+        QueryBlock(),
         AggregateBlock(),
         FormatBlock("json"),
     ])
@@ -36,7 +36,7 @@ def create_query_pipeline(db_pool=None):
 
 def create_summary_pipeline(db_pool=None):
     return Pipeline("summary", [
-        QueryBlock(db_pool),
+        QueryBlock(),
         AggregateBlock(["avg", "min", "max", "count", "sum"]),
         FormatBlock("summary"),
     ])
@@ -44,7 +44,7 @@ def create_summary_pipeline(db_pool=None):
 
 def create_export_pipeline(db_pool=None):
     return Pipeline("export", [
-        QueryBlock(db_pool),
+        QueryBlock(),
         AggregateBlock(),
         FormatBlock("csv"),
     ])

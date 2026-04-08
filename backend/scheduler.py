@@ -434,19 +434,201 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
         return execute_flow_blocks(conn, task["org_id"], blocks, user_id=task.get("user_id"))
 
     elif page_type == "notebook":
-        # Notebook execution via Jupyter API
+        # Execute notebook via Jupyter nbconvert API, then pull output to DB
         import urllib.error
         import urllib.request
         org_short = task["org_id"].replace("-", "")[:8]
-        nb_name = (task["slug"] or task["page_name"].lower().replace(" ", "_")) + ".ipynb"
-        # Per-org JupyterHub containers: /jupyter/user/<orgShort>/api/...
+        user_id = task.get("user_id", 0)
+        nb_name = f"u{user_id}_{task['slug'] or task['page_name'].lower().replace(' ', '-')}.ipynb"
         user_api = f"{JUPYTER_URL}/jupyter/user/{org_short}"
+        hub_api = f"{JUPYTER_URL}/jupyter/hub/api"
+        hub_token = os.getenv("JUPYTERHUB_API_TOKEN", "")
+        hub_headers = {"Authorization": f"token {hub_token}"} if hub_token else {}
+
+        # 1. Ensure user exists in JupyterHub
         try:
-            req = urllib.request.Request(f"{user_api}/api/contents/{nb_name}")
-            urllib.request.urlopen(req, timeout=10)
-            return True, f"Notebook verified: {nb_name}"
+            req = urllib.request.Request(f"{hub_api}/users/{org_short}", headers=hub_headers)
+            resp = urllib.request.urlopen(req, timeout=10)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                req = urllib.request.Request(f"{hub_api}/users/{org_short}", method="POST",
+                                            headers={**hub_headers, "Content-Type": "application/json"},
+                                            data=b"{}")
+                urllib.request.urlopen(req, timeout=10)
+
+        # 2. Ensure server is running
+        try:
+            req = urllib.request.Request(f"{hub_api}/users/{org_short}/server", method="POST",
+                                        headers={**hub_headers, "Content-Type": "application/json"},
+                                        data=b"{}")
+            urllib.request.urlopen(req, timeout=30)
+        except urllib.error.HTTPError as e:
+            if e.code not in (400, 201):  # 400 = already running
+                return False, f"Could not start Jupyter server: {e.code}"
+
+        # Wait for server to be ready
+        import time
+        for _ in range(30):
+            try:
+                req = urllib.request.Request(f"{user_api}/api/status")
+                urllib.request.urlopen(req, timeout=5)
+                break
+            except Exception:
+                time.sleep(1)
+
+        # 3. Refresh SDK token in notebook content before pushing
+        nb_content = config.get("notebook_content")
+        if nb_content and nb_content.get("cells"):
+            import jose_helper
+            fresh_token = jose_helper.create_notebook_token(
+                user_id=task.get("user_id", 0),
+                org_id=task["org_id"],
+            )
+            for cell in nb_content.get("cells", []):
+                if cell.get("cell_type") != "code":
+                    continue
+                src = "".join(cell.get("source", [])) if isinstance(cell.get("source"), list) else (cell.get("source") or "")
+                if "CUESTACK_TOKEN" in src:
+                    import re
+                    updated = re.sub(
+                        r'os\.environ\["CUESTACK_TOKEN"\]\s*=\s*"[^"]*"',
+                        f'os.environ["CUESTACK_TOKEN"] = "{fresh_token}"',
+                        src,
+                    )
+                    cell["source"] = updated
+                    break
+
+        if nb_content:
+            # Clear old outputs before pushing — nbconvert will re-generate them
+            for cell in nb_content.get("cells", []):
+                if cell.get("cell_type") == "code":
+                    cell["outputs"] = []
+                    cell["execution_count"] = None
+                # Ensure source is a list (nbconvert expects this)
+                src = cell.get("source", "")
+                if isinstance(src, str):
+                    cell["source"] = src.splitlines(True) if src else []
+
+            body = json.dumps({"type": "notebook", "content": nb_content}).encode()
+            # Check if file already exists on disk (from previous manual/interactive run)
+            try:
+                check = urllib.request.urlopen(
+                    urllib.request.Request(f"{user_api}/api/contents/{nb_name}?content=0"),
+                    timeout=10,
+                )
+                file_exists = check.status == 200
+            except Exception:
+                file_exists = False
+
+            if file_exists:
+                # File exists — read it from disk, update token, write back
+                logger.info("File exists on disk, updating token in-place")
+                try:
+                    res = urllib.request.urlopen(
+                        urllib.request.Request(f"{user_api}/api/contents/{nb_name}?content=1"), timeout=15)
+                    disk_nb = json.loads(res.read()).get("content", {})
+                    # Update token and URL in disk version
+                    import re
+                    for cell in disk_nb.get("cells", []):
+                        if cell.get("cell_type") != "code":
+                            continue
+                        src = "".join(cell.get("source", []))
+                        if "CUESTACK_TOKEN" in src:
+                            updated = re.sub(
+                                r'os\.environ\["CUESTACK_TOKEN"\]\s*=\s*"[^"]*"',
+                                f'os.environ["CUESTACK_TOKEN"] = "{fresh_token}"',
+                                src)
+                            updated = re.sub(
+                                r'os\.environ\["CUESTACK_URL"\]\s*=\s*"[^"]*"',
+                                'os.environ["CUESTACK_URL"] = "http://backend:8000"',
+                                updated)
+                            cell["source"] = updated.splitlines(True)
+                            break
+                    # Clear outputs for fresh run
+                    for cell in disk_nb.get("cells", []):
+                        if cell.get("cell_type") == "code":
+                            cell["outputs"] = []
+                            cell["execution_count"] = None
+                    body = json.dumps({"type": "notebook", "content": disk_nb}).encode()
+                    urllib.request.urlopen(
+                        urllib.request.Request(f"{user_api}/api/contents/{nb_name}", method="PUT",
+                                              headers={"Content-Type": "application/json"}, data=body), timeout=30)
+                except Exception as e:
+                    logger.warning(f"Token update failed, proceeding anyway: {e}")
+            else:
+                # Push from DB
+                body = json.dumps({"type": "notebook", "content": nb_content}).encode()
+                logger.info(f"Pushing notebook ({len(body)} bytes)")
+                req = urllib.request.Request(f"{user_api}/api/contents/{nb_name}", method="PUT",
+                                            headers={"Content-Type": "application/json"}, data=body)
+                try:
+                    urllib.request.urlopen(req, timeout=30)
+                except Exception as e:
+                    return False, f"Failed to push notebook: {e}"
+
+        # 4. Execute notebook via docker exec + jupyter nbconvert
+        # Much more reliable than WebSocket kernel protocol
+        import subprocess
+        import concurrent.futures
+        try:
+            container_name = f"jupyter-{org_short}"
+            nb_path = f"/workspace/{nb_name}"
+
+            # Run nbconvert in a thread pool to avoid blocking the event loop
+            # (the event loop also serves API requests that the notebook calls)
+            def run_nbconvert():
+                return subprocess.run(
+                    ["docker", "exec", "-u", "jupyter", container_name,
+                     "jupyter", "nbconvert", "--to", "notebook", "--execute",
+                     "--ExecutePreprocessor.timeout=300",
+                     "--allow-errors",
+                     "--output", nb_name, nb_path],
+                    capture_output=True, text=True, timeout=360,
+                )
+
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, run_nbconvert)
+
+            if result.returncode != 0:
+                logger.error(f"nbconvert stderr: {result.stderr[:2000] if result.stderr else 'none'}")
+                logger.error(f"nbconvert stdout: {result.stdout[:2000] if result.stdout else 'none'}")
+                error_msg = (result.stderr or result.stdout or "Unknown error")[:1000]
+                return False, f"nbconvert failed (exit={result.returncode}): {error_msg}"
+
+            # 5. Pull executed notebook from Jupyter filesystem back to DB
+            try:
+                res = urllib.request.urlopen(
+                    urllib.request.Request(f"{user_api}/api/contents/{nb_name}?content=1"),
+                    timeout=30,
+                )
+                executed_nb = json.loads(res.read()).get("content")
+            except Exception as e:
+                return False, f"Failed to pull executed notebook: {e}"
+
+            if executed_nb:
+                page_id = task["page_id"]
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT config FROM user_pages WHERE id = %s", [page_id])
+                    row = cur.fetchone()
+                if row:
+                    existing_cfg = row["config"] if isinstance(row["config"], dict) else json.loads(row["config"] or "{}")
+                    existing_cfg["notebook_content"] = executed_nb
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE user_pages SET config = %s, updated_at = NOW() WHERE id = %s",
+                                    [json.dumps(existing_cfg), page_id])
+                    conn.commit()
+
+                code_cells = [c for c in executed_nb.get("cells", []) if c.get("cell_type") == "code"]
+                return True, f"Notebook executed: {len(code_cells)} cells, outputs saved to DB"
+
+            return True, "Notebook executed but no content returned"
+
+        except subprocess.TimeoutExpired:
+            return False, "Notebook execution timed out (360s)"
+        except FileNotFoundError:
+            return False, "Docker CLI not available in backend container"
         except Exception as e:
-            return False, f"Notebook error: {e}"
+            return False, f"Notebook execution error: {e}"
 
     else:
         return True, f"Page type {page_type} — no executor configured"

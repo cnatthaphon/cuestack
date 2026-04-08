@@ -118,6 +118,7 @@ c.JupyterHub.spawner_class = CueStackSpawner
 c.DockerSpawner.image = 'cuestack-jupyter-user'
 c.DockerSpawner.network_name = 'cuestack_default'
 c.DockerSpawner.remove = True
+c.DockerSpawner.cmd = ['/entrypoint.sh']
 
 # Per-org volume — isolated filesystem per org
 c.DockerSpawner.volumes = {
@@ -127,20 +128,22 @@ c.DockerSpawner.volumes = {
 
 # Base environment for all containers
 c.DockerSpawner.environment = {
-    'CUESTACK_URL': 'http://nginx:80',
+    'CUESTACK_URL': 'http://backend:8000',
 }
 
-# Security: read-only root filesystem
-c.DockerSpawner.extra_create_kwargs = {
-    'read_only': True,
-}
+# ---------------------------------------------------------------------------
+# Security: container resource limits and hardening
+# ---------------------------------------------------------------------------
+# pids_limit: cap forked processes to prevent fork-bombs and runaway pip installs.
+# mem_limit / cpu_limit are set per-plan in CueStackSpawner.start().
+# Network note: containers join cuestack_default and CAN reach internal services
+# (backend, clickhouse, etc.). This is accepted risk because each container is
+# org-scoped and the CueStack SDK needs backend access. To fully isolate, move
+# notebook containers to a dedicated network with only backend access.
 c.DockerSpawner.extra_host_config = {
-    'tmpfs': {
-        '/tmp': 'size=100M',
-        '/home/jupyter/.local': 'size=200M',
-        '/home/jupyter/.cache': 'size=100M',
-        '/home/jupyter/.jupyter': 'size=50M',
-    },
+    'pids_limit': 100,        # prevent fork-bombs / excessive process spawning
+    'read_only': False,       # /workspace must be writable; site-packages is chmod'd
+    'security_opt': ['no-new-privileges'],  # prevent privilege escalation via setuid
 }
 
 # ---------------------------------------------------------------------------
@@ -156,23 +159,29 @@ c.JupyterHub.hub_connect_ip = 'jupyterhub'
 # ---------------------------------------------------------------------------
 c.JupyterHub.admin_access = False
 
-# API token for platform to manage user servers (spawn, stop, etc.)
-# This token is used by the frontend notebook API to start/stop org containers
+# ---------------------------------------------------------------------------
+# Services — platform API token + idle culling
+# ---------------------------------------------------------------------------
 PLATFORM_API_TOKEN = os.environ.get('JUPYTERHUB_API_TOKEN', 'cuestack-hub-api-token-change-in-prod')
-c.JupyterHub.services.append({
-    'name': 'cuestack-platform',
-    'api_token': PLATFORM_API_TOKEN,
-})
-
-# ---------------------------------------------------------------------------
-# Idle culling — stop org containers after 30 min idle
-# ---------------------------------------------------------------------------
 c.JupyterHub.services = [
+    {
+        'name': 'cuestack-platform',
+        'api_token': PLATFORM_API_TOKEN,
+    },
     {
         'name': 'cull-idle',
         'admin': True,
         'command': ['python3', '-m', 'jupyterhub_idle_culler', '--timeout=1800'],
-    }
+    },
+]
+
+# Grant platform service full API access (create users, spawn/stop servers)
+c.JupyterHub.load_roles = [
+    {
+        'name': 'cuestack-platform-role',
+        'scopes': ['admin:users', 'admin:servers', 'read:users', 'read:servers'],
+        'services': ['cuestack-platform'],
+    },
 ]
 
 # ---------------------------------------------------------------------------

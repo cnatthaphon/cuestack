@@ -23,7 +23,7 @@ class CueStackClient:
         self._me_cache = None
 
     def _get(self, path, params=None):
-        r = requests.get(f"{self.base_url}{path}", headers=self._headers, params=params)
+        r = requests.get(f"{self.base_url}{path}", headers=self._headers, params=params, timeout=60)
         r.raise_for_status()
         return r.json()
 
@@ -119,36 +119,49 @@ class CueStackClient:
             )
         return df
 
-    def query(self, table, limit=100, order_by=None, order_dir="DESC"):
-        """Query data from an org table. Returns DataFrame."""
-        params = {"limit": limit}
-        if order_by:
-            params["order_by"] = order_by
-            params["order_dir"] = order_dir
-        # Use the internal v1 API pattern — but we need org context
-        # For notebook, use the tables API via pipeline
-        data = self._get(f"/api/pipeline/query")
-        return pd.DataFrame(data.get("data", []))
+    def create_table(self, name, columns, db_type="postgres", description=""):
+        """Create an org table.
 
-    def query_table(self, table_name, limit=100):
-        """Query a specific org table by name. Returns DataFrame.
-
-        Uses the widget-data API which supports arbitrary table queries.
+        columns: list of {name, type} dicts, e.g. [{"name": "temp", "type": "float8"}]
+        db_type: 'postgres' (default) or 'clickhouse'
         """
-        data = self._post("/api/dashboards/widget-data", {
-            "widget": {
-                "type": "table",
-                "config": {"table": table_name, "max_rows": limit}
-            }
+        return self._post("/api/tables", {
+            "name": name,
+            "columns": columns,
+            "db_type": db_type,
+            "description": description,
         })
-        rows = data.get("data", {}).get("rows", [])
-        return pd.DataFrame(rows)
 
-    def insert(self, table_name, rows):
-        """Insert rows into an org table. Rows: list of dicts."""
-        # Need an API key for external API — use internal route
-        data = self._post("/api/pipeline/ingest", {"table": table_name, "data": rows})
-        return data
+    def delete_table(self, table_id):
+        """Delete an org table by its ID."""
+        return self._delete(f"/api/tables/{table_id}")
+
+    def _resolve_table_id(self, table):
+        """Resolve a table name or ID to a table ID."""
+        if isinstance(table, str) and len(table) == 36 and table.count("-") == 4:
+            return table
+        data = self._get("/api/tables")
+        for t in data.get("tables", []):
+            if t.get("name") == table or t.get("id") == table:
+                return t["id"]
+        raise ValueError(f"Table '{table}' not found")
+
+    def query(self, table, limit=100, offset=0, order_by="created_at", order_dir="DESC", filters=None):
+        """Query data from an org table by name or ID. Returns DataFrame.
+
+        filters: list of 'column:op:value' strings, e.g. ['status:eq:active']
+        """
+        table_id = self._resolve_table_id(table)
+        params = {"limit": limit, "offset": offset, "order_by": order_by, "order_dir": order_dir}
+        if filters:
+            params["filter"] = filters
+        data = self._get(f"/api/tables/{table_id}/data", params=params)
+        return pd.DataFrame(data.get("rows", []))
+
+    def insert(self, table, rows):
+        """Insert rows into an org table (by name or ID). Rows: list of dicts."""
+        table_id = self._resolve_table_id(table)
+        return self._post(f"/api/tables/{table_id}/data", {"rows": rows})
 
     # --- Notifications ---
 
@@ -275,6 +288,10 @@ class FileClient:
     def set_visibility(self, file_id, visibility):
         """Set visibility: private, org, public"""
         return self._c._post("/api/files", {"action": "set_visibility", "id": file_id, "visibility": visibility})
+
+    def delete(self, file_id):
+        """Delete a file or folder (owner only)."""
+        return self._c._delete("/api/files", params={"id": file_id})
 
     def storage(self):
         """Get storage stats."""

@@ -28,6 +28,15 @@ export async function POST(request, { params }) {
   const nbPath = `u${user.id}_${encodeURIComponent(name)}.ipynb`;
   const jupyterApi = userApiBase(orgShort);
 
+  // Force Jupyter to save the notebook to disk first (creates a checkpoint)
+  try {
+    await fetch(`${jupyterApi}/api/contents/${nbPath}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "notebook" }),
+    });
+  } catch { /* non-critical — file may still be current */ }
+
   // Pull content from the org's Jupyter server
   let nbContent = null;
   try {
@@ -67,10 +76,8 @@ export async function POST(request, { params }) {
     [JSON.stringify(newConfig), page_id, user.org_id]
   );
 
-  // Clean up: delete the temp file from Jupyter (DB is source of truth now)
-  try {
-    await fetch(`${jupyterApi}/api/contents/${nbPath}`, { method: "DELETE" });
-  } catch { /* non-critical */ }
+  // Keep the file in Jupyter (don't delete — avoids 404s if Jupyter UI is still open)
+  // DB is the source of truth; file will be overwritten on next open
 
   return NextResponse.json({ ok: true, cells: nbContent.cells?.length || 0 });
 }

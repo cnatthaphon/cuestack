@@ -302,6 +302,37 @@ async def aggregate_block(config, inputs, context):
     return result
 
 
+def _parse_column_mapping(mapping_str):
+    """Parse column mapping text (one per line: source -> target) into a dict."""
+    if not mapping_str or not mapping_str.strip():
+        return {}
+    mapping = {}
+    for line in mapping_str.strip().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "->" in line:
+            parts = line.split("->", 1)
+            src = parts[0].strip()
+            tgt = parts[1].strip()
+            if src and tgt:
+                mapping[src] = tgt
+    return mapping
+
+
+def _apply_column_mapping(item, mapping):
+    """Remap keys in a dict according to column mapping."""
+    if not mapping or not isinstance(item, dict):
+        return item
+    mapped = {}
+    for src_key, value in item.items():
+        if src_key in mapping:
+            mapped[mapping[src_key]] = value
+        else:
+            mapped[src_key] = value
+    return mapped
+
+
 @register_block("insert")
 async def insert_block(config, inputs, context):
     """Store data to ClickHouse."""
@@ -311,11 +342,17 @@ async def insert_block(config, inputs, context):
     if not table or not data:
         return {"stored": 0}
 
+    # Parse column mapping (format: "source -> target", one per line)
+    col_mapping = _parse_column_mapping(config.get("column_mapping", ""))
+
     count = 0
     for item in (data if isinstance(data, list) else [data]):
+        payload = item if isinstance(item, dict) else {"value": item}
+        if col_mapping:
+            payload = _apply_column_mapping(payload, col_mapping)
         await clickhouse_client.insert_event(
             org_id=context.org_id, channel=table,
-            source="pipeline", payload=item if isinstance(item, dict) else {"value": item}
+            source="pipeline", payload=payload
         )
         count += 1
     return {"stored": count, "table": table}

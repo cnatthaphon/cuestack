@@ -1,11 +1,5 @@
 .jp-SideBar.jp-mod-left{display:none!important}
 .jp-SideBar.jp-mod-right{display:none!important}
 .jp-Launcher{display:none!important}
-/* Hide shutdown button — platform manages Jupyter lifecycle */
-[data-command="hub:logout"]{display:none!important}
-[data-command="hub:control-panel"]{display:none!important}
-/* Hide File menu items users shouldn't use */
-[data-command="filebrowser:open-path"]{display:none!important}
-[data-command="filebrowser:create-main-launcher"]{display:none!important}
-/* Hide shutdown in File menu */
-li[data-command="apputils:shut-down"]{display:none!important}
+#jp-top-panel{display:none!important;height:0!important;min-height:0!important}
+.lm-DockPanel-tabBar{display:none!important}

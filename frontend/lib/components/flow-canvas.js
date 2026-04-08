@@ -423,6 +423,33 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
             );
           }
 
+          if (field.type === 'column-mapping') {
+            return (
+              <Field key={key} label={field.label}>
+                {sourceCols && sourceCols.length > 0 && (
+                  <div style={{ fontSize: 9, color: '#666', background: '#f7f8fa', borderRadius: 4, padding: '4px 6px', marginBottom: 4 }}>
+                    <strong>Available source columns:</strong>{' '}
+                    {sourceCols.map((c, i) => (
+                      <span key={c} style={{ cursor: 'pointer', color: '#2563eb', textDecoration: 'underline' }}
+                        onClick={() => {
+                          if (readOnly) return;
+                          const current = cfg[key] || '';
+                          const line = c + ' -> ' + c;
+                          onUpdate(key, current ? current + '\n' + line : line);
+                        }}>
+                        {c}{i < sourceCols.length - 1 ? ', ' : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <textarea value={value} rows={4} placeholder={field.placeholder || ''}
+                  onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly}
+                  style={{ ...propInput, fontFamily: "monospace", fontSize: 10, minHeight: 60, resize: "vertical" }} />
+                {field.help && <span style={{ fontSize: 9, color: '#999' }}>{field.help}</span>}
+              </Field>
+            );
+          }
+
           if (field.type === 'code') {
             return (
               <Field key={key} label={field.label}>

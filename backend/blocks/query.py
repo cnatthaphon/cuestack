@@ -17,7 +17,7 @@ class QueryBlock(Block):
 
     async def execute(self, ctx: PipelineContext) -> PipelineContext:
         params = ctx.raw_data or {}
-        org_id = ctx.metadata.get("org_id") if ctx.metadata else None
+        org_id = ctx.org_id
 
         if not org_id:
             ctx.errors.append("Query failed: org_id required")

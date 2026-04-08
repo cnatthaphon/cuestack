@@ -63,10 +63,14 @@ function OrgShell({ children }) {
   // Close context menu on outside click or scroll
   useEffect(() => {
     if (!ctxMenu) return;
-    const close = () => setCtxMenu(null);
-    document.addEventListener("mousedown", (e) => { if (ctxRef.current && !ctxRef.current.contains(e.target)) close(); });
-    document.addEventListener("scroll", close, true);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("scroll", close, true); };
+    const handleClick = (e) => { if (ctxRef.current && !ctxRef.current.contains(e.target)) setCtxMenu(null); };
+    const handleScroll = () => setCtxMenu(null);
+    // Use setTimeout to avoid closing immediately on the same click that opened it
+    const timer = setTimeout(() => {
+      document.addEventListener("click", handleClick);
+      document.addEventListener("scroll", handleScroll, true);
+    }, 10);
+    return () => { clearTimeout(timer); document.removeEventListener("click", handleClick); document.removeEventListener("scroll", handleScroll, true); };
   }, [ctxMenu]);
 
   const onPageContext = useCallback((e, page) => {
@@ -223,8 +227,24 @@ function OrgShell({ children }) {
           })}
         </div>
 
-        {/* Footer */}
+        {/* Footer — type legend + plan */}
         <div style={{ padding: collapsed ? "10px 6px" : "10px 14px", borderTop: "1px solid #1e293b", flexShrink: 0 }}>
+          {!collapsed && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 8px", marginBottom: 6, justifyContent: "center" }}>
+              {[
+                { type: "dashboard", color: "#10b981", label: "Dashboard" },
+                { type: "notebook", color: "#f59e0b", label: "Notebook" },
+                { type: "visual", color: "#8b5cf6", label: "Flow" },
+                { type: "python", color: "#3b82f6", label: "Python" },
+                { type: "html", color: "#e11d48", label: "HTML" },
+              ].map((t) => (
+                <span key={t.type} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, color: "#64748b" }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: t.color, display: "inline-block" }} />
+                  {t.label}
+                </span>
+              ))}
+            </div>
+          )}
           {!collapsed && org && (
             <div style={{ fontSize: 10, color: "#475569", textAlign: "center" }}>
               {org.plan} plan
@@ -286,11 +306,11 @@ function OrgShell({ children }) {
         <CreatePageDialog
           type={createDialog.type}
           onClose={() => setCreateDialog(null)}
-          onCreate={async (name) => {
+          onCreate={async (name, icon) => {
             const isFolder = createDialog.type === "folder";
             const body = isFolder
               ? { name, entry_type: "folder" }
-              : { name, page_type: createDialog.type };
+              : { name, page_type: createDialog.type, icon };
             const res = await fetch("/api/pages", {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
@@ -338,16 +358,20 @@ const TYPE_INFO = {
 
 const ctxMenuItem = { display: "block", width: "100%", padding: "7px 14px", background: "none", border: "none", textAlign: "left", cursor: "pointer", fontSize: 13, color: "#333" };
 
+const CREATE_ICONS = ["📊", "📈", "📉", "📓", "🐍", "💻", "🧩", "🎨", "📡", "🌡️", "💡", "🔌", "🔬", "🧪", "🧮", "🎯", "✅", "⚡", "🔔", "🚀", "🔥", "💎", "⭐", "🌐"];
+
 function CreatePageDialog({ type, onClose, onCreate }) {
   const [name, setName] = useState("");
+  const [icon, setIcon] = useState("");
   const [creating, setCreating] = useState(false);
   const info = TYPE_INFO[type] || TYPE_INFO.dashboard;
+  const selectedIcon = icon || info.icon;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
     setCreating(true);
-    await onCreate(name.trim());
+    await onCreate(name.trim(), selectedIcon);
   };
 
   return (
@@ -355,11 +379,20 @@ function CreatePageDialog({ type, onClose, onCreate }) {
       onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 400, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <span style={{ fontSize: 28 }}>{info.icon}</span>
+          <span style={{ fontSize: 28 }}>{selectedIcon}</span>
           <div>
             <h2 style={{ margin: 0, fontSize: 16, color: "#1e293b" }}>{info.label}</h2>
             <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>{info.desc}</p>
           </div>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 2, marginBottom: 12 }}>
+          {CREATE_ICONS.map((ic) => (
+            <button key={ic} type="button" onClick={() => setIcon(ic)}
+              style={{
+                fontSize: 16, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                background: ic === selectedIcon ? "#e0e7ff" : "transparent", border: "none", borderRadius: 6, cursor: "pointer",
+              }}>{ic}</button>
+          ))}
         </div>
         <form onSubmit={handleSubmit}>
           <input
@@ -409,6 +442,7 @@ function PinnedItem({ page, pathname, isOrg }) {
   );
 }
 
+// Single page item in sidebar — with hover "..." menu button
 // Page tree — recursive folder/page structure with drag indicators
 function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh, dragOverTarget, onDragOverItem, onDragLeaveItem, onPageContext }) {
   const children = items.filter((i) => (i.parent_id || null) === parentId);
@@ -417,6 +451,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
   }
 
   const PAGE_ICONS = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}", python: "\u{1F40D}" };
+  const TYPE_COLORS = { notebook: "#f59e0b", python: "#3b82f6", visual: "#8b5cf6", dashboard: "#10b981", html: "#e11d48" };
 
   return children.map((item) => {
     const isFolder = item.entry_type === "folder";
@@ -474,6 +509,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
           borderTop: isDragOver ? "2px solid #3b82f6" : "2px solid transparent",
           transition: "all 0.1s", cursor: "pointer",
         }}>
+        <span style={{ width: 4, height: 4, borderRadius: "50%", background: TYPE_COLORS[item.page_type] || "#6b7280", flexShrink: 0 }} title={item.page_type} />
         <span style={{ fontSize: 11 }}>{item.icon || PAGE_ICONS[item.page_type] || "\u{1F4CA}"}</span>
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
         {item.visibility !== "private" && <span style={{ fontSize: 8, color: "#475569" }}>{item.visibility === "org" ? "\u{1F465}" : "\u{1F310}"}</span>}

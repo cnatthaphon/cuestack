@@ -8,4 +8,7 @@ if [ ! -f "$DYNSEC_FILE" ]; then
     echo "Dynsec initialized with admin user"
 fi
 
+# Ensure mosquitto user can read the dynsec file (may be created as root)
+chown mosquitto:mosquitto "$DYNSEC_FILE" 2>/dev/null || true
+
 exec mosquitto -c /mosquitto/config/mosquitto.conf

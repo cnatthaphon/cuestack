@@ -5,6 +5,45 @@ import { useParams, useRouter } from "next/navigation";
 import { useUser } from "../../../../lib/user-context.js";
 import FlowCanvas from "../../../../lib/components/flow-canvas.js";
 
+// ─── Icon Picker ─────────────────────────────────────────────────────────────
+const ICON_GROUPS = {
+  "Data": ["📊", "📈", "📉", "🗂️", "💾", "🗃️", "📋", "📑"],
+  "Code": ["🐍", "📓", "💻", "🖥️", "⚙️", "🔧", "🛠️", "📦"],
+  "Visual": ["🧩", "🎨", "🖼️", "📐", "🔮", "🌐", "🗺️", "📍"],
+  "IoT": ["📡", "🌡️", "💡", "🔌", "🔋", "📱", "🏭", "🤖"],
+  "Analytics": ["🔬", "🧪", "🧮", "📏", "🎯", "🔍", "📊", "🧠"],
+  "Status": ["✅", "⚡", "🔔", "⏰", "🚀", "🔥", "💎", "⭐"],
+};
+
+function IconPicker({ currentIcon, onSelect, pageType }) {
+  return (
+    <div style={{
+      position: "absolute", top: "100%", left: 0, zIndex: 50, background: "#fff",
+      borderRadius: 10, boxShadow: "0 8px 30px rgba(0,0,0,0.15)", padding: 12,
+      width: 260, border: "1px solid #e2e8f0",
+    }}>
+      {Object.entries(ICON_GROUPS).map(([group, icons]) => (
+        <div key={group}>
+          <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, margin: "6px 0 3px", textTransform: "uppercase" }}>{group}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+            {icons.map((icon) => (
+              <button key={icon} onClick={() => onSelect(icon)}
+                style={{
+                  fontSize: 18, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center",
+                  background: icon === currentIcon ? "#e0e7ff" : "transparent", border: "none", borderRadius: 6,
+                  cursor: "pointer", transition: "background 0.1s",
+                }}
+                onMouseEnter={(e) => e.target.style.background = "#f1f5f9"}
+                onMouseLeave={(e) => e.target.style.background = icon === currentIcon ? "#e0e7ff" : "transparent"}
+              >{icon}</button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Page shell (shared across all page types) ───────────────────────────────
 export default function PageViewer() {
   const { user, refresh, hasPermission } = useUser();
@@ -81,6 +120,26 @@ export default function PageViewer() {
     refresh();
   };
 
+  const [showIconPicker, setShowIconPicker] = useState(false);
+  const iconPickerRef = useRef(null);
+
+  // Close icon picker on outside click
+  useEffect(() => {
+    const handler = (e) => { if (iconPickerRef.current && !iconPickerRef.current.contains(e.target)) setShowIconPicker(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const updateIcon = async (icon) => {
+    await fetch(`/api/pages/${params.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ icon }),
+    });
+    setShowIconPicker(false);
+    loadPage();
+    refresh();
+  };
+
   if (!user || !page) return <div style={{ padding: 32, color: "#666" }}>Loading...</div>;
   const isOwner = page.user_id === user.id;
   // Schedule only for executable types (notebook, visual). Not for dashboard/html.
@@ -108,9 +167,22 @@ export default function PageViewer() {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 24 }}>{page.icon}</span>
+          <div style={{ position: "relative" }} ref={iconPickerRef}>
+            <button
+              onClick={() => isOwner && setShowIconPicker(!showIconPicker)}
+              title={isOwner ? "Change icon" : ""}
+              style={{ fontSize: 24, background: "none", border: "none", cursor: isOwner ? "pointer" : "default", padding: 0, lineHeight: 1 }}
+            >{page.icon}</button>
+            {showIconPicker && <IconPicker currentIcon={page.icon} onSelect={updateIcon} pageType={page.page_type} />}
+          </div>
           <h1 style={{ margin: 0, fontSize: 20 }}>{page.name}</h1>
-          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#e8f4ff", color: "#0070f3" }}>
+          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, fontWeight: 600, ...({
+            notebook: { background: "#fef3c7", color: "#92400e" },
+            python: { background: "#dbeafe", color: "#1e40af" },
+            visual: { background: "#ede9fe", color: "#5b21b6" },
+            dashboard: { background: "#d1fae5", color: "#065f46" },
+            html: { background: "#ffe4e6", color: "#9f1239" },
+          }[page.page_type] || { background: "#f3f4f6", color: "#374151" }) }}>
             {page.page_type}
           </span>
           {isService && (
@@ -229,14 +301,16 @@ function hasSchedule(page) {
 }
 
 const CRON_PRESETS = [
+  { label: "Every 1 min", value: "* * * * *" },
   { label: "Every 5 min", value: "*/5 * * * *" },
+  { label: "Every 10 min", value: "*/10 * * * *" },
   { label: "Every 15 min", value: "*/15 * * * *" },
   { label: "Every 30 min", value: "*/30 * * * *" },
   { label: "Every hour", value: "0 * * * *" },
   { label: "Every 6 hours", value: "0 */6 * * *" },
-  { label: "Daily at midnight", value: "0 0 * * *" },
-  { label: "Daily at 8 AM", value: "0 8 * * *" },
-  { label: "Weekly (Monday)", value: "0 0 * * 1" },
+  { label: "Daily midnight", value: "0 0 * * *" },
+  { label: "Daily 8 AM", value: "0 8 * * *" },
+  { label: "Weekly Mon", value: "0 0 * * 1" },
 ];
 
 function getScheduleLabel(page) {
@@ -288,63 +362,89 @@ function ScheduleDialog({ page, saveConfig, onReload, onClose }) {
     onClose();
   };
 
+  const quickSave = async (cronValue, isEnabled = true) => {
+    setSaving(true);
+    setCron(cronValue);
+    setEnabled(isEnabled);
+    if (cronValue && isEnabled) {
+      // Reset counter when cron changes
+      const resetCount = cronValue !== existing.cron;
+      const newConfig = { ...cfg, schedule: {
+        cron: cronValue, enabled: true, updated_at: new Date().toISOString(),
+        ...(resetCount ? {} : { run_count: existing.run_count || 0, last_run: existing.last_run, last_status: existing.last_status }),
+      }};
+      await saveConfig(newConfig);
+    } else {
+      const newConfig = { ...cfg };
+      delete newConfig.schedule;
+      await saveConfig(newConfig);
+    }
+    setSaving(false);
+    onReload();
+  };
+
+  const toggleEnabled = async () => {
+    if (enabled && cron) {
+      await quickSave(cron, false);
+    } else if (cron) {
+      await quickSave(cron, true);
+    }
+  };
+
   return (
     <div style={{ marginBottom: 16, padding: 16, background: "#fff", borderRadius: 8, border: "2px solid #e65100" }}>
-      <h3 style={{ margin: "0 0 12px", fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
-        {"\u23F0"} Schedule Task
-      </h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>{"\u23F0"} Schedule — {page.page_type}</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {cron && (
+            <div onClick={toggleEnabled} style={{
+              width: 40, height: 22, borderRadius: 11, cursor: "pointer", transition: "background 0.2s",
+              background: enabled && existing.cron ? "#38a169" : "#cbd5e1", position: "relative",
+            }}>
+              <div style={{
+                width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2,
+                left: enabled && existing.cron ? 20 : 2, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+              }} />
+            </div>
+          )}
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#999" }}>{"\u2715"}</button>
+        </div>
+      </div>
 
-      <p style={{ fontSize: 12, color: "#666", margin: "0 0 12px" }}>
-        Run this {page.page_type} automatically on a schedule.
-      </p>
+      {/* Cron input */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+        <input
+          value={cron}
+          onChange={(e) => setCron(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && cron.trim()) quickSave(cron.trim()); }}
+          placeholder="* * * * *"
+          style={{ flex: 1, padding: 8, border: "1px solid #ddd", borderRadius: 4, fontSize: 14, fontFamily: "monospace" }}
+        />
+      </div>
 
-      {/* Preset buttons */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+      {/* Preset buttons — click to fill and save */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
         {CRON_PRESETS.map((p) => (
-          <button key={p.value} onClick={() => { setCron(p.value); setCustomCron(""); }} style={{
-            padding: "6px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer",
-            border: cron === p.value ? "2px solid #e65100" : "1px solid #ddd",
-            background: cron === p.value ? "#fff3e0" : "#fff", fontWeight: cron === p.value ? 600 : 400,
+          <button key={p.value} onClick={() => quickSave(p.value)} disabled={saving} style={{
+            padding: "4px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer",
+            border: cron === p.value && enabled ? "2px solid #e65100" : "1px solid #e2e8f0",
+            background: cron === p.value && enabled ? "#fff3e0" : "#fafafa", fontWeight: cron === p.value ? 600 : 400,
           }}>
             {p.label}
           </button>
         ))}
       </div>
 
-      {/* Custom cron */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
-        <input
-          placeholder="Custom cron: * * * * *"
-          value={!isPreset ? cron : customCron}
-          onChange={(e) => { setCustomCron(e.target.value); setCron(e.target.value); }}
-          style={{ flex: 1, padding: 8, border: "1px solid #ddd", borderRadius: 4, fontSize: 13, fontFamily: "monospace" }}
-        />
-        <a href="https://crontab.guru/" target="_blank" rel="noopener" style={{ fontSize: 11, color: "#0070f3" }}>crontab.guru</a>
-      </div>
-
-      {/* Enable/disable toggle */}
-      {cron && (
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, cursor: "pointer" }}>
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          Schedule enabled
-        </label>
-      )}
-
-      {/* Current schedule info */}
+      {/* Status */}
       {existing.cron && (
-        <div style={{ fontSize: 12, color: "#666", marginBottom: 12, padding: 8, background: "#f7f7f7", borderRadius: 4 }}>
-          Current: <code>{existing.cron}</code>
-          {existing.last_run && <span> &middot; Last run: {new Date(existing.last_run).toLocaleString()}</span>}
-          {existing.next_run && <span> &middot; Next: {new Date(existing.next_run).toLocaleString()}</span>}
+        <div style={{ fontSize: 11, color: "#666", padding: 6, background: "#f7f7f7", borderRadius: 4 }}>
+          {enabled ? "\u{1F7E2}" : "\u26AA"} <code>{existing.cron}</code>
+          {existing.last_run && <span> · Last: {new Date(existing.last_run).toLocaleString()}</span>}
+          {existing.last_status && <span> · <span style={{ color: existing.last_status === "success" ? "#38a169" : "#e53e3e" }}>{existing.last_status}</span></span>}
+          {existing.next_run && <span> · Next: {new Date(existing.next_run).toLocaleString()}</span>}
+          {existing.run_count > 0 && <span> · {existing.run_count} runs</span>}
         </div>
       )}
-
-      {/* Actions */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={save} disabled={saving} style={btnBlue}>{saving ? "Saving..." : cron ? "Save Schedule" : "Clear Schedule"}</button>
-        {existing.cron && <button onClick={remove} disabled={saving} style={{ ...btnGray, color: "#e53e3e" }}>Remove Schedule</button>}
-        <button onClick={onClose} style={btnGray}>Cancel</button>
-      </div>
     </div>
   );
 }
@@ -864,7 +964,7 @@ function renderOutput(output) {
   return null;
 }
 
-function NotebookRenderer({ page, isOwner, onReload }) {
+function NotebookRenderer({ page, isOwner, saveConfig, onReload }) {
   const cfg = typeof page.config === "string" ? JSON.parse(page.config) : (page.config || {});
   const schedule = cfg.schedule;
   const lastRun = schedule?.last_run;
@@ -881,6 +981,9 @@ function NotebookRenderer({ page, isOwner, onReload }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [collapsedCells, setCollapsedCells] = useState({});
+  // Hide code: non-owners always start hidden, owners respect saved preference
+  const defaultHide = !isOwner || cfg.hide_code === true;
+  const [hideCode, setHideCode] = useState(defaultHide);
 
   const nbName = page.slug || page.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
@@ -915,15 +1018,11 @@ function NotebookRenderer({ page, isOwner, onReload }) {
     setLoading(false);
   };
 
-  // Done: force save in Jupyter, pull content → DB, back to preview
-  const saveAndClose = async () => {
+  // Pull notebook content from Jupyter → DB (saves current state to platform)
+  const syncToDb = async () => {
     setSaving(true);
     setError("");
     try {
-      // Wait for Jupyter to auto-save (notebooks auto-save every few seconds)
-      await new Promise(r => setTimeout(r, 2000));
-
-      // Pull from Jupyter to DB (server handles file path with user ID)
       const res = await fetch(`/api/notebooks/${encodeURIComponent(nbName)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -931,12 +1030,19 @@ function NotebookRenderer({ page, isOwner, onReload }) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || "Failed to save");
+        setError(data.error || "Failed to sync");
       }
     } catch {
-      setError("Failed to save notebook");
+      setError("Failed to sync notebook");
     }
     setSaving(false);
+  };
+
+  // Close editor — confirm, sync to DB, return to preview
+  const closeEditor = async () => {
+    const ok = confirm("Close notebook?\n\nMake sure you pressed Ctrl+S first — unsaved edits won't be synced.");
+    if (!ok) return;
+    await syncToDb();
     setEditing(false);
     if (onReload) onReload();
   };
@@ -945,23 +1051,24 @@ function NotebookRenderer({ page, isOwner, onReload }) {
     setCollapsedCells((prev) => ({ ...prev, [idx]: !prev[idx] }));
   };
 
-  // Jupyter editor (full-screen iframe)
+  // Jupyter editor — full viewport overlay (hides sidebar + header completely)
   if (editing && jupyterUrl) {
     return (
-      <div style={{ margin: "-32px -32px 0", display: "flex", flexDirection: "column", height: "calc(100vh - 49px)" }}>
+      <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", background: "#1a1a2e" }}>
         <div style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
-          padding: "8px 16px", background: "#1a1a2e", color: "#fff", fontSize: 13, flexShrink: 0,
+          padding: "6px 16px", background: "#1a1a2e", color: "#fff", fontSize: 13, flexShrink: 0,
+          borderBottom: "1px solid #2d2d44",
         }}>
-          <div>
-            <strong>{page.icon} {page.name}</strong>
-            <span style={{ color: "#888", marginLeft: 12 }}>Editing in Jupyter</span>
-            {schedule?.cron && <span style={{ marginLeft: 12, color: "#fbbf24" }}>{"\u23F0"} {schedule.cron}</span>}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16 }}>{page.icon}</span>
+            <strong>{page.name}</strong>
+            {schedule?.cron && <span style={{ color: "#fbbf24", fontSize: 11 }}>{"\u23F0"} {schedule.cron}</span>}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => window.open(jupyterUrl, "_blank")} style={toolbarBtn}>Open in new tab</button>
-            <button onClick={saveAndClose} disabled={saving} style={{ ...toolbarBtn, background: "#38a169" }}>
-              {saving ? "Saving..." : "Save & Close"}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "#64748b" }}>Ctrl+S to save</span>
+            <button onClick={closeEditor} disabled={saving} style={{ ...toolbarBtn, background: saving ? "#64748b" : "#ef4444" }}>
+              {saving ? "Syncing..." : "Close"}
             </button>
           </div>
         </div>
@@ -980,6 +1087,16 @@ function NotebookRenderer({ page, isOwner, onReload }) {
           </button>
         )}
         {error && <span style={{ color: "#e53e3e", fontSize: 13 }}>{error}</span>}
+        {cells.length > 0 && (
+          <button onClick={() => {
+            const next = !hideCode;
+            setHideCode(next);
+            // Owner: save preference to page config
+            if (isOwner) saveConfig({ ...cfg, hide_code: next });
+          }} style={{ ...toolbarBtn, background: hideCode ? "#38a169" : "#e2e8f0", color: hideCode ? "#fff" : "#333" }}>
+            {hideCode ? "Show Code" : "Hide Code"}
+          </button>
+        )}
         {cells.length > 0 && <span style={{ fontSize: 11, color: "#999" }}>{cells.length} cells</span>}
       </div>
 
@@ -988,9 +1105,10 @@ function NotebookRenderer({ page, isOwner, onReload }) {
         <div style={{ marginBottom: 12, padding: 10, background: "#fffbeb", borderRadius: 6, border: "1px solid #fde68a", fontSize: 12 }}>
           <strong>{"\u23F0"} Scheduled:</strong> {schedule.cron}
           {schedule.enabled === false && <span style={{ color: "#999" }}> (paused)</span>}
-          {lastRun && <span> &middot; Last run: {new Date(lastRun).toLocaleString()}</span>}
-          {lastStatus && <span> &middot; <span style={{ color: lastStatus === "success" ? "#38a169" : "#e53e3e" }}>{lastStatus}</span></span>}
-          {schedule.run_count > 0 && <span> &middot; {schedule.run_count} runs</span>}
+          {lastRun && <span> · Last: {new Date(lastRun).toLocaleString()}</span>}
+          {lastStatus && <span> · <span style={{ color: lastStatus === "success" ? "#38a169" : "#e53e3e" }}>{lastStatus}</span></span>}
+          {schedule.next_run && <span> · Next: {new Date(schedule.next_run).toLocaleString()}</span>}
+          {schedule.run_count > 0 && <span> · {schedule.run_count} runs</span>}
         </div>
       )}
 
@@ -1020,27 +1138,32 @@ function NotebookRenderer({ page, isOwner, onReload }) {
             }
 
             if (cellType === "code") {
+              // When code is hidden, skip cells with no outputs
+              if (hideCode && outputs.length === 0) return null;
               const sourceLines = source.split("\n");
               const isLong = sourceLines.length > 15;
+              const showSource = !hideCode;
               return (
                 <div key={idx} style={{ background: "#fff", borderLeft: "3px solid #38a169", borderRadius: 4, overflow: "hidden" }}>
-                  <div style={{ display: "flex", alignItems: "center", padding: "4px 12px", background: "#f8f9fa", fontSize: 11, color: "#888", gap: 8 }}>
-                    <span style={{ fontFamily: "monospace", minWidth: 40 }}>[{execCount ?? " "}]:</span>
-                    <span>{sourceLines.length} lines</span>
-                    {isLong && (
-                      <button onClick={() => toggleCell(idx)} style={{ background: "none", border: "none", color: "#0070f3", cursor: "pointer", fontSize: 11, padding: 0 }}>
-                        {isCollapsed ? "Show code" : "Hide code"}
-                      </button>
-                    )}
-                  </div>
-                  {!(isLong && isCollapsed) && (
+                  {showSource && (
+                    <div style={{ display: "flex", alignItems: "center", padding: "4px 12px", background: "#f8f9fa", fontSize: 11, color: "#888", gap: 8 }}>
+                      <span style={{ fontFamily: "monospace", minWidth: 40 }}>[{execCount ?? " "}]:</span>
+                      <span>{sourceLines.length} lines</span>
+                      {isLong && (
+                        <button onClick={() => toggleCell(idx)} style={{ background: "none", border: "none", color: "#0070f3", cursor: "pointer", fontSize: 11, padding: 0 }}>
+                          {isCollapsed ? "Show code" : "Hide code"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {showSource && !(isLong && isCollapsed) && (
                     <pre style={{
                       margin: 0, padding: "8px 12px 8px 52px", fontFamily: "monospace", fontSize: 12.5, lineHeight: 1.5,
                       background: "#f7f7f7", overflow: "auto", maxHeight: 400, color: "#1e1e1e", whiteSpace: "pre-wrap", wordBreak: "break-word",
                     }}>{source}</pre>
                   )}
                   {outputs.length > 0 && (
-                    <div style={{ borderTop: "1px solid #eee" }}>
+                    <div style={{ borderTop: showSource ? "1px solid #eee" : "none" }}>
                       {outputs.map((out, oi) => (
                         <div key={oi}>{renderOutput(out)}</div>
                       ))}

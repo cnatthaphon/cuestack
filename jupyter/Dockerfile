@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir \
     jupyterlab==4.* \
-    jupyter-server-proxy \
     psycopg2-binary \
     sqlalchemy \
     pandas \
@@ -46,18 +45,75 @@ RUN mkdir -p /home/jupyter/.jupyter/lab/user-settings/@jupyterlab/application-ex
     mkdir -p /usr/local/share/jupyter/lab/settings && \
     echo '{ "@jupyterlab/apputils-extension:notification": { "fetchNews": "false" } }' > /usr/local/share/jupyter/lab/settings/overrides.json
 
-# 2. Inject CSS to hide file browser/menu/shutdown
+# 1b. Disable hub-extension (removes Log Out / Shutdown from File menu)
+RUN mkdir -p /usr/local/etc/jupyter/labconfig && \
+    echo '{"disabledExtensions":{"@jupyterlab/hub-extension:plugin":true,"@jupyterlab/hub-extension:menu":true}}' \
+    > /usr/local/etc/jupyter/labconfig/page_config.json
+
+# 2. Inject CSS + JS to hide file browser/menu/hub items
 COPY hide-ui.css /tmp/hide-ui.css
 RUN python3 << 'PYEOF'
 import glob, os
 css = open('/tmp/hide-ui.css').read().replace('\n', ' ')
-tag = '<style>' + css + '</style>'
+js = """
+(function(){
+  var cmds = ['hub:logout','hub:control-panel','apputils:shut-down',
+              'filebrowser:open-path','filebrowser:create-main-launcher',
+              'filebrowser:open','filebrowser:save-as',
+              'docmanager:rename','docmanager:clone','docmanager:new-untitled',
+              'notebook:create-new','launcher:create',
+              'settingeditor:open','help:launch-classic-notebook',
+              'application:reset-layout'];
+  var hideLabels = ['log out','shut down','shutdown','hub control panel',
+                    'new notebook','new launcher','open from path',
+                    'save notebook as','save as','rename notebook','rename',
+                    'make a copy','new file','new','settings editor',
+                    'launch classic notebook','advanced settings editor'];
+  function hide(){
+    cmds.forEach(function(c){
+      document.querySelectorAll('[data-command="'+c+'"]').forEach(function(el){
+        el.style.display='none';
+      });
+    });
+    document.querySelectorAll('.lm-Menu-item').forEach(function(el){
+      var label = el.textContent.trim().toLowerCase();
+      if(hideLabels.indexOf(label)!==-1){ el.style.display='none'; }
+    });
+    document.querySelectorAll('.lm-MenuBar-item').forEach(function(el){
+      var label = el.textContent.trim().toLowerCase();
+      if(label==='settings'){ el.style.display='none'; }
+    });
+    var tp=document.getElementById('jp-top-panel');
+    if(tp){tp.style.display='none';tp.style.height='0';tp.style.minHeight='0';}
+    var mp=document.getElementById('jp-menu-panel');
+    if(mp && parseInt(mp.style.top)>0) mp.style.top='0px';
+    var mc=document.getElementById('jp-main-content-panel');
+    if(mc && parseInt(mc.style.top)>28) mc.style.top='28px';
+  }
+  function start(){
+    if(document.body){
+      new MutationObserver(hide).observe(document.body,{childList:true,subtree:true});
+    } else {
+      document.addEventListener('DOMContentLoaded',function(){
+        new MutationObserver(hide).observe(document.body,{childList:true,subtree:true});
+      });
+    }
+  }
+  start();
+  setInterval(hide, 2000);
+})();
+"""
+tag = '<style>' + css + '</style><script>' + js.replace('\n',' ') + '</script>'
 targets = glob.glob('/usr/local/**/index.html', recursive=True)
 for path in targets:
     if 'jupyter' not in path.lower():
         continue
     html = open(path).read()
-    if '</head>' in html and 'jp-SideBar' not in html:
+    if '</head>' in html:
+        # Remove old injection if present
+        if 'jp-SideBar' in html:
+            import re
+            html = re.sub(r'<style>[^<]*jp-SideBar[^<]*</style>(<script>[^<]*</script>)?', '', html)
         html = html.replace('</head>', tag + '</head>')
         open(path, 'w').write(html)
         print(f'Injected into {path}')

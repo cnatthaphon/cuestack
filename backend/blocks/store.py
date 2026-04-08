@@ -33,9 +33,9 @@ class StoreBlock(Block):
             rows = []
             for record in ctx.records:
                 ts = record.get("timestamp", datetime.now(timezone.utc).isoformat())
-                org_id = ctx.metadata.get("org_id", "00000000-0000-0000-0000-000000000000")
-                channel = ctx.metadata.get("channel", "default")
-                source = ctx.metadata.get("source", "pipeline")
+                org_id = ctx.org_id or "00000000-0000-0000-0000-000000000000"
+                channel = (ctx.raw_data or {}).get("channel", "default")
+                source = (ctx.raw_data or {}).get("source", "pipeline")
                 payload = json.dumps({k: v for k, v in record.items() if k != "timestamp"})
                 rows.append(f"('{ts}', '{org_id}', '{channel}', '{source}', 'data', '{payload}', '{{}}')")
 

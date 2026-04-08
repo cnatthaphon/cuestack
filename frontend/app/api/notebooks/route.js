@@ -25,11 +25,15 @@ async function ensureServerRunning(orgShort) {
   const apiToken = process.env.JUPYTERHUB_API_TOKEN || "";
   const headers = apiToken ? { Authorization: `token ${apiToken}` } : {};
 
-  // Check server status
+  // Check server status — create user if not exists
   const statusRes = await fetch(`${JUPYTERHUB_INTERNAL}/jupyter/hub/api/users/${orgShort}`, { headers });
   if (statusRes.status === 404) {
-    // User doesn't exist in JupyterHub yet — create via spawn
-    // The user will be auto-created on first login/spawn
+    // User doesn't exist in JupyterHub yet — create them
+    await fetch(`${JUPYTERHUB_INTERNAL}/jupyter/hub/api/users/${orgShort}`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
   }
 
   // Request server start (idempotent — no-op if already running)
@@ -238,7 +242,7 @@ function createStarterNotebook(token) {
         source: [
           "import os\n",
           `os.environ["CUESTACK_TOKEN"] = "${token}"\n`,
-          `os.environ["CUESTACK_URL"] = "http://nginx:80"\n`,
+          `os.environ["CUESTACK_URL"] = "http://backend:8000"\n`,
           "\n",
           "from cuestack import connect\n",
           "client = connect()",

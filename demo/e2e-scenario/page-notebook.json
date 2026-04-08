@@ -34,11 +34,13 @@
           "source": [
             "# Step 1: Connect to CueStack\n",
             "import os\n",
+            "from datetime import datetime\n",
             "os.environ[\"CUESTACK_TOKEN\"] = \"\"  # Auto-refreshed on open\n",
             "\n",
             "from cuestack import connect\n",
             "client = connect()\n",
             "user = client.me()\n",
+            "print(f\"Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\")\n",
             "print(f\"Connected as: {user['user']['username']}\")\n",
             "print(f\"Organization: {user['org']['name']} ({user['org']['plan']})\")\n",
             "print(f\"Permissions: {len(user['user']['permissions'])} granted\")"
@@ -113,8 +115,7 @@
           "cell_type": "code",
           "source": [
             "# Step 4: Temperature time-series\n",
-            "import matplotlib\n",
-            "matplotlib.use('Agg')\n",
+            "%matplotlib inline\n",
             "import matplotlib.pyplot as plt\n",
             "import matplotlib.dates as mdates\n",
             "\n",

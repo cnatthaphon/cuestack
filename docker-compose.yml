@@ -21,6 +21,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-iot}:${POSTGRES_PASSWORD:-iot123}@db:5432/${POSTGRES_DB:-iotstack}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
       JUPYTER_URL: http://jupyterhub:8000
+      JUPYTERHUB_API_TOKEN: ${JUPYTERHUB_API_TOKEN:-cuestack-hub-api-token-change-in-prod}
       SCHEDULER_POLL_INTERVAL: ${SCHEDULER_POLL_INTERVAL:-60}
       MQTT_BROKER: mqtt
       MQTT_PORT: 1883
@@ -41,6 +42,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
       interval: 30s

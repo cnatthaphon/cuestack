@@ -358,11 +358,11 @@
           "label": "Table"
         },
         {
-          "key": "mapping",
-          "type": "text",
-          "label": "Column Mapping (JSON)",
-          "placeholder": "{\"temp\": \"temperature\"}",
-          "help": "Map payload fields to table columns. Leave empty for auto-match."
+          "key": "column_mapping",
+          "type": "column-mapping",
+          "label": "Column Mapping",
+          "placeholder": "source_col -> target_col\ntemp -> temperature\nrh -> humidity",
+          "help": "One mapping per line: source -> target. Leave empty for auto-match (source columns pass through as-is)."
         }
       ],
       "inputs": [
@@ -779,6 +779,13 @@
       "component": "textarea",
       "rows": 10,
       "monospace": true
+    },
+    "column-mapping": {
+      "component": "textarea",
+      "rows": 4,
+      "monospace": true,
+      "showSourceCols": true,
+      "help": "One mapping per line: source -> target"
     },
     "toggle": {
       "component": "checkbox"
