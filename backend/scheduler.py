@@ -540,7 +540,7 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
                                 src)
                             updated = re.sub(
                                 r'os\.environ\["CUESTACK_URL"\]\s*=\s*"[^"]*"',
-                                'os.environ["CUESTACK_URL"] = "http://backend:8000"',
+                                'os.environ["CUESTACK_URL"] = "http://nginx:80"',
                                 updated)
                             cell["source"] = updated.splitlines(True)
                             break

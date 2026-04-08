@@ -128,7 +128,7 @@ c.DockerSpawner.volumes = {
 
 # Base environment for all containers
 c.DockerSpawner.environment = {
-    'CUESTACK_URL': 'http://backend:8000',
+    'CUESTACK_URL': 'http://nginx:80',
 }
 
 # ---------------------------------------------------------------------------

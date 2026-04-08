@@ -242,7 +242,7 @@ function createStarterNotebook(token) {
         source: [
           "import os\n",
           `os.environ["CUESTACK_TOKEN"] = "${token}"\n`,
-          `os.environ["CUESTACK_URL"] = "http://backend:8000"\n`,
+          `os.environ["CUESTACK_URL"] = "http://nginx:80"\n`,
           "\n",
           "from cuestack import connect\n",
           "client = connect()",
