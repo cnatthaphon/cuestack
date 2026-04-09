@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../../lib/auth.js";
 import { query } from "../../../../lib/db.js";
 import { hasPermission as checkPerm } from "../../../../lib/permissions.js";
+import { getFeatureConfig } from "../../../../lib/features.js";
 
 // GET — get page
 export async function GET(request, { params }) {
@@ -46,11 +47,42 @@ export async function PATCH(request, { params }) {
     if (body.config.is_service !== undefined) {
       const canManageServices = user.is_super_admin || await checkPerm(user, "services.manage");
       if (!canManageServices) return NextResponse.json({ error: "Permission denied: services.manage required" }, { status: 403 });
+
+      // Quota gate: enforce max_services from org feature config
+      if (body.config.is_service === true) {
+        const svcConfig = await getFeatureConfig(user.org_id, "python_services");
+        const maxServices = svcConfig?.max_services || 50;
+        const existing = await query(
+          `SELECT COUNT(*) as cnt FROM user_pages
+           WHERE org_id = $1 AND id != $2 AND entry_type = 'page'
+             AND (config->>'is_service')::text = 'true'`,
+          [user.org_id, id]
+        );
+        if (parseInt(existing.rows[0]?.cnt || 0) >= maxServices) {
+          return NextResponse.json({ error: `Service limit reached (${maxServices}). Stop other services or contact admin.` }, { status: 429 });
+        }
+      }
     }
     // Permission gate: setting schedule requires pages.schedule
     if (body.config.schedule !== undefined) {
       const canSchedule = user.is_super_admin || await checkPerm(user, "pages.schedule");
       if (!canSchedule) return NextResponse.json({ error: "Permission denied: pages.schedule required" }, { status: 403 });
+
+      // Quota gate: enforce max_schedules from org feature config
+      if (body.config.schedule.cron && body.config.schedule.enabled !== false) {
+        const nbConfig = await getFeatureConfig(user.org_id, "notebooks");
+        const maxSchedules = nbConfig?.max_schedules || 100;
+        const existing = await query(
+          `SELECT COUNT(*) as cnt FROM user_pages
+           WHERE org_id = $1 AND id != $2 AND entry_type = 'page'
+             AND config->'schedule'->>'cron' IS NOT NULL
+             AND (config->'schedule'->>'enabled')::text != 'false'`,
+          [user.org_id, id]
+        );
+        if (parseInt(existing.rows[0]?.cnt || 0) >= maxSchedules) {
+          return NextResponse.json({ error: `Schedule limit reached (${maxSchedules}). Disable other schedules or contact admin.` }, { status: 429 });
+        }
+      }
     }
     updates.push(`config = $${i}`); values.push(JSON.stringify(body.config)); i++;
   }
