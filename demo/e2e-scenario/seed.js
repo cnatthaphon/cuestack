@@ -253,14 +253,11 @@ async function seed() {
   }
 
   // Step 9: Create pages from JSON configs
-  const pages = [
-    { file: "page-simulator.json", sort: 1 },
-    { file: "page-etl-service.json", sort: 2 },
-    { file: "page-service.json", sort: 3 },
-    { file: "page-dashboard.json", sort: 4 },
-    { file: "page-notebook.json", sort: 5 },
-    { file: "page-security-test.json", sort: 6 },
-  ];
+  // All page-*.json files in this directory are auto-loaded
+  const pageFiles = fs.readdirSync(__dirname)
+    .filter(f => f.startsWith("page-") && f.endsWith(".json"))
+    .sort();
+  const pages = pageFiles.map((file, i) => ({ file, sort: i + 1 }));
 
   for (const p of pages) {
     const raw = JSON.parse(fs.readFileSync(path.join(__dirname, p.file), "utf8"));

@@ -118,6 +118,27 @@ services:
     image: cuestack-jupyter-user
     profiles: ["build-only"]  # Don't start, just build the image
 
+  # Init service — seeds demo data via API on first run.
+  # Idempotent: skips existing resources. Exits after seeding.
+  # To skip: SKIP_SEED=true docker compose up
+  init:
+    image: node:22-alpine
+    working_dir: /seed
+    volumes:
+      - ./demo/e2e-scenario:/seed
+    environment:
+      BASE_URL: http://nginx:80
+      SKIP_SEED: ${SKIP_SEED:-false}
+    depends_on:
+      nginx:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    entrypoint: ["sh", "-c", "if [ \"$SKIP_SEED\" = 'true' ]; then echo 'SKIP_SEED=true, skipping'; exit 0; fi; node seed.js"]
+    restart: "no"
+
   clickhouse:
     image: clickhouse/clickhouse-server:24-alpine
     ports:
