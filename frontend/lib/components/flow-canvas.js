@@ -495,7 +495,7 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
 
           // Default: text input (also handles multi-text)
           // For "column" fields, show a dropdown when sourceCols are available
-          if (key === 'column' && sourceCols && sourceCols.length > 0) {
+          if ((key === 'column' || key === 'old_name') && sourceCols && sourceCols.length > 0) {
             return (
               <Field key={key} label={field.label}>
                 <select value={value} onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly} style={propInput}>

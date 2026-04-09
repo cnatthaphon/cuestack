@@ -414,6 +414,94 @@ def execute_flow_blocks(conn, org_id: str, blocks: list, user_id=None) -> tuple[
             elif agg == "max" and vals: result = max(vals)
             messages.append(f"aggregate: {agg}({col or '*'}) = {round(result, 2)}")
 
+        elif btype == "add_column":
+            # Add a computed column to each row in the data flow
+            new_col = config.get("new_column", "").strip()
+            expression = config.get("expression", "").strip()
+            if not new_col or not expression:
+                messages.append("add_column: missing column name or expression")
+                continue
+            added = 0
+            for row in data:
+                try:
+                    # Safe eval: only allow column references, math ops, and builtins
+                    safe_ns = {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in row.items()}
+                    safe_ns.update({"__builtins__": {"abs": abs, "round": round, "min": min, "max": max, "len": len, "str": str, "float": float, "int": int}})
+                    row[new_col] = eval(expression, safe_ns)
+                    added += 1
+                except Exception:
+                    row[new_col] = None
+            messages.append(f"add_column: {new_col} = {expression} ({added} rows)")
+
+        elif btype == "rename_column":
+            # Rename a column in the data flow
+            old_name = config.get("old_name", "").strip()
+            new_name = config.get("new_name", "").strip()
+            if not old_name or not new_name:
+                messages.append("rename_column: missing old or new name")
+                continue
+            for row in data:
+                if old_name in row:
+                    row[new_name] = row.pop(old_name)
+            messages.append(f"rename_column: {old_name} -> {new_name}")
+
+        elif btype == "drop_column":
+            # Remove columns from the data flow
+            columns = [c.strip() for c in config.get("columns", "").split(",") if c.strip()]
+            if not columns:
+                messages.append("drop_column: no columns specified")
+                continue
+            for row in data:
+                for col in columns:
+                    row.pop(col, None)
+            messages.append(f"drop_column: removed {', '.join(columns)}")
+
+        elif btype == "alter_table":
+            # Modify a real DB table schema: add/remove columns
+            table_name = config.get("table")
+            action = config.get("action", "add")  # add or drop
+            col_name = config.get("column_name", "").strip()
+            col_type = config.get("column_type", "text")
+            if not table_name or not col_name:
+                messages.append("alter_table: missing table or column name")
+                continue
+            rname = real_table_name(org_id, table_name)
+            try:
+                if action == "add":
+                    # Map user types to Postgres types
+                    type_map = {"text": "TEXT", "float": "DOUBLE PRECISION", "int": "INTEGER", "boolean": "BOOLEAN", "timestamp": "TIMESTAMPTZ", "json": "JSONB"}
+                    pg_type = type_map.get(col_type, "TEXT")
+                    with conn.cursor() as cur:
+                        cur.execute(f'ALTER TABLE "{rname}" ADD COLUMN IF NOT EXISTS "{col_name}" {pg_type}')
+                    # Also update the org_tables metadata
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("SELECT id, columns FROM org_tables WHERE org_id = %s AND name = %s", [org_id, table_name])
+                        tbl = cur.fetchone()
+                    if tbl:
+                        cols = tbl["columns"] if isinstance(tbl["columns"], list) else json.loads(tbl["columns"])
+                        if not any(c["name"] == col_name for c in cols):
+                            cols.append({"name": col_name, "type": col_type})
+                            with conn.cursor() as cur:
+                                cur.execute("UPDATE org_tables SET columns = %s WHERE id = %s", [json.dumps(cols), tbl["id"]])
+                    conn.commit()
+                    messages.append(f"alter_table: added {col_name} ({pg_type}) to {table_name}")
+                elif action == "drop":
+                    with conn.cursor() as cur:
+                        cur.execute(f'ALTER TABLE "{rname}" DROP COLUMN IF EXISTS "{col_name}"')
+                    # Update metadata
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("SELECT id, columns FROM org_tables WHERE org_id = %s AND name = %s", [org_id, table_name])
+                        tbl = cur.fetchone()
+                    if tbl:
+                        cols = tbl["columns"] if isinstance(tbl["columns"], list) else json.loads(tbl["columns"])
+                        cols = [c for c in cols if c["name"] != col_name]
+                        with conn.cursor() as cur:
+                            cur.execute("UPDATE org_tables SET columns = %s WHERE id = %s", [json.dumps(cols), tbl["id"]])
+                    conn.commit()
+                    messages.append(f"alter_table: dropped {col_name} from {table_name}")
+            except Exception as e:
+                messages.append(f"alter_table: error — {e}")
+
         elif btype == "insert":
             table_name = config.get("table")
             if not table_name or not data:

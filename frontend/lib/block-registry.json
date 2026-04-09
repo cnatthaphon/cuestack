@@ -346,6 +346,109 @@
       "color": "#b91c1c"
     },
     {
+      "type": "add_column",
+      "label": "Add Column",
+      "icon": "\u2795",
+      "category": "transform",
+      "description": "Add a computed column using an expression (e.g. temp_f = temperature * 1.8 + 32)",
+      "configSchema": [
+        {
+          "key": "new_column",
+          "type": "text",
+          "label": "New Column Name",
+          "placeholder": "temp_fahrenheit"
+        },
+        {
+          "key": "expression",
+          "type": "text",
+          "label": "Expression",
+          "placeholder": "temperature * 1.8 + 32",
+          "help": "Python expression using source column names. Available: abs, round, min, max, len, str, float, int"
+        }
+      ],
+      "inputs": [{ "name": "data", "type": "dataset" }],
+      "outputs": [{ "name": "data", "type": "dataset" }],
+      "color": "#16a34a"
+    },
+    {
+      "type": "rename_column",
+      "label": "Rename Column",
+      "icon": "\u270f\ufe0f",
+      "category": "transform",
+      "description": "Rename a column in the data flow",
+      "configSchema": [
+        {
+          "key": "old_name",
+          "type": "text",
+          "label": "Current Name"
+        },
+        {
+          "key": "new_name",
+          "type": "text",
+          "label": "New Name"
+        }
+      ],
+      "inputs": [{ "name": "data", "type": "dataset" }],
+      "outputs": [{ "name": "data", "type": "dataset" }],
+      "color": "#0d9488"
+    },
+    {
+      "type": "drop_column",
+      "label": "Drop Columns",
+      "icon": "\u2702\ufe0f",
+      "category": "transform",
+      "description": "Remove columns from the data flow",
+      "configSchema": [
+        {
+          "key": "columns",
+          "type": "multi-text",
+          "label": "Columns to Drop",
+          "placeholder": "col_a, col_b",
+          "help": "Comma-separated column names to remove"
+        }
+      ],
+      "inputs": [{ "name": "data", "type": "dataset" }],
+      "outputs": [{ "name": "data", "type": "dataset" }],
+      "color": "#dc2626"
+    },
+    {
+      "type": "alter_table",
+      "label": "Alter Table",
+      "icon": "\ud83d\udee0\ufe0f",
+      "category": "output",
+      "description": "Add or remove columns on an actual database table",
+      "configSchema": [
+        {
+          "key": "table",
+          "type": "table-select",
+          "label": "Table"
+        },
+        {
+          "key": "action",
+          "type": "select",
+          "label": "Action",
+          "options": ["add", "drop"],
+          "default": "add"
+        },
+        {
+          "key": "column_name",
+          "type": "text",
+          "label": "Column Name",
+          "placeholder": "new_column"
+        },
+        {
+          "key": "column_type",
+          "type": "select",
+          "label": "Column Type",
+          "options": ["text", "float", "int", "boolean", "timestamp", "json"],
+          "default": "text"
+        }
+      ],
+      "inputs": [{ "name": "data", "type": "any" }],
+      "outputs": [{ "name": "data", "type": "any" }],
+      "color": "#92400e"
+    },
+    {
       "type": "insert",
       "label": "Insert to DB",
       "icon": "\ud83d\udce5",
