@@ -31,6 +31,8 @@ export async function initDB() {
   await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS license_expires_at TIMESTAMPTZ`);
   await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS max_users INTEGER DEFAULT 10`);
   await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS max_devices INTEGER DEFAULT 50`);
+  // Flexible org settings: jupyter resource overrides, custom limits, etc.
+  await query(`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'`);
 
   // Permissions: system (Aimagin-defined) + app (org-defined)
   await query(`

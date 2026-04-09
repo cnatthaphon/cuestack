@@ -784,7 +784,7 @@ async def cron_ticker(stop_event: asyncio.Event):
             try:
                 now = datetime.now(timezone.utc)
 
-                # Fetch all pages with schedules
+                # Fetch all pages with schedules + org feature limits
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     cur.execute("""
                         SELECT p.id, p.name, p.slug, p.page_type, p.config, p.org_id, p.user_id,
@@ -793,6 +793,27 @@ async def cron_ticker(stop_event: asyncio.Event):
                         WHERE p.entry_type = 'page' AND p.config::text LIKE '%schedule%'
                     """)
                     rows = cur.fetchall()
+
+                # Load per-org schedule limits from org_features
+                org_schedule_limits = {}  # org_id -> max_schedules
+                org_schedule_counts = {}  # org_id -> current count of enabled schedules
+                for row in rows:
+                    oid = str(row["org_id"])
+                    config = row["config"] if isinstance(row["config"], dict) else json.loads(row["config"] or "{}")
+                    schedule = config.get("schedule", {})
+                    if schedule.get("cron") and schedule.get("enabled") is not False:
+                        org_schedule_counts[oid] = org_schedule_counts.get(oid, 0) + 1
+
+                if org_schedule_counts:
+                    org_ids = list(org_schedule_counts.keys())
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute(
+                            "SELECT org_id, config FROM org_features WHERE feature = 'notebooks' AND enabled = true AND org_id = ANY(%s::uuid[])",
+                            [org_ids],
+                        )
+                        for feat_row in cur.fetchall():
+                            feat_cfg = feat_row["config"] if isinstance(feat_row["config"], dict) else json.loads(feat_row["config"] or "{}")
+                            org_schedule_limits[str(feat_row["org_id"])] = int(feat_cfg.get("max_schedules", 100))
 
                 enqueued = 0
                 for row in rows:
@@ -813,6 +834,13 @@ async def cron_ticker(stop_event: asyncio.Event):
                                 continue
                         except (ValueError, TypeError):
                             pass
+
+                    # Check org schedule limit
+                    oid = str(row["org_id"])
+                    max_sched = org_schedule_limits.get(oid, 100)
+                    if org_schedule_counts.get(oid, 0) > max_sched:
+                        logger.warning(f"Org {oid[:8]} has {org_schedule_counts[oid]} schedules but limit is {max_sched} — skipping")
+                        continue
 
                     timeout_s = int(schedule.get("timeout", DEFAULT_TIMEOUT))
                     task_snapshot = {

@@ -14,7 +14,8 @@ export async function PATCH(request, { params }) {
   const values = [];
   let idx = 1;
 
-  const { name, plan, storage_limit_mb, is_active, license_expires_at, max_users, max_devices } = body;
+  const { name, plan, storage_limit_mb, is_active, license_expires_at, max_users, max_devices,
+          jupyter_mem, jupyter_cpu, jupyter_pids } = body;
 
   if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name); }
   if (plan !== undefined) { updates.push(`plan = $${idx++}`); values.push(plan); }
@@ -23,6 +24,20 @@ export async function PATCH(request, { params }) {
   if (license_expires_at !== undefined) { updates.push(`license_expires_at = $${idx++}`); values.push(license_expires_at || null); }
   if (max_users !== undefined) { updates.push(`max_users = $${idx++}`); values.push(max_users); }
   if (max_devices !== undefined) { updates.push(`max_devices = $${idx++}`); values.push(max_devices); }
+
+  // Jupyter resource overrides — stored in settings JSONB
+  const settingsKeys = { jupyter_mem, jupyter_cpu, jupyter_pids };
+  const hasSettings = Object.values(settingsKeys).some(v => v !== undefined);
+  if (hasSettings) {
+    // Merge with existing settings
+    const orgRes = await query("SELECT settings FROM organizations WHERE id = $1", [id]);
+    const existing = orgRes.rows[0]?.settings || {};
+    for (const [k, v] of Object.entries(settingsKeys)) {
+      if (v !== undefined) existing[k] = v || null;
+    }
+    updates.push(`settings = $${idx++}`);
+    values.push(JSON.stringify(existing));
+  }
 
   if (updates.length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });

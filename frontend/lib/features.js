@@ -28,14 +28,14 @@ export const FEATURE_CATALOG = [
     id: "notebooks",
     name: "Jupyter Notebooks",
     description: "Python notebooks connected to org databases",
-    default_config: { max_sessions: 2, runtime_min_month: 120 },
+    default_config: { max_sessions: 2, max_schedules: 10, runtime_min_month: 120 },
     icon: "notebook",
   },
   {
     id: "python_services",
     name: "Python Services",
     description: "Deploy Python code as web services/API endpoints",
-    default_config: { max_services: 2, runtime_min_month: 300 },
+    default_config: { max_services: 2, max_schedules: 20, runtime_min_month: 300 },
     icon: "python",
   },
   {

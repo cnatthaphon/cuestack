@@ -28,7 +28,9 @@ export default function SuperAdmin() {
   };
 
   const selectOrg = async (org) => {
-    setSelectedOrg(org);
+    // Flatten settings JSONB into top-level for easy form binding
+    const settings = org.settings || {};
+    setSelectedOrg({ ...org, jupyter_mem: settings.jupyter_mem || "", jupyter_cpu: settings.jupyter_cpu || "", jupyter_pids: settings.jupyter_pids || "" });
     setOrgTab("users");
     const [usersRes, featRes] = await Promise.all([
       fetch(`/api/super/orgs/${org.id}/users`).then((r) => r.json()),
@@ -170,7 +172,7 @@ export default function SuperAdmin() {
 
           {/* Tabs */}
           <div style={{ display: "flex", gap: 4, borderBottom: "2px solid #eee" }}>
-            {["users", "features"].map((t) => (
+            {["users", "resources", "features"].map((t) => (
               <button key={t} onClick={() => setOrgTab(t)} style={{
                 padding: "10px 20px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600,
                 background: orgTab === t ? "#0070f3" : "transparent",
@@ -206,6 +208,74 @@ export default function SuperAdmin() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Resources Tab */}
+          {orgTab === "resources" && (
+            <div style={{ marginTop: 16 }}>
+              <p style={{ color: "#666", fontSize: 13, margin: "0 0 16px" }}>
+                Manage plan, quotas, and Jupyter container resources for this organization.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                {/* Plan & Quotas */}
+                <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8 }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Plan & Quotas</h3>
+                  {[
+                    { key: "plan", label: "Plan", type: "select", options: ["free", "starter", "pro", "professional", "enterprise"] },
+                    { key: "max_users", label: "Max Users", type: "number" },
+                    { key: "max_devices", label: "Max Devices", type: "number" },
+                    { key: "storage_limit_mb", label: "Storage Limit (MB)", type: "number" },
+                  ].map(({ key, label, type, options }) => (
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 13 }}>
+                      <span style={{ width: 140 }}>{label}:</span>
+                      {type === "select" ? (
+                        <select value={selectedOrg[key] || "free"} onChange={async (e) => {
+                          await fetch(`/api/super/orgs/${selectedOrg.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [key]: e.target.value }) });
+                          loadData(); selectOrg({ ...selectedOrg, [key]: e.target.value });
+                        }} style={inputStyle}>{options.map(o => <option key={o} value={o}>{o}</option>)}</select>
+                      ) : (
+                        <input type="number" value={selectedOrg[key] ?? ""} onChange={async (e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          await fetch(`/api/super/orgs/${selectedOrg.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [key]: val }) });
+                          setSelectedOrg(prev => ({ ...prev, [key]: val }));
+                        }} style={{ ...inputStyle, width: 100 }} />
+                      )}
+                    </label>
+                  ))}
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 13 }}>
+                    <span style={{ width: 140 }}>License Expires:</span>
+                    <input type="date" value={selectedOrg.license_expires_at ? selectedOrg.license_expires_at.split("T")[0] : ""} onChange={async (e) => {
+                      const val = e.target.value || null;
+                      await fetch(`/api/super/orgs/${selectedOrg.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ license_expires_at: val }) });
+                      setSelectedOrg(prev => ({ ...prev, license_expires_at: val }));
+                    }} style={{ ...inputStyle, width: 160 }} />
+                  </label>
+                </div>
+
+                {/* Jupyter Resources */}
+                <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8 }}>
+                  <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>Jupyter Container Resources</h3>
+                  <p style={{ fontSize: 12, color: "#999", margin: "0 0 12px" }}>
+                    Per-plan defaults: Free=256MB/0.5CPU, Starter=512MB/1CPU, Pro=1G/2CPU, Enterprise=2G/4CPU.
+                    Override per-org below (leave blank for plan default).
+                  </p>
+                  {[
+                    { key: "jupyter_mem", label: "Memory Limit", placeholder: "e.g. 1G, 512M" },
+                    { key: "jupyter_cpu", label: "CPU Limit", placeholder: "e.g. 2.0" },
+                    { key: "jupyter_pids", label: "PID Limit", placeholder: "default: 256" },
+                  ].map(({ key, label, placeholder }) => (
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 13 }}>
+                      <span style={{ width: 140 }}>{label}:</span>
+                      <input type="text" value={selectedOrg[key] ?? ""} placeholder={placeholder} onChange={async (e) => {
+                        const val = e.target.value;
+                        await fetch(`/api/super/orgs/${selectedOrg.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [key]: val }) });
+                        setSelectedOrg(prev => ({ ...prev, [key]: val }));
+                      }} style={{ ...inputStyle, width: 140 }} />
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 

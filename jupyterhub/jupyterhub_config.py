@@ -75,7 +75,8 @@ class CueStackSpawner(DockerSpawner):
         # Get limits from plan (or override from DB)
         limits = self.PLAN_LIMITS.get(plan, self.PLAN_LIMITS['free'])
 
-        # Try to read custom limits from DB
+        # Read plan + superadmin overrides from DB
+        settings = {}
         if PLATFORM_DB:
             try:
                 import psycopg2
@@ -83,23 +84,30 @@ class CueStackSpawner(DockerSpawner):
                 conn = psycopg2.connect(PLATFORM_DB)
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     cur.execute(
-                        "SELECT plan, max_users, max_devices, storage_limit_mb FROM organizations WHERE id = %s",
+                        "SELECT plan, max_users, max_devices, storage_limit_mb, settings FROM organizations WHERE id = %s",
                         [org_id]
                     )
                     org_row = cur.fetchone()
                     if org_row:
                         plan = org_row.get('plan', plan)
                         limits = self.PLAN_LIMITS.get(plan, limits)
-                        # Override storage if custom limit set
+                        settings = org_row.get('settings') or {}
+                        if isinstance(settings, str):
+                            import json
+                            settings = json.loads(settings)
                         if org_row.get('storage_limit_mb'):
                             limits = {**limits, 'storage': f"{org_row['storage_limit_mb']}M"}
                 conn.close()
             except Exception as e:
                 self.log.warning(f"Failed to read org limits from DB: {e}")
 
-        # Apply resource limits
-        self.mem_limit = limits['mem']
-        self.cpu_limit = limits['cpu']
+        # Apply resource limits (superadmin overrides > plan defaults)
+        self.mem_limit = settings.get('jupyter_mem') or limits['mem']
+        self.cpu_limit = float(settings.get('jupyter_cpu') or limits['cpu'])
+
+        # Per-org PID limit override
+        pids = int(settings.get('jupyter_pids') or 256)
+        self.extra_host_config['pids_limit'] = pids
 
         # Set org info in container environment
         self.environment.update({
@@ -109,7 +117,7 @@ class CueStackSpawner(DockerSpawner):
         })
 
         self.log.info(f"Spawning container for org {org_name} ({plan}): "
-                      f"mem={limits['mem']}, cpu={limits['cpu']}")
+                      f"mem={self.mem_limit}, cpu={self.cpu_limit}, pids={pids}")
 
         return await super().start()
 
