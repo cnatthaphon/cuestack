@@ -7,9 +7,11 @@ Stores execution logs in task_logs table for auditing.
 """
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
+import subprocess
 import traceback
 from datetime import datetime, timedelta, timezone
 
@@ -28,6 +30,13 @@ POLL_INTERVAL = int(os.getenv("SCHEDULER_POLL_INTERVAL", "60"))
 
 # Advisory lock ID for the scheduler (prevents duplicate execution across replicas)
 SCHEDULER_LOCK_ID = 999001
+
+# Bounded thread pool for subprocess calls — prevents unbounded thread growth
+# when many notebooks execute concurrently. Threads are reused, not created per call.
+_nbconvert_pool = concurrent.futures.ThreadPoolExecutor(
+    max_workers=int(os.getenv("SCHEDULER_MAX_CONCURRENT", "4")),
+    thread_name_prefix="nbconvert",
+)
 
 
 def get_db():
@@ -567,15 +576,25 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
                     return False, f"Failed to push notebook: {e}"
 
         # 4. Execute notebook via docker exec + jupyter nbconvert
-        # Much more reliable than WebSocket kernel protocol
-        import subprocess
-        import concurrent.futures
         try:
             container_name = f"jupyter-{org_short}"
             nb_path = f"/workspace/{nb_name}"
 
-            # Run nbconvert in a thread pool to avoid blocking the event loop
-            # (the event loop also serves API requests that the notebook calls)
+            # Check if user has an active kernel for this notebook — skip to
+            # avoid overwriting their work or conflicting with an open session.
+            try:
+                kernels_res = urllib.request.urlopen(
+                    urllib.request.Request(f"{user_api}/api/kernels"),
+                    timeout=5,
+                )
+                active_kernels = json.loads(kernels_res.read())
+                for k in active_kernels:
+                    kpath = k.get("path", "")
+                    if kpath == nb_name or kpath.endswith(f"/{nb_name}"):
+                        return False, f"Skipped: user has active kernel for {nb_name}"
+            except Exception:
+                pass  # Jupyter may not be running — proceed with execution
+
             def run_nbconvert():
                 return subprocess.run(
                     ["docker", "exec", "-u", "jupyter", container_name,
@@ -589,8 +608,9 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
                     capture_output=True, text=True, timeout=360,
                 )
 
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, run_nbconvert)
+            result = await asyncio.get_event_loop().run_in_executor(
+                _nbconvert_pool, run_nbconvert
+            )
 
             if result.returncode != 0:
                 logger.error(f"nbconvert stderr: {result.stderr[:2000] if result.stderr else 'none'}")
@@ -637,9 +657,44 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
         return True, f"Page type {page_type} — no executor configured"
 
 
+# Bounded concurrency — max parallel notebook executions per poll cycle.
+# Prevents host overload when many orgs schedule at the same cron time.
+MAX_CONCURRENT_TASKS = int(os.getenv("SCHEDULER_MAX_CONCURRENT", "4"))
+_task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+
+
+async def _run_one_task(task):
+    """Execute a single scheduled task with concurrency control."""
+    async with _task_semaphore:
+        conn = get_db()
+        try:
+            config_ver = task["config"].get("_version", 0)
+            logger.info(f"Running: {task['page_name']} ({task['page_type']}) [{task['cron']}] v{config_ver}")
+            start_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            log_id = log_task_start(conn, task["page_id"], task["org_id"], config_ver)
+
+            try:
+                success, message = await execute_task(conn, task)
+                duration = int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms
+                update_task_run(conn, task["page_id"], task["config"], success, message)
+                log_task_end(conn, log_id, success, message, duration)
+                logger.info(f"  {'OK' if success else 'FAIL'} ({duration}ms) — {message}")
+            except Exception as e:
+                duration = int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms
+                error_detail = traceback.format_exc()
+                logger.error(f"  Error: {e}")
+                try:
+                    update_task_run(conn, task["page_id"], task["config"], False, str(e))
+                    log_task_end(conn, log_id, False, str(e), duration, error_detail)
+                except Exception:
+                    pass
+        finally:
+            conn.close()
+
+
 async def run_scheduler():
     """Main scheduler loop — polls every POLL_INTERVAL seconds."""
-    logger.info(f"Scheduler started (poll every {POLL_INTERVAL}s)")
+    logger.info(f"Scheduler started (poll every {POLL_INTERVAL}s, max_concurrent={MAX_CONCURRENT_TASKS})")
 
     # Ensure task_logs table exists
     try:
@@ -665,6 +720,8 @@ async def run_scheduler():
                 now = datetime.now(timezone.utc)
                 tasks = get_scheduled_tasks(conn)
 
+                # Collect tasks that need to run this cycle
+                due_tasks = []
                 for task in tasks:
                     if not cron_matches(task["cron"], now):
                         continue
@@ -679,26 +736,13 @@ async def run_scheduler():
                         except (ValueError, TypeError):
                             pass
 
-                    config_ver = task["config"].get("_version", 0)
-                    logger.info(f"Running: {task['page_name']} ({task['page_type']}) [{task['cron']}] v{config_ver}")
-                    start_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-                    log_id = log_task_start(conn, task["page_id"], task["org_id"], config_ver)
+                    due_tasks.append(task)
 
-                    try:
-                        success, message = await execute_task(conn, task)
-                        duration = int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms
-                        update_task_run(conn, task["page_id"], task["config"], success, message)
-                        log_task_end(conn, log_id, success, message, duration)
-                        logger.info(f"  {'OK' if success else 'FAIL'} ({duration}ms) — {message}")
-                    except Exception as e:
-                        duration = int(datetime.now(timezone.utc).timestamp() * 1000) - start_ms
-                        error_detail = traceback.format_exc()
-                        logger.error(f"  Error: {e}")
-                        try:
-                            update_task_run(conn, task["page_id"], task["config"], False, str(e))
-                            log_task_end(conn, log_id, False, str(e), duration, error_detail)
-                        except Exception:
-                            pass
+                # Run due tasks concurrently (bounded by semaphore)
+                if due_tasks:
+                    logger.info(f"Dispatching {len(due_tasks)} task(s)")
+                    await asyncio.gather(*[_run_one_task(t) for t in due_tasks], return_exceptions=True)
+
             finally:
                 release_advisory_lock(conn)
 
