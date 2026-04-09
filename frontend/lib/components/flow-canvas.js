@@ -424,28 +424,61 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
           }
 
           if (field.type === 'column-mapping') {
+            // Parse text value into structured rows
+            const mappingRows = (value || '').split('\n').filter(l => l.trim()).map(line => {
+              const parts = line.split('->').map(s => s.trim());
+              return { source: parts[0] || '', target: parts[1] || parts[0] || '' };
+            });
+            const serializeMappings = (rows) => rows.map(r => r.source + ' -> ' + r.target).join('\n');
+            const updateRow = (idx, field, val) => {
+              const rows = [...mappingRows];
+              rows[idx] = { ...rows[idx], [field]: val };
+              onUpdate(key, serializeMappings(rows));
+            };
+            const deleteRow = (idx) => {
+              const rows = mappingRows.filter((_, i) => i !== idx);
+              onUpdate(key, serializeMappings(rows));
+            };
+            const addRow = () => {
+              const newSource = sourceCols && sourceCols.length > 0 ? sourceCols[0] : '';
+              const rows = [...mappingRows, { source: newSource, target: newSource }];
+              onUpdate(key, serializeMappings(rows));
+            };
+            const rowInputStyle = { ...propInput, flex: 1, fontSize: 10, fontFamily: 'monospace', padding: '3px 6px' };
+            const selectStyle = { ...propInput, flex: 1, fontSize: 10, fontFamily: 'monospace', padding: '3px 4px' };
             return (
               <Field key={key} label={field.label}>
-                {sourceCols && sourceCols.length > 0 && (
-                  <div style={{ fontSize: 9, color: '#666', background: '#f7f8fa', borderRadius: 4, padding: '4px 6px', marginBottom: 4 }}>
-                    <strong>Available source columns:</strong>{' '}
-                    {sourceCols.map((c, i) => (
-                      <span key={c} style={{ cursor: 'pointer', color: '#2563eb', textDecoration: 'underline' }}
-                        onClick={() => {
-                          if (readOnly) return;
-                          const current = cfg[key] || '';
-                          const line = c + ' -> ' + c;
-                          onUpdate(key, current ? current + '\n' + line : line);
-                        }}>
-                        {c}{i < sourceCols.length - 1 ? ', ' : ''}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <textarea value={value} rows={4} placeholder={field.placeholder || ''}
-                  onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly}
-                  style={{ ...propInput, fontFamily: "monospace", fontSize: 10, minHeight: 60, resize: "vertical" }} />
-                {field.help && <span style={{ fontSize: 9, color: '#999' }}>{field.help}</span>}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {mappingRows.map((row, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {sourceCols && sourceCols.length > 0 ? (
+                        <select value={row.source} disabled={readOnly} style={selectStyle}
+                          onChange={(e) => updateRow(idx, 'source', e.target.value)}>
+                          {!sourceCols.includes(row.source) && row.source && <option value={row.source}>{row.source}</option>}
+                          {sourceCols.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      ) : (
+                        <input type="text" value={row.source} disabled={readOnly} style={rowInputStyle}
+                          placeholder="source" onChange={(e) => updateRow(idx, 'source', e.target.value)} />
+                      )}
+                      <span style={{ fontSize: 11, color: '#999', flexShrink: 0 }}>{'\u2192'}</span>
+                      <input type="text" value={row.target} disabled={readOnly} style={rowInputStyle}
+                        placeholder="target" onChange={(e) => updateRow(idx, 'target', e.target.value)} />
+                      {!readOnly && (
+                        <button onClick={() => deleteRow(idx)}
+                          style={{ background: 'none', border: 'none', color: '#e53e3e', cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
+                          title="Remove mapping">{'\u00d7'}</button>
+                      )}
+                    </div>
+                  ))}
+                  {!readOnly && (
+                    <button onClick={addRow}
+                      style={{ background: '#f7f8fa', border: '1px dashed #ccc', borderRadius: 4, padding: '3px 8px', fontSize: 10, color: '#2563eb', cursor: 'pointer', alignSelf: 'flex-start', marginTop: 2 }}>
+                      + Add Mapping
+                    </button>
+                  )}
+                </div>
+                {field.help && <span style={{ fontSize: 9, color: '#999', marginTop: 2, display: 'block' }}>{field.help}</span>}
               </Field>
             );
           }
@@ -461,6 +494,19 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
           }
 
           // Default: text input (also handles multi-text)
+          // For "column" fields, show a dropdown when sourceCols are available
+          if (key === 'column' && sourceCols && sourceCols.length > 0) {
+            return (
+              <Field key={key} label={field.label}>
+                <select value={value} onChange={(e) => onUpdate(key, e.target.value)} disabled={readOnly} style={propInput}>
+                  <option value="">-- select column --</option>
+                  {!sourceCols.includes(value) && value && <option value={value}>{value}</option>}
+                  {sourceCols.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {field.help && <span style={{ fontSize: 9, color: '#999' }}>{field.help}</span>}
+              </Field>
+            );
+          }
           return (
             <Field key={key} label={field.label}>
               <input type="text" value={value} placeholder={field.placeholder || ''}

@@ -580,7 +580,10 @@ async def execute_task(conn, task: dict) -> tuple[bool, str]:
                 return subprocess.run(
                     ["docker", "exec", "-u", "jupyter", container_name,
                      "jupyter", "nbconvert", "--to", "notebook", "--execute",
+                     "--no-input",
                      "--ExecutePreprocessor.timeout=300",
+                     "--ExecutePreprocessor.startup_timeout=60",
+                     "--ExecutePreprocessor.kernel_name=python3",
                      "--allow-errors",
                      "--output", nb_name, nb_path],
                     capture_output=True, text=True, timeout=360,

@@ -141,7 +141,7 @@ c.DockerSpawner.environment = {
 # org-scoped and the CueStack SDK needs backend access. To fully isolate, move
 # notebook containers to a dedicated network with only backend access.
 c.DockerSpawner.extra_host_config = {
-    'pids_limit': 100,        # prevent fork-bombs / excessive process spawning
+    'pids_limit': 256,        # prevent fork-bombs; 100 was too low for nbconvert + running kernel
     'read_only': False,       # /workspace must be writable; site-packages is chmod'd
     'security_opt': ['no-new-privileges'],  # prevent privilege escalation via setuid
 }

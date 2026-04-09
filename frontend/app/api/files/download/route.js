@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../../../lib/auth.js";
 import { hasPermission } from "../../../../lib/permissions.js";
-import { downloadFile } from "../../../../lib/org-files.js";
+import { getEntry, getAccessLevel, downloadFile } from "../../../../lib/org-files.js";
 
 // GET — download a file by ID
 export async function GET(request) {
@@ -15,6 +15,12 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "File ID required" }, { status: 400 });
+
+  const entry = await getEntry(user.org_id, id);
+  if (!entry) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const roleIds = user.role_id ? [user.role_id] : [];
+  const access = getAccessLevel(entry, user.id, roleIds);
+  if (!access) return NextResponse.json({ error: "Access denied" }, { status: 403 });
 
   try {
     const { buffer, filename, mime_type } = await downloadFile(user.org_id, id);

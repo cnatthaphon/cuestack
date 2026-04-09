@@ -984,6 +984,21 @@ function NotebookRenderer({ page, isOwner, saveConfig, onReload }) {
   // Hide code: non-owners always start hidden, owners respect saved preference
   const defaultHide = !isOwner || cfg.hide_code === true;
   const [hideCode, setHideCode] = useState(defaultHide);
+  const [showLogs, setShowLogs] = useState(false);
+  const [taskLogs, setTaskLogs] = useState(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const fetchTaskLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const res = await fetch(`/api/tasks/${page.id}`);
+      if (res.ok) {
+        const d = await res.json();
+        setTaskLogs(d.logs || []);
+      }
+    } catch (e) { console.error("Failed to fetch task logs", e); }
+    setLogsLoading(false);
+  }, [page.id]);
 
   const nbName = page.slug || page.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
@@ -1102,13 +1117,70 @@ function NotebookRenderer({ page, isOwner, saveConfig, onReload }) {
 
       {/* Schedule info */}
       {schedule?.cron && (
-        <div style={{ marginBottom: 12, padding: 10, background: "#fffbeb", borderRadius: 6, border: "1px solid #fde68a", fontSize: 12 }}>
-          <strong>{"\u23F0"} Scheduled:</strong> {schedule.cron}
-          {schedule.enabled === false && <span style={{ color: "#999" }}> (paused)</span>}
-          {lastRun && <span> · Last: {new Date(lastRun).toLocaleString()}</span>}
-          {lastStatus && <span> · <span style={{ color: lastStatus === "success" ? "#38a169" : "#e53e3e" }}>{lastStatus}</span></span>}
-          {schedule.next_run && <span> · Next: {new Date(schedule.next_run).toLocaleString()}</span>}
-          {schedule.run_count > 0 && <span> · {schedule.run_count} runs</span>}
+        <div style={{ marginBottom: 12, background: "#fffbeb", borderRadius: 6, border: "1px solid #fde68a", fontSize: 12 }}>
+          <div style={{ padding: 10 }}>
+            <strong>{"\u23F0"} Scheduled:</strong> {schedule.cron}
+            {schedule.enabled === false && <span style={{ color: "#999" }}> (paused)</span>}
+            {lastRun && <span> · Last: {new Date(lastRun).toLocaleString()}</span>}
+            {lastStatus && <span> · <span style={{ color: lastStatus === "success" ? "#38a169" : "#e53e3e" }}>{lastStatus}</span></span>}
+            {schedule.next_run && <span> · Next: {new Date(schedule.next_run).toLocaleString()}</span>}
+            {schedule.run_count > 0 && <span> · {schedule.run_count} runs</span>}
+            {lastStatus === "error" && schedule.last_message && (
+              <span style={{ color: "#e53e3e" }}> · {schedule.last_message.length > 200 ? (
+                <>{schedule.last_message.slice(0, 200)}<button onClick={() => alert(schedule.last_message)} style={{ background: "none", border: "none", color: "#e53e3e", cursor: "pointer", fontSize: 12, padding: "0 2px", textDecoration: "underline" }}>...</button></>
+              ) : schedule.last_message}</span>
+            )}
+            <button
+              onClick={() => { const next = !showLogs; setShowLogs(next); if (next && !taskLogs) fetchTaskLogs(); }}
+              style={{ marginLeft: 8, background: showLogs ? "#f59e0b" : "#fde68a", border: "1px solid #f59e0b", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontSize: 11, color: showLogs ? "#fff" : "#92400e" }}
+            >
+              {showLogs ? "Hide Logs" : "View Logs"}
+            </button>
+          </div>
+          {showLogs && (
+            <div style={{ padding: "0 10px 10px", borderTop: "1px solid #fde68a" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0 6px" }}>
+                <strong style={{ fontSize: 11 }}>Recent Runs</strong>
+                <button onClick={fetchTaskLogs} disabled={logsLoading} style={{ background: "none", border: "none", color: "#0070f3", cursor: "pointer", fontSize: 11, padding: 0 }}>
+                  {logsLoading ? "Loading..." : "Refresh"}
+                </button>
+              </div>
+              {logsLoading && !taskLogs ? (
+                <div style={{ color: "#999", padding: 8 }}>Loading logs...</div>
+              ) : taskLogs && taskLogs.length > 0 ? (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid #fde68a", textAlign: "left" }}>
+                      <th style={{ padding: "4px 6px", fontWeight: 600 }}>Time</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 600 }}>Status</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 600 }}>Duration</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 600 }}>Message</th>
+                      <th style={{ padding: "4px 6px", fontWeight: 600 }}>Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {taskLogs.slice(0, 10).map((log) => (
+                      <tr key={log.id} style={{ borderBottom: "1px solid #fef3c7" }}>
+                        <td style={{ padding: "3px 6px", whiteSpace: "nowrap" }}>{new Date(log.created_at).toLocaleString()}</td>
+                        <td style={{ padding: "3px 6px" }}>
+                          <span style={{ color: log.status === "success" ? "#38a169" : "#e53e3e", fontWeight: 600 }}>{log.status}</span>
+                        </td>
+                        <td style={{ padding: "3px 6px", whiteSpace: "nowrap" }}>{log.duration_ms != null ? (log.duration_ms / 1000).toFixed(1) + "s" : "—"}</td>
+                        <td style={{ padding: "3px 6px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={log.message || ""}>
+                          {log.message ? (log.message.length > 80 ? log.message.slice(0, 80) + "..." : log.message) : "—"}
+                        </td>
+                        <td style={{ padding: "3px 6px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#e53e3e" }} title={log.error || ""}>
+                          {log.error ? (log.error.length > 80 ? log.error.slice(0, 80) + "..." : log.error) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{ color: "#999", padding: 8 }}>No run logs found.</div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -102,6 +102,7 @@ export async function createDirectory(orgId, name, parentId = null, userId = nul
 // --- Upload file ---
 export async function uploadFile(orgId, name, parentId, buffer, mimeType, userId, visibility = "private") {
   if (!name) throw new Error("File name required");
+  if (!/^[^/\\<>:"|?*]+$/.test(name)) throw new Error("Invalid file name");
   const limit = await getLimit(orgId);
   const usage = await getUsage(orgId);
   if (usage + buffer.length > limit) throw new Error(`Storage limit exceeded (${Math.round(limit / 1024 / 1024)}MB)`);
