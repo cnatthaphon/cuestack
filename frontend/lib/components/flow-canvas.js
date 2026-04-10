@@ -424,6 +424,11 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
           }
 
           if (field.type === 'column-mapping') {
+            // Get target table columns for dropdowns
+            const selectedTable = cfg.table || cfg.target_table;
+            const tableObj = selectedTable && tables ? tables.find(t => t.name === selectedTable) : null;
+            const targetCols = tableObj ? (typeof tableObj.columns === 'string' ? JSON.parse(tableObj.columns) : (tableObj.columns || [])).map(c => c.name || c) : [];
+
             // Parse text value into structured rows
             const mappingRows = (value || '').split('\n').filter(l => l.trim()).map(line => {
               const parts = line.split('->').map(s => s.trim());
@@ -441,13 +446,24 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
             };
             const addRow = () => {
               const newSource = sourceCols && sourceCols.length > 0 ? sourceCols[0] : '';
-              const rows = [...mappingRows, { source: newSource, target: newSource }];
+              const newTarget = targetCols.length > 0 ? targetCols[0] : newSource;
+              const rows = [...mappingRows, { source: newSource, target: newTarget }];
               onUpdate(key, serializeMappings(rows));
             };
             const rowInputStyle = { ...propInput, flex: 1, fontSize: 10, fontFamily: 'monospace', padding: '3px 6px' };
             const selectStyle = { ...propInput, flex: 1, fontSize: 10, fontFamily: 'monospace', padding: '3px 4px' };
             return (
               <Field key={key} label={field.label}>
+                {mappingRows.length === 0 && (
+                  <div style={{ fontSize: 10, color: '#059669', background: '#f0fdf4', padding: '4px 8px', borderRadius: 4, marginBottom: 4 }}>
+                    Auto-match: source columns pass through as-is
+                  </div>
+                )}
+                {targetCols.length > 0 && mappingRows.length === 0 && (
+                  <div style={{ fontSize: 9, color: '#6b7280', marginBottom: 4 }}>
+                    Target: {targetCols.join(', ')}
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   {mappingRows.map((row, idx) => (
                     <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -462,8 +478,16 @@ function NodeProperties({ node, tables, sourceCols, onUpdate, result, readOnly }
                           placeholder="source" onChange={(e) => updateRow(idx, 'source', e.target.value)} />
                       )}
                       <span style={{ fontSize: 11, color: '#999', flexShrink: 0 }}>{'\u2192'}</span>
-                      <input type="text" value={row.target} disabled={readOnly} style={rowInputStyle}
-                        placeholder="target" onChange={(e) => updateRow(idx, 'target', e.target.value)} />
+                      {targetCols.length > 0 ? (
+                        <select value={row.target} disabled={readOnly} style={selectStyle}
+                          onChange={(e) => updateRow(idx, 'target', e.target.value)}>
+                          {!targetCols.includes(row.target) && row.target && <option value={row.target}>{row.target}</option>}
+                          {targetCols.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      ) : (
+                        <input type="text" value={row.target} disabled={readOnly} style={rowInputStyle}
+                          placeholder="target" onChange={(e) => updateRow(idx, 'target', e.target.value)} />
+                      )}
                       {!readOnly && (
                         <button onClick={() => deleteRow(idx)}
                           style={{ background: 'none', border: 'none', color: '#e53e3e', cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}

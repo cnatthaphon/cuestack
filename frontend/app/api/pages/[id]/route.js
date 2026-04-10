@@ -159,5 +159,23 @@ export async function POST(request, { params }) {
     return NextResponse.json({ ok: true });
   }
 
+  if (body.action === "reorder") {
+    // Batch update sort_order for items in the same parent folder
+    const items = body.items; // [{id, sort_order}]
+    if (!Array.isArray(items)) return NextResponse.json({ error: "items required" }, { status: 400 });
+    for (const item of items) {
+      await query("UPDATE user_pages SET sort_order = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3", [item.sort_order, item.id, user.id]);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === "rename") {
+    const page = await query("SELECT user_id FROM user_pages WHERE id = $1", [id]);
+    if (!page.rows[0] || page.rows[0].user_id !== user.id) return NextResponse.json({ error: "Not owner" }, { status: 403 });
+    if (!body.name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+    await query("UPDATE user_pages SET name = $1, updated_at = NOW() WHERE id = $2", [body.name.trim(), id]);
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 }

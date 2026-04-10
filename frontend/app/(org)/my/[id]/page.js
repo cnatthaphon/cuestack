@@ -1013,6 +1013,27 @@ function NotebookRenderer({ page, isOwner, saveConfig, onReload }) {
     }
   }, [page.id]);
 
+  // Auto-refresh: poll for new execution results on scheduled pages
+  const lastRunCountRef = useRef(schedule?.run_count || 0);
+  useEffect(() => {
+    if (!schedule?.enabled || !schedule?.cron) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/pages/${page.id}`);
+        if (!res.ok) return;
+        const d = await res.json();
+        const newCfg = typeof d.page?.config === "string" ? JSON.parse(d.page.config) : (d.page?.config || {});
+        const newRunCount = newCfg.schedule?.run_count || 0;
+        if (newRunCount > lastRunCountRef.current) {
+          lastRunCountRef.current = newRunCount;
+          if (onReload) onReload();
+          fetchTaskLogs();
+        }
+      } catch {}
+    }, 30000); // check every 30s
+    return () => clearInterval(interval);
+  }, [page.id, schedule?.enabled]);
+
   // Open: push content from DB → Jupyter, open editor
   const openNotebook = async () => {
     setLoading(true);
@@ -1138,7 +1159,7 @@ function NotebookRenderer({ page, isOwner, saveConfig, onReload }) {
             </button>
           </div>
           {showLogs && (
-            <div style={{ padding: "0 10px 10px", borderTop: "1px solid #fde68a" }}>
+            <div style={{ padding: "0 10px 10px", borderTop: "1px solid #fde68a", maxHeight: 260, overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0 6px" }}>
                 <strong style={{ fontSize: 11 }}>Recent Runs</strong>
                 <button onClick={fetchTaskLogs} disabled={logsLoading} style={{ background: "none", border: "none", color: "#0070f3", cursor: "pointer", fontSize: 11, padding: 0 }}>
@@ -1159,7 +1180,7 @@ function NotebookRenderer({ page, isOwner, saveConfig, onReload }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {taskLogs.slice(0, 10).map((log) => (
+                    {taskLogs.map((log) => (
                       <tr key={log.id} style={{ borderBottom: "1px solid #fef3c7" }}>
                         <td style={{ padding: "3px 6px", whiteSpace: "nowrap" }}>{new Date(log.created_at).toLocaleString()}</td>
                         <td style={{ padding: "3px 6px" }}>

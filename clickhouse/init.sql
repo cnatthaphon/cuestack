@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS data_events (
+CREATE DATABASE IF NOT EXISTS cuestack;
+
+CREATE TABLE IF NOT EXISTS cuestack.data_events (
     timestamp DateTime64(3, 'UTC'),
     org_id UUID,
     channel String,
@@ -11,7 +13,7 @@ PARTITION BY toYYYYMM(timestamp)
 ORDER BY (org_id, channel, timestamp)
 TTL toDateTime(timestamp) + INTERVAL 1 YEAR;
 
-CREATE TABLE IF NOT EXISTS audit_log (
+CREATE TABLE IF NOT EXISTS cuestack.audit_log (
     timestamp DateTime64(3, 'UTC'),
     org_id UUID,
     user_id UUID,

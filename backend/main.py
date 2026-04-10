@@ -267,15 +267,20 @@ async def ws_channels(websocket: WebSocket):
             if action == "subscribe":
                 channel = msg.get("channel")
                 if channel:
-                    valid = ch.get_org_channels(org_id)
-                    if channel in valid:
+                    # System channels (prefixed _) bypass org_channels validation
+                    if channel.startswith("_"):
                         await ch.subscribe(websocket, org_id, channel)
                         await websocket.send_json({"subscribed": channel})
-                        # Send recent messages
-                        for m in ch.get_recent(org_id, channel, 10):
-                            await websocket.send_json(m)
                     else:
-                        await websocket.send_json({"error": f"Channel '{channel}' not found"})
+                        valid = ch.get_org_channels(org_id)
+                        if channel in valid:
+                            await ch.subscribe(websocket, org_id, channel)
+                            await websocket.send_json({"subscribed": channel})
+                            # Send recent messages
+                            for m in ch.get_recent(org_id, channel, 10):
+                                await websocket.send_json(m)
+                        else:
+                            await websocket.send_json({"error": f"Channel '{channel}' not found"})
 
             elif action == "unsubscribe":
                 channel = msg.get("channel")

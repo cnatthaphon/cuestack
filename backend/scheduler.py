@@ -331,6 +331,40 @@ def cleanup_old_jobs(conn, keep_days=7):
         logger.info(f"Cleaned up {deleted} old jobs")
 
 
+# Log retention policy:
+#   - Keep last MAX_LOGS_PER_PAGE logs per page (rolling window)
+#   - Delete all logs older than LOGS_RETENTION_DAYS
+#   - Runs every cron tick alongside job cleanup
+MAX_LOGS_PER_PAGE = int(os.environ.get("SCHEDULER_MAX_LOGS_PER_PAGE", "50"))
+LOGS_RETENTION_DAYS = int(os.environ.get("SCHEDULER_LOGS_RETENTION_DAYS", "30"))
+
+
+def cleanup_task_logs(conn):
+    """Enforce log retention: per-page cap + age limit."""
+    with conn.cursor() as cur:
+        # 1. Delete logs older than retention period
+        cur.execute(
+            "DELETE FROM task_logs WHERE created_at < NOW() - INTERVAL '%s days'",
+            [LOGS_RETENTION_DAYS],
+        )
+        aged = cur.rowcount
+
+        # 2. Per-page cap: keep only the most recent MAX_LOGS_PER_PAGE per page
+        cur.execute("""
+            DELETE FROM task_logs WHERE id IN (
+                SELECT id FROM (
+                    SELECT id, ROW_NUMBER() OVER (PARTITION BY page_id ORDER BY created_at DESC) as rn
+                    FROM task_logs
+                ) ranked WHERE rn > %s
+            )
+        """, [MAX_LOGS_PER_PAGE])
+        capped = cur.rowcount
+    conn.commit()
+    total = aged + capped
+    if total > 0:
+        logger.info(f"Task log cleanup: {aged} aged out, {capped} over per-page cap ({MAX_LOGS_PER_PAGE})")
+
+
 # ---------------------------------------------------------------------------
 # Block / flow execution (unchanged logic, extracted for clarity)
 # ---------------------------------------------------------------------------
@@ -857,6 +891,23 @@ async def worker(worker_id: int, stop_event: asyncio.Event):
         finally:
             meta_conn.close()
 
+        # Broadcast page update event via WebSocket so open pages auto-refresh
+        try:
+            from channels import publish as ws_publish, _subscribers, _channel_key
+            ch_name = f"_page:{page_id}"
+            key = _channel_key(org_id, ch_name)
+            n_subs = len(_subscribers.get(key, set()))
+            await ws_publish(org_id, ch_name, {
+                "event": "execution_complete",
+                "page_id": page_id,
+                "status": "success" if success else "error",
+                "message": message,
+                "duration_ms": duration_ms,
+            })
+            logger.info(f"WS broadcast _page:{page_id[:8]} ({n_subs} subscribers)")
+        except Exception as e:
+            logger.warning(f"WS broadcast failed: {e}")
+
         logger.info(f"Worker-{worker_id} job {job['id']} {'OK' if success else 'FAIL'} ({duration_ms}ms)")
 
 
@@ -954,6 +1005,7 @@ async def cron_ticker(stop_event: asyncio.Event):
                 # Reap stuck jobs and clean old ones
                 reap_stuck_jobs(conn)
                 cleanup_old_jobs(conn)
+                cleanup_task_logs(conn)
 
             finally:
                 conn.close()

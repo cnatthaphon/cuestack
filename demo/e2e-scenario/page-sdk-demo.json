@@ -140,18 +140,68 @@
           "cell_type": "markdown",
           "source": [
             "## File Storage\n",
-            "Upload, list, and download files via SDK."
+            "Upload, list, download, and manage files via SDK."
           ],
           "metadata": {}
         },
         {
           "cell_type": "code",
           "source": [
-            "# 7. File operations\n",
+            "# 7a. Upload a file from notebook\n",
+            "import tempfile, os\n",
+            "\n",
+            "# Create a test CSV in the workspace\n",
+            "csv_path = '/workspace/sdk_test_export.csv'\n",
+            "df.to_csv(csv_path, index=False)\n",
+            "print(f'Created: {csv_path} ({os.path.getsize(csv_path)} bytes)')\n",
+            "\n",
+            "# Upload to CueStack file storage\n",
+            "uploaded = client.files.upload(csv_path, visibility='org')\n",
+            "print(f\"\\u2705 Uploaded: {uploaded.get('name', '?')} (id: {uploaded.get('id', '?')[:8]}...)\")\n",
+            "\n",
+            "# List files\n",
             "files = client.files.list()\n",
-            "print(f\"\\u{1F4C1} Files: {len(files)}\")\n",
+            "print(f\"\\n\\u{1F4C1} Files ({len(files)}):\")\n",
             "for f in files[:5]:\n",
-            "    print(f\"  - {f.get('name', '?')} ({f.get('entry_type', '?')})\")"
+            "    print(f\"  - {f.get('name', '?')} ({f.get('entry_type', '?')}, {f.get('visibility', '?')})\")"
+          ],
+          "outputs": [],
+          "execution_count": null,
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# 7b. Download file back and verify\n",
+            "if uploaded.get('id'):\n",
+            "    download_path = '/workspace/sdk_test_download.csv'\n",
+            "    client.files.download(uploaded['id'], save_as=download_path)\n",
+            "    import pandas as pd\n",
+            "    df_check = pd.read_csv(download_path)\n",
+            "    print(f\"\\u2705 Downloaded and verified: {len(df_check)} rows, {list(df_check.columns)}\")\n",
+            "    assert len(df_check) == len(df), 'Row count mismatch!'\n",
+            "    print('\\u2705 Round-trip integrity check passed')\n",
+            "else:\n",
+            "    print('\\u26A0 No file to download')"
+          ],
+          "outputs": [],
+          "execution_count": null,
+          "metadata": {}
+        },
+        {
+          "cell_type": "markdown",
+          "source": [
+            "## Notifications\n",
+            "Send notifications to yourself or broadcast to all org users."
+          ],
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# 7c. Send a notification\n",
+            "client.notify('SDK Demo Complete', message='All SDK tests passed successfully.', type='success')\n",
+            "print('\\u2705 Notification sent (check the bell icon in top bar)')"
           ],
           "outputs": [],
           "execution_count": null,
@@ -221,6 +271,41 @@
             "print(\"Each org runs in isolated Docker container.\")\n",
             "print(\"Per-org volume at /workspace — no cross-org file access.\")\n",
             "print(\"Backend accessible (needed for SDK) — auth required for all endpoints.\")"
+          ],
+          "outputs": [],
+          "execution_count": null,
+          "metadata": {}
+        },
+        {
+          "cell_type": "markdown",
+          "source": [
+            "## Cleanup\n",
+            "Delete test artifacts created during this demo."
+          ],
+          "metadata": {}
+        },
+        {
+          "cell_type": "code",
+          "source": [
+            "# 9. Cleanup test table and files\n",
+            "tables = client.tables()\n",
+            "sdk_table = next((t for t in tables if t.get('name') == 'sdk_test'), None)\n",
+            "if sdk_table:\n",
+            "    client.delete_table(sdk_table['id'])\n",
+            "    print('\\u2705 Deleted test table: sdk_test')\n",
+            "\n",
+            "# Clean up uploaded test file\n",
+            "if uploaded.get('id'):\n",
+            "    client.files.delete(uploaded['id'])\n",
+            "    print('\\u2705 Deleted test file: sdk_test_export.csv')\n",
+            "\n",
+            "# Clean workspace temp files\n",
+            "import os\n",
+            "for f in ['sdk_test_export.csv', 'sdk_test_download.csv']:\n",
+            "    p = f'/workspace/{f}'\n",
+            "    if os.path.exists(p): os.remove(p)\n",
+            "\n",
+            "print('\\n\\u2705 All SDK features verified. Cleanup complete.')"
           ],
           "outputs": [],
           "execution_count": null,

@@ -273,6 +273,9 @@ function OrgShell({ children }) {
         </main>
       </div>
 
+      {/* Sidebar hover styles */}
+      <style>{`.sidebar-item:hover .sidebar-dots { opacity: 1 !important; } .sidebar-item:hover { background: rgba(255,255,255,0.03); }`}</style>
+
       {/* Right-click context menu for workspace pages */}
       {ctxMenu && (
         <div ref={ctxRef} style={{
@@ -286,6 +289,13 @@ function OrgShell({ children }) {
             refresh(); setCtxMenu(null);
           }} style={ctxMenuItem}>{"\u2B50"} Pin</button>
           <button onClick={() => { router.push(`/my/${ctxMenu.page.id}`); setCtxMenu(null); }} style={ctxMenuItem}>{"\u{1F4DD}"} Open</button>
+          <button onClick={() => {
+            const newName = prompt("Rename:", ctxMenu.page.name);
+            if (newName && newName.trim() && newName.trim() !== ctxMenu.page.name) {
+              fetch(`/api/pages/${ctxMenu.page.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "rename", name: newName.trim() }) }).then(() => refresh());
+            }
+            setCtxMenu(null);
+          }} style={ctxMenuItem}>{"\u270F\uFE0F"} Rename</button>
           <div style={{ borderTop: "1px solid #f0f0f0", margin: "4px 0" }} />
           <button onClick={async () => {
             const res = await fetch(`/api/pages/${ctxMenu.page.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clone" }) });
@@ -442,10 +452,15 @@ function PinnedItem({ page, pathname, isOrg }) {
   );
 }
 
-// Single page item in sidebar — with hover "..." menu button
-// Page tree — recursive folder/page structure with drag indicators
+// Page tree — recursive folder/page structure with drag reorder + "..." menu
 function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpandedFolders, refresh, dragOverTarget, onDragOverItem, onDragLeaveItem, onPageContext }) {
-  const children = items.filter((i) => (i.parent_id || null) === parentId);
+  const children = items.filter((i) => (i.parent_id || null) === parentId)
+    .sort((a, b) => {
+      // folders first, then by sort_order, then by name
+      if (a.entry_type === "folder" && b.entry_type !== "folder") return -1;
+      if (a.entry_type !== "folder" && b.entry_type === "folder") return 1;
+      return (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name);
+    });
   if (children.length === 0 && depth === 0) {
     return <div style={{ padding: "8px 14px", fontSize: 11, color: "#475569" }}>No pages yet</div>;
   }
@@ -453,60 +468,125 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
   const PAGE_ICONS = { dashboard: "\u{1F4CA}", html: "\u{1F310}", visual: "\u{1F9E9}", notebook: "\u{1F4D3}", python: "\u{1F40D}" };
   const TYPE_COLORS = { notebook: "#f59e0b", python: "#3b82f6", visual: "#8b5cf6", dashboard: "#10b981", html: "#e11d48" };
 
+  const handleDrop = async (e, targetItem, position) => {
+    e.preventDefault(); onDragLeaveItem?.();
+    const dragId = e.dataTransfer.getData("page_id");
+    if (!dragId || dragId === targetItem.id) return;
+
+    // If dropping on a folder — move into it
+    if (targetItem.entry_type === "folder" && position === "center") {
+      await fetch(`/api/pages/${dragId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", parent_id: targetItem.id }) });
+      refresh(); return;
+    }
+
+    // Reorder: insert dragged item before/after target within same parent
+    const dragItem = items.find((i) => i.id === dragId);
+    if (!dragItem) return;
+
+    // If different parent, move first
+    const targetParent = targetItem.parent_id || null;
+    if ((dragItem.parent_id || null) !== targetParent) {
+      await fetch(`/api/pages/${dragId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", parent_id: targetParent }) });
+    }
+
+    // Build new order
+    const siblings = children.filter((c) => c.id !== dragId);
+    const targetIdx = siblings.findIndex((c) => c.id === targetItem.id);
+    const insertIdx = position === "above" ? targetIdx : targetIdx + 1;
+    siblings.splice(insertIdx, 0, dragItem);
+
+    const reorder = siblings.map((c, idx) => ({ id: c.id, sort_order: idx }));
+    await fetch(`/api/pages/${dragId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reorder", items: reorder }) });
+    refresh();
+  };
+
+  const getDragPosition = (e, el) => {
+    const rect = el.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    if (y < rect.height * 0.3) return "above";
+    if (y > rect.height * 0.7) return "below";
+    return "center";
+  };
+
   return children.map((item) => {
     const isFolder = item.entry_type === "folder";
     const isExpanded = expandedFolders[item.id];
     const active = pathname === `/my/${item.id}`;
     const pl = 14 + depth * 14;
     const isDragOver = dragOverTarget === item.id;
+    const dragPos = isDragOver; // will be "above", "below", or item.id
 
     if (isFolder) {
       const folderChildren = items.filter((i) => i.parent_id === item.id);
       return (
         <div key={item.id}>
           <div
-            onDragOver={(e) => { e.preventDefault(); onDragOverItem?.(item.id); }}
+            draggable onDragStart={(e) => e.dataTransfer.setData("page_id", item.id)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              const pos = getDragPosition(e, e.currentTarget);
+              onDragOverItem?.(pos === "center" ? item.id : `${item.id}:${pos}`);
+            }}
             onDragLeave={() => onDragLeaveItem?.()}
-            onDrop={async (e) => {
-              e.preventDefault(); onDragLeaveItem?.();
-              const dragId = e.dataTransfer.getData("page_id");
-              if (!dragId || dragId === item.id) return;
-              await fetch(`/api/pages/${dragId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "move", parent_id: item.id }) });
-              refresh();
+            onDrop={(e) => {
+              const pos = getDragPosition(e, e.currentTarget);
+              handleDrop(e, item, pos);
             }}
             onClick={() => setExpandedFolders((f) => ({ ...f, [item.id]: !f[item.id] }))}
+            onContextMenu={(e) => onPageContext?.(e, item)}
+            className="sidebar-item"
             style={{
               display: "flex", alignItems: "center", gap: 6, padding: `4px 10px 4px ${pl}px`,
-              cursor: "pointer", color: "#94a3b8", fontSize: 12,
-              background: isDragOver ? "rgba(59,130,246,0.1)" : "transparent",
-              borderTop: isDragOver ? "2px solid #3b82f6" : "2px solid transparent",
+              cursor: "pointer", color: "#94a3b8", fontSize: 12, position: "relative",
+              background: dragPos === item.id ? "rgba(59,130,246,0.1)" : "transparent",
+              borderTop: String(dragPos).endsWith(":above") && String(dragPos).startsWith(item.id) ? "2px solid #3b82f6" : "2px solid transparent",
+              borderBottom: String(dragPos).endsWith(":below") && String(dragPos).startsWith(item.id) ? "2px solid #3b82f6" : "2px solid transparent",
               transition: "background 0.1s",
             }}
           >
             <span style={{ fontSize: 7 }}>{isExpanded ? "\u25BC" : "\u25B6"}</span>
             <span style={{ fontSize: 12 }}>{item.icon || "\u{1F4C1}"}</span>
-            <span style={{ flex: 1 }}>{item.name}</span>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
             <span style={{ fontSize: 9, color: "#475569" }}>{folderChildren.length}</span>
+            <button
+              className="sidebar-dots"
+              onClick={(e) => { e.stopPropagation(); onPageContext?.(e, item); }}
+              style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 11, padding: "0 2px", opacity: 0, transition: "opacity 0.1s", lineHeight: 1 }}
+            >{"\u22EF"}</button>
           </div>
           {isExpanded && (
-            <PageTree items={items} parentId={item.id} depth={depth + 1} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} />
+            <PageTree items={items} parentId={item.id} depth={depth + 1} pathname={pathname} expandedFolders={expandedFolders} setExpandedFolders={setExpandedFolders} refresh={refresh} dragOverTarget={dragOverTarget} onDragOverItem={onDragOverItem} onDragLeaveItem={onDragLeaveItem} onPageContext={onPageContext} />
           )}
         </div>
       );
     }
 
+    const dragOverStr = String(dragOverTarget);
+    const isAbove = dragOverStr === `${item.id}:above`;
+    const isBelow = dragOverStr === `${item.id}:below`;
+
     return (
       <Link key={item.id} href={`/my/${item.id}`}
         draggable onDragStart={(e) => e.dataTransfer.setData("page_id", item.id)}
-        onDragOver={(e) => { e.preventDefault(); onDragOverItem?.(item.id); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          const pos = getDragPosition(e, e.currentTarget);
+          onDragOverItem?.(`${item.id}:${pos}`);
+        }}
         onDragLeave={() => onDragLeaveItem?.()}
+        onDrop={(e) => {
+          const pos = getDragPosition(e, e.currentTarget);
+          handleDrop(e, item, pos);
+        }}
         onContextMenu={(e) => onPageContext?.(e, item)}
+        className="sidebar-item"
         style={{
           display: "flex", alignItems: "center", gap: 7, padding: `4px 10px 4px ${pl}px`,
-          color: active ? "#f1f5f9" : "#94a3b8", textDecoration: "none", fontSize: 12,
-          background: active ? "rgba(59,130,246,0.15)" : isDragOver ? "rgba(59,130,246,0.08)" : "transparent",
+          color: active ? "#f1f5f9" : "#94a3b8", textDecoration: "none", fontSize: 12, position: "relative",
+          background: active ? "rgba(59,130,246,0.15)" : "transparent",
           borderLeft: active ? "3px solid #3b82f6" : "3px solid transparent",
-          borderTop: isDragOver ? "2px solid #3b82f6" : "2px solid transparent",
+          borderTop: isAbove ? "2px solid #3b82f6" : "2px solid transparent",
+          borderBottom: isBelow ? "2px solid #3b82f6" : "2px solid transparent",
           transition: "all 0.1s", cursor: "pointer",
         }}>
         <span style={{ width: 4, height: 4, borderRadius: "50%", background: TYPE_COLORS[item.page_type] || "#6b7280", flexShrink: 0 }} title={item.page_type} />
@@ -514,6 +594,11 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
         {item.visibility !== "private" && <span style={{ fontSize: 8, color: "#475569" }}>{item.visibility === "org" ? "\u{1F465}" : "\u{1F310}"}</span>}
         {hasPageSchedule(item) && <span style={{ fontSize: 8 }} title="Scheduled">{"\u23F0"}</span>}
+        <button
+          className="sidebar-dots"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPageContext?.(e, item); }}
+          style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 11, padding: "0 2px", opacity: 0, transition: "opacity 0.1s", lineHeight: 1, flexShrink: 0 }}
+        >{"\u22EF"}</button>
       </Link>
     );
   });

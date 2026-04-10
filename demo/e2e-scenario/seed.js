@@ -264,6 +264,31 @@ async function seed() {
     await createPage(raw.name, raw.icon, raw.page_type, raw.config, folderId);
   }
 
+  // Step 10: Seed sample sensor data into ClickHouse
+  console.log("\nStep 10: Seed sample sensor data...");
+  const now = Date.now();
+  let inserted = 0;
+  for (let i = 0; i < 200; i++) {
+    const ts = new Date(now - (200 - i) * 15000); // every 15s going back ~50min
+    const baseTemp = 24 + Math.sin(i * 0.05) * 3;
+    const baseHumid = 55 + Math.cos(i * 0.03) * 10;
+
+    for (const channel of ["sensor-room-a", "sensor-room-b"]) {
+      const offset = channel === "sensor-room-b" ? 2 : 0;
+      const res = await post("/api/v1/data/events", {
+        channel,
+        source: "seed",
+        payload: {
+          temperature: +(baseTemp + offset + (Math.random() - 0.5) * 1.5).toFixed(2),
+          humidity: +(baseHumid - offset + (Math.random() - 0.5) * 3).toFixed(2),
+          timestamp: ts.toISOString(),
+        },
+      });
+      if (res.status === 200) inserted++;
+    }
+  }
+  console.log(`✅ Inserted ${inserted} sensor events (200 per room, ~50 min span)`);
+
   console.log("\n" + "=".repeat(50));
   console.log("✅ Demo scenario seeded successfully!");
   console.log("=".repeat(50));

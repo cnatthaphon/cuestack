@@ -3,6 +3,11 @@
   "icon": "\ud83d\udcd3",
   "page_type": "notebook",
   "config": {
+    "schedule": {
+      "cron": "*/5 * * * *",
+      "enabled": true,
+      "timezone": "UTC"
+    },
     "notebook_content": {
       "nbformat": 4,
       "nbformat_minor": 5,
@@ -37,10 +42,16 @@
             "from datetime import datetime\n",
             "os.environ[\"CUESTACK_TOKEN\"] = \"\"  # Auto-refreshed on open\n",
             "\n",
+            "from zoneinfo import ZoneInfo\n",
             "from cuestack import connect\n",
             "client = connect()\n",
             "user = client.me()\n",
-            "print(f\"Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\")\n",
+            "\n",
+            "now = datetime.now(ZoneInfo('Asia/Bangkok'))\n",
+            "print('=' * 60)\n",
+            "print(f\"  Sensor Analysis Report — {now.strftime('%Y-%m-%d %H:%M:%S')}\")\n",
+            "print(f\"  Scheduled: every 5 minutes (cron: */5 * * * *)\")\n",
+            "print('=' * 60)\n",
             "print(f\"Connected as: {user['user']['username']}\")\n",
             "print(f\"Organization: {user['org']['name']} ({user['org']['plan']})\")\n",
             "print(f\"Permissions: {len(user['user']['permissions'])} granted\")"
