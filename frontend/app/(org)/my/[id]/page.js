@@ -942,9 +942,14 @@ function renderOutput(output) {
   }
   if (otype === "execute_result" || otype === "display_data") {
     const data = output.data || {};
-    // HTML output
+    // HTML output — use iframe for interactive content (Plotly, Bokeh, etc.)
     if (data["text/html"]) {
       const html = Array.isArray(data["text/html"]) ? data["text/html"].join("") : data["text/html"];
+      const hasScript = html.includes("<script") || html.includes("plotly") || html.includes("bokeh");
+      if (hasScript) {
+        const srcdoc = `<!DOCTYPE html><html><head><style>body{margin:0;font-family:system-ui;}</style></head><body>${html}</body></html>`;
+        return <div style={{ padding: "4px 12px" }}><iframe srcDoc={srcdoc} style={{ width: "100%", minHeight: 420, border: "1px solid #e2e8f0", borderRadius: 6 }} sandbox="allow-scripts allow-same-origin" /></div>;
+      }
       return <div style={{ padding: "4px 12px", overflow: "auto" }} dangerouslySetInnerHTML={{ __html: html }} />;
     }
     // Image output
