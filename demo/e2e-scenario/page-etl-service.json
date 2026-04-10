@@ -7,10 +7,10 @@
     "service_status": "running",
     "nodes": [
       {"id": "mqtt_in", "type": "mqtt_subscribe", "x": 50, "y": 150, "config": {"channels": ["sensor-room-a", "sensor-room-b"]}},
-      {"id": "store_raw", "type": "insert", "x": 300, "y": 50, "config": {"table": "raw_sensor_data"}},
+      {"id": "store_raw", "type": "insert", "x": 300, "y": 50, "config": {"table": "raw_sensor_data", "column_mapping": "timestamp -> timestamp\nchannel -> channel\ntemperature -> temperature\nhumidity -> humidity"}},
       {"id": "fft1", "type": "fft", "x": 300, "y": 150, "config": {"column": "temperature", "sample_rate": 1}},
       {"id": "smooth1", "type": "moving_average", "x": 300, "y": 250, "config": {"column": "temperature", "window": 10}},
-      {"id": "store_proc", "type": "insert", "x": 550, "y": 200, "config": {"table": "processed_sensor_data"}},
+      {"id": "store_proc", "type": "insert", "x": 550, "y": 200, "config": {"table": "processed_sensor_data", "column_mapping": "timestamp -> timestamp\nchannel -> channel\nmetric_name -> metric\nresult -> value"}},
       {"id": "ws_out", "type": "ws_publish", "x": 550, "y": 100, "config": {"channels": ["sensor-room-a", "sensor-room-b"]}}
     ],
     "edges": [
