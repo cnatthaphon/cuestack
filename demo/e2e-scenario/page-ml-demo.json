@@ -34,7 +34,10 @@
           "cell_type": "code",
           "source": [
             "# Step 1: Connect & Query sensor data\n",
+            "import os\n",
             "from datetime import datetime\n",
+            "os.environ[\"CUESTACK_TOKEN\"] = \"\"  # Auto-refreshed on open\n",
+            "\n",
             "from cuestack import connect\n",
             "import pandas as pd\n",
             "import numpy as np\n",
