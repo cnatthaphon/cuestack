@@ -267,8 +267,8 @@ async def ws_channels(websocket: WebSocket):
             if action == "subscribe":
                 channel = msg.get("channel")
                 if channel:
-                    # System channels (prefixed _) bypass org_channels validation
-                    if channel.startswith("_"):
+                    # System channels — only known prefixes, scoped to user's org
+                    if channel.startswith("_page:") or channel.startswith("_system:"):
                         await ch.subscribe(websocket, org_id, channel)
                         await websocket.send_json({"subscribed": channel})
                     else:

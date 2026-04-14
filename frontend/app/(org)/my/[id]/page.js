@@ -948,7 +948,7 @@ function renderOutput(output) {
       const hasScript = html.includes("<script") || html.includes("plotly") || html.includes("bokeh");
       if (hasScript) {
         const srcdoc = `<!DOCTYPE html><html><head><style>body{margin:0;font-family:system-ui;}</style></head><body>${html}</body></html>`;
-        return <div style={{ padding: "4px 12px" }}><iframe srcDoc={srcdoc} style={{ width: "100%", minHeight: 420, border: "1px solid #e2e8f0", borderRadius: 6 }} sandbox="allow-scripts allow-same-origin" /></div>;
+        return <div style={{ padding: "4px 12px" }}><iframe srcDoc={srcdoc} style={{ width: "100%", minHeight: 420, border: "1px solid #e2e8f0", borderRadius: 6 }} sandbox="allow-scripts" /></div>;
       }
       return <div style={{ padding: "4px 12px", overflow: "auto" }} dangerouslySetInnerHTML={{ __html: html }} />;
     }
@@ -1020,6 +1020,8 @@ function NotebookRenderer({ page, isOwner, saveConfig, onReload }) {
 
   // Auto-refresh: poll for new execution results on scheduled pages
   const lastRunCountRef = useRef(schedule?.run_count || 0);
+  // Keep ref in sync when page data reloads
+  useEffect(() => { lastRunCountRef.current = schedule?.run_count || 0; }, [schedule?.run_count]);
   useEffect(() => {
     if (!schedule?.enabled || !schedule?.cron) return;
     const interval = setInterval(async () => {
