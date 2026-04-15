@@ -179,7 +179,7 @@
             "    fig.show()\n",
             "    # Also output as HTML for non-interactive preview\n",
             "    from IPython.display import HTML, display\n",
-            "    display(HTML(fig.to_html(include_plotlyjs='cdn', full_html=False)))\n",
+            "    display(HTML(fig.to_html(include_plotlyjs=True, full_html=False)))\n",
             "except ImportError:\n",
             "    print('Plotly not installed — showing matplotlib fallback')\n",
             "    import matplotlib.pyplot as plt\n",
