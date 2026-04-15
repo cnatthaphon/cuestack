@@ -948,7 +948,7 @@ function renderOutput(output) {
       const hasScript = html.includes("<script") || html.includes("plotly") || html.includes("bokeh");
       if (hasScript) {
         const srcdoc = `<!DOCTYPE html><html><head><style>body{margin:0;font-family:system-ui;}</style></head><body>${html}</body></html>`;
-        return <div style={{ padding: "4px 12px" }}><iframe srcDoc={srcdoc} style={{ width: "100%", minHeight: 420, border: "1px solid #e2e8f0", borderRadius: 6 }} sandbox="allow-scripts" /></div>;
+        return <div style={{ padding: "4px 12px" }}><iframe srcDoc={srcdoc} style={{ width: "100%", minHeight: 420, border: "1px solid #e2e8f0", borderRadius: 6 }} sandbox="allow-scripts allow-same-origin" referrerPolicy="no-referrer" /></div>;
       }
       return <div style={{ padding: "4px 12px", overflow: "auto" }} dangerouslySetInnerHTML={{ __html: html }} />;
     }
@@ -1504,7 +1504,7 @@ function PythonRenderer({ page, isOwner, saveConfig }) {
               </>
             : <button onClick={() => setEditing(true)} style={btnBlue}>Edit Code</button>
         )}
-        {isOwner && !isService && <button onClick={runOnce} disabled={running} style={btnGray}>{running ? "Running..." : "\u25B6 Run Once"}</button>}
+        {isOwner && !isService && !code.includes("serve_forever") && <button onClick={runOnce} disabled={running} style={btnGray}>{running ? "Running..." : "\u25B6 Run Once"}</button>}
         {isService && (
           <span style={{ fontSize: 12, padding: "4px 12px", borderRadius: 4, background: cfg.service_status === "running" ? "#f0fde8" : "#fef2f2", color: cfg.service_status === "running" ? "#15803d" : "#dc2626", fontWeight: 600 }}>
             {cfg.service_status === "running" ? "Service running — always-on" : "Service stopped"}

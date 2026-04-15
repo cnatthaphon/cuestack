@@ -551,7 +551,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
             <button
               className="sidebar-dots"
               onClick={(e) => { e.stopPropagation(); onPageContext?.(e, item); }}
-              style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 11, padding: "0 2px", opacity: 0, transition: "opacity 0.1s", lineHeight: 1 }}
+              style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, padding: "2px 4px", opacity: 0, transition: "opacity 0.1s", lineHeight: 1 }}
             >{"\u22EF"}</button>
           </div>
           {isExpanded && (
@@ -597,7 +597,7 @@ function PageTree({ items, parentId, depth, pathname, expandedFolders, setExpand
         <button
           className="sidebar-dots"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPageContext?.(e, item); }}
-          style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 11, padding: "0 2px", opacity: 0, transition: "opacity 0.1s", lineHeight: 1, flexShrink: 0 }}
+          style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, padding: "2px 4px", opacity: 0, transition: "opacity 0.1s", lineHeight: 1, flexShrink: 0 }}
         >{"\u22EF"}</button>
       </Link>
     );

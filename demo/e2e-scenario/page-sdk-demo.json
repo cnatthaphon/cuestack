@@ -60,7 +60,7 @@
           "source": [
             "# 2. List existing tables\n",
             "tables = client.tables()\n",
-            "print(f\"\\u{1F4CB} Existing tables: {len(tables)}\")\n",
+            "print(f\"\\U0001F4CB Existing tables: {len(tables)}\")\n",
             "for t in tables[:5]:\n",
             "    print(f\"  - {t.get('name', '?')} ({t.get('row_count', 0)} rows)\")"
           ],
@@ -161,7 +161,7 @@
             "\n",
             "# List files\n",
             "files = client.files.list()\n",
-            "print(f\"\\n\\u{1F4C1} Files ({len(files)}):\")\n",
+            "print(f\"\\n\\U0001F4C1 Files ({len(files)}):\")\n",
             "for f in files[:5]:\n",
             "    print(f\"  - {f.get('name', '?')} ({f.get('entry_type', '?')}, {f.get('visibility', '?')})\")"
           ],
