@@ -1478,10 +1478,10 @@ function PythonRenderer({ page, isOwner, saveConfig }) {
     setRunning(true);
     setOutput(null);
     try {
-      const res = await fetch("/api/flow", {
+      const res = await fetch(`/api/pages/${page.id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page_id: page.id, action: "run_python", code }),
+        body: JSON.stringify({ code }),
       });
       const data = await res.json();
       setOutput(data);

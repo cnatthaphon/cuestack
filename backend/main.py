@@ -467,6 +467,22 @@ async def mqtt_disconnect(request: Request, user=Depends(require_auth)):
     return {"ok": True}
 
 
+# ── Python code execution (Run Once) ─────────────────────────────────────────
+
+class RunPythonRequest(BaseModel):
+    code: str
+    org_id: str
+    page_id: str = ""
+    timeout: int = 30
+
+
+@app.post("/api/run-python")
+async def run_python_endpoint(body: RunPythonRequest):
+    """Execute Python code in the org's Jupyter container (Run Once)."""
+    from run_python import execute_in_container
+    return await execute_in_container(body.org_id, body.page_id, body.code, body.timeout)
+
+
 # ── Org Custom Block execution ───────────────────────────────────────────────
 
 @app.post("/api/flow/execute-block")
