@@ -1504,13 +1504,7 @@ function PythonRenderer({ page, isOwner, saveConfig }) {
               </>
             : <button onClick={() => setEditing(true)} style={btnBlue}>Edit Code</button>
         )}
-        {isOwner && !isService && !code.includes("serve_forever") && <button onClick={runOnce} disabled={running} style={btnGray}>{running ? "Running..." : "\u25B6 Run Once"}</button>}
-        {isOwner && !isService && code.includes("serve_forever") && (
-          <button onClick={async () => {
-            await saveConfig({ ...cfg, is_service: true, service_status: "running" });
-            window.location.reload();
-          }} style={{ ...btnBlue, background: "#059669" }}>Start as Service</button>
-        )}
+        {isOwner && !isService && <button onClick={runOnce} disabled={running} style={btnGray}>{running ? "Running..." : "\u25B6 Run Once"}</button>}
         {isService && (
           <span style={{ fontSize: 12, padding: "4px 12px", borderRadius: 4, background: cfg.service_status === "running" ? "#f0fde8" : "#fef2f2", color: cfg.service_status === "running" ? "#15803d" : "#dc2626", fontWeight: 600 }}>
             {cfg.service_status === "running" ? "Service running — always-on" : "Service stopped"}
