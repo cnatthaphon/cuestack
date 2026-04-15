@@ -630,19 +630,66 @@ async def execute_notebook(task: dict, timeout_s: int) -> tuple[bool, str]:
     hub_token = os.getenv("JUPYTERHUB_API_TOKEN", "")
     hub_headers = {"Authorization": f"token {hub_token}"} if hub_token else {}
 
-    # 1. Ensure JupyterHub user exists
+    # 1. Ensure JupyterHub user exists with correct auth_state (org plan + limits)
+    org_id = task["org_id"]
+    auth_state_payload = json.dumps({"org_id": org_id, "org_name": task.get("org_name", ""), "plan": "enterprise"})
+
+    # Read actual plan from DB
+    try:
+        _conn = get_db()
+        with _conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as _cur:
+            _cur.execute("SELECT plan FROM organizations WHERE id = %s", [org_id])
+            _org = _cur.fetchone()
+            if _org:
+                auth_state_payload = json.dumps({"org_id": org_id, "org_name": task.get("org_name", ""), "plan": _org["plan"]})
+        _conn.close()
+    except Exception:
+        pass
+
     try:
         req = urllib.request.Request(f"{hub_api}/users/{org_short}", headers=hub_headers)
+        urllib.request.urlopen(req, timeout=10)
+        # Update auth_state for existing user
+        req = urllib.request.Request(
+            f"{hub_api}/users/{org_short}", method="PATCH",
+            headers={**hub_headers, "Content-Type": "application/json"},
+            data=json.dumps({"auth_state": json.loads(auth_state_payload)}).encode(),
+        )
         urllib.request.urlopen(req, timeout=10)
     except urllib.error.HTTPError as e:
         if e.code == 404:
             req = urllib.request.Request(
                 f"{hub_api}/users/{org_short}", method="POST",
-                headers={**hub_headers, "Content-Type": "application/json"}, data=b"{}",
+                headers={**hub_headers, "Content-Type": "application/json"},
+                data=json.dumps({"auth_state": json.loads(auth_state_payload)}).encode(),
             )
             urllib.request.urlopen(req, timeout=10)
 
-    # 2. Ensure Jupyter server is running
+    # 2. Ensure Jupyter server is running with correct resource limits
+    # Check if existing container has wrong memory limit — if so, delete and respawn
+    try:
+        container_name = f"jupyter-{org_short}"
+        inspect_result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.HostConfig.Memory}}", container_name],
+            capture_output=True, text=True, timeout=10,
+        )
+        if inspect_result.returncode == 0:
+            current_mem = int(inspect_result.stdout.strip() or 0)
+            # enterprise = 2G = 2147483648, if container has < 512MB it's probably stale
+            if 0 < current_mem < 512 * 1024 * 1024:
+                logger.info(f"Container {container_name} has {current_mem // (1024*1024)}MB — respawning with correct limits")
+                try:
+                    req = urllib.request.Request(
+                        f"{hub_api}/users/{org_short}/server", method="DELETE",
+                        headers=hub_headers,
+                    )
+                    urllib.request.urlopen(req, timeout=30)
+                    await asyncio.sleep(5)  # wait for container to stop
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     try:
         req = urllib.request.Request(
             f"{hub_api}/users/{org_short}/server", method="POST",
