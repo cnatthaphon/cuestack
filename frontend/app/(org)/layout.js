@@ -274,7 +274,7 @@ function OrgShell({ children }) {
       </div>
 
       {/* Sidebar hover styles */}
-      <style>{`.sidebar-item:hover .sidebar-dots { opacity: 1 !important; } .sidebar-item:hover { background: rgba(255,255,255,0.03); }`}</style>
+      <style>{`.sidebar-item:hover .sidebar-dots { opacity: 1 !important; } .sidebar-dots:hover { background: rgba(255,255,255,0.15) !important; border-radius: 4px; } .sidebar-item:hover { background: rgba(255,255,255,0.03); }`}</style>
 
       {/* Right-click context menu for workspace pages */}
       {ctxMenu && (

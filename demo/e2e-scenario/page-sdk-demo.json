@@ -59,10 +59,12 @@
           "cell_type": "code",
           "source": [
             "# 2. List existing tables\n",
-            "tables = client.tables()\n",
-            "print(f\"\\U0001F4CB Existing tables: {len(tables)}\")\n",
-            "for t in tables[:5]:\n",
-            "    print(f\"  - {t.get('name', '?')} ({t.get('row_count', 0)} rows)\")"
+            "tables_df = client.tables()\n",
+            "print(f\"\\U0001F4CB Existing tables: {len(tables_df)}\")\n",
+            "if len(tables_df) > 0:\n",
+            "    for _, t in tables_df.head(5).iterrows():\n",
+            "        print(f\"  - {t.get('name', '?')} ({t.get('row_count', 0)} rows)\")\n",
+            "tables_df.head()"
           ],
           "outputs": [],
           "execution_count": null,
@@ -288,10 +290,10 @@
           "cell_type": "code",
           "source": [
             "# 9. Cleanup test table and files\n",
-            "tables = client.tables()\n",
-            "sdk_table = next((t for t in tables if t.get('name') == 'sdk_test'), None)\n",
-            "if sdk_table:\n",
-            "    client.delete_table(sdk_table['id'])\n",
+            "tables_df = client.tables()\n",
+            "sdk_rows = tables_df[tables_df['name'] == 'sdk_test'] if len(tables_df) > 0 else []\n",
+            "if len(sdk_rows) > 0:\n",
+            "    client.delete_table(sdk_rows.iloc[0]['id'])\n",
             "    print('\\u2705 Deleted test table: sdk_test')\n",
             "\n",
             "# Clean up uploaded test file\n",

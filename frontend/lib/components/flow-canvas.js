@@ -33,6 +33,7 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
   const [connecting, setConnecting] = useState(null); // {nodeId, port: "out", portIdx}
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [panning, setPanning] = useState(null); // {startX, startY, panX, panY}
   const [dragging, setDragging] = useState(null); // {nodeId, offsetX, offsetY}
   const [showCatalog, setShowCatalog] = useState(false);
   const svgRef = useRef(null);
@@ -94,10 +95,20 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
       setNodes((prev) => prev.map((n) => n.id === dragging.nodeId
         ? { ...n, x: pt.x - dragging.offsetX, y: pt.y - dragging.offsetY } : n));
     }
+    if (panning) {
+      setPan({ x: panning.panX + (e.clientX - panning.startX), y: panning.panY + (e.clientY - panning.startY) });
+    }
   };
 
   const onMouseUp = () => {
     if (dragging) setDragging(null);
+    if (panning) setPanning(null);
+  };
+
+  const onCanvasBgMouseDown = (e) => {
+    if (e.target === svgRef.current || e.target.classList.contains("canvas-bg")) {
+      setPanning({ startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y });
+    }
   };
 
   const onNodeMouseDown = (e, nodeId) => {
@@ -231,11 +242,11 @@ export default function FlowCanvas({ nodes: initNodes, edges: initEdges, tables,
         )}
 
         {/* SVG Canvas */}
-        <svg ref={svgRef} width="100%" height="100%" onClick={onCanvasClick} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
-          style={{ cursor: dragging ? "grabbing" : connecting ? "crosshair" : "default" }}>
+        <svg ref={svgRef} width="100%" height="100%" onClick={onCanvasClick} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseDown={onCanvasBgMouseDown}
+          style={{ cursor: panning ? "grabbing" : dragging ? "grabbing" : connecting ? "crosshair" : "grab" }}>
           {/* Grid */}
           <defs>
-            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse" patternTransform={`translate(${pan.x % 20},${pan.y % 20})`}>
               <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#eee" strokeWidth="0.5" />
             </pattern>
           </defs>
