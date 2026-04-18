@@ -12,13 +12,35 @@ import { predictEnergy } from "./energy-formulas.js";
 // ─── Main: energy_monitor ────────────────────────────────────────────────────
 export function energyMonitor(rows, modelConfig, inputs) {
   const {
-    rate = 4.0, setpoint = 24, percentile = 50,
+    setpoint = 24, percentile = 50,
     operating_start = 8, operating_end = 22,
     operating_days = [1, 2, 3, 4, 5], // 1=Mon..7=Sun
     demand_budget_kw = 5.0,
     energy_alert_pct = 5, peak_alert_pct = 80,
     target_reduction = 10,
+    // TOU tariff — separate on-peak/off-peak rates
+    onpeak_rate = 4.1839,   // THB/kWh (Mon-Fri 9:00-22:00)
+    offpeak_rate = 2.6037,  // THB/kWh (nights, weekends, holidays)
+    demand_charge = 132.93, // THB/kW/month
+    onpeak_start = 9,       // on-peak hours
+    onpeak_end = 22,
+    onpeak_days = [1, 2, 3, 4, 5], // Mon-Fri
+    holidays = [],          // ISO dates that are off-peak regardless of day
+    rate,                   // legacy flat rate — if provided, overrides TOU
   } = inputs;
+  const useTOU = !rate; // use TOU if no flat rate specified
+
+  // TOU rate resolver
+  const holidaySet = new Set(holidays);
+  function touRate(ts) {
+    if (!useTOU) return rate || 4.0;
+    const h = ts.getHours();
+    const dow = ts.getDay() === 0 ? 7 : ts.getDay();
+    const dateStr = ts.toISOString().slice(0, 10);
+    const isHoliday = holidaySet.has(dateStr);
+    const isPeak = !isHoliday && onpeak_days.includes(dow) && h >= onpeak_start && h < onpeak_end;
+    return isPeak ? onpeak_rate : offpeak_rate;
+  }
 
   if (!rows || rows.length === 0) {
     return { error: "No power data", daily_stats: [], summary: {} };
@@ -37,6 +59,7 @@ export function energyMonitor(rows, modelConfig, inputs) {
       state: row.state || "UNKNOWN",
       hour: ts.getHours() + ts.getMinutes() / 60,
       dow: ts.getDay() === 0 ? 7 : ts.getDay(), // 1=Mon..7=Sun
+      rate_thb: touRate(ts),
       ts,
     });
   }
@@ -65,28 +88,35 @@ export function energyMonitor(rows, modelConfig, inputs) {
     b.avg_w = b.count > 0 ? Math.round(b.wh / (b.count * 0.25)) : 0;
   }
 
-  // ─── Time bins ─────────────────────────────────────────────────────────
+  // ─── Time bins (with TOU cost) ──────────────────────────────────────────
   const timeBins = {
-    operating: { label: "Operating", count: 0, wh: 0 },
-    off_hours: { label: "Off-Hours", count: 0, wh: 0 },
+    onpeak: { label: "On-Peak", count: 0, wh: 0, cost: 0, rate: onpeak_rate },
+    offpeak: { label: "Off-Peak", count: 0, wh: 0, cost: 0, rate: offpeak_rate },
   };
   for (const row of rows) {
     const ts = new Date(row.timestamp);
     const h = ts.getHours();
     const dow = ts.getDay() === 0 ? 7 : ts.getDay();
-    const isOp = h >= operating_start && h < operating_end && operating_days.includes(dow);
-    const bin = isOp ? timeBins.operating : timeBins.off_hours;
+    const dateStr = ts.toISOString().slice(0, 10);
+    const isHoliday = holidaySet.has(dateStr);
+    const isPeak = !isHoliday && onpeak_days.includes(dow) && h >= onpeak_start && h < onpeak_end;
+    const bin = isPeak ? timeBins.onpeak : timeBins.offpeak;
+    const p = (parseFloat(row.power_w) || 0);
+    const kwh = p * 0.25 / 1000; // 15-min interval
     bin.count++;
-    bin.wh += (parseFloat(row.power_w) || 0) * 0.25;
+    bin.wh += p * 0.25;
+    bin.cost += kwh * (isPeak ? onpeak_rate : offpeak_rate);
   }
   for (const b of Object.values(timeBins)) {
     b.kwh = round2(b.wh / 1000);
+    b.cost_thb = round2(b.cost);
     b.avg_w = b.count > 0 ? Math.round(b.wh / (b.count * 0.25)) : 0;
   }
 
   // ─── Daily stats with predictions ──────────────────────────────────────
   const dailyStats = [];
   let totalActual = 0, totalPredicted = 0;
+  let totalActualCost = 0, totalPredictedCost = 0;
   let monthlyPeak = 0;
   let streak = 0, maxStreak = 0;
 
@@ -98,6 +128,8 @@ export function energyMonitor(rows, modelConfig, inputs) {
 
     const actual_wh = readings.reduce((s, r) => s + r.power * 0.25, 0);
     const actual_kwh = actual_wh / 1000;
+    // TOU cost: sum each reading's kWh × its rate
+    const actual_cost = readings.reduce((s, r) => s + (r.power * 0.25 / 1000) * r.rate_thb, 0);
     const peak_kw = Math.max(...readings.map((r) => r.power)) / 1000;
     if (peak_kw > monthlyPeak) monthlyPeak = peak_kw;
 
@@ -168,10 +200,17 @@ export function energyMonitor(rows, modelConfig, inputs) {
     // Demand defender
     if (peak_kw < demand_budget_kw) badges.push("demandDefender");
 
+    // Effective avg rate for this day (TOU-weighted)
+    const avg_rate = actual_kwh > 0 ? actual_cost / actual_kwh : (useTOU ? onpeak_rate : (rate || 4.0));
+    const predicted_cost = calibrated_kwh * avg_rate;
+    const savings_cost = predicted_cost - actual_cost;
+
     const stat = {
       date, actual_kwh: round2(actual_kwh), predicted_kwh: round2(calibrated_kwh),
       raw_predicted_kwh: round2(predicted_kwh),
       savings_kwh: round2(savings_kwh), savings_pct: round1(savings_pct),
+      actual_cost_thb: round2(actual_cost), predicted_cost_thb: round2(predicted_cost),
+      savings_cost_thb: round2(savings_cost), avg_rate_thb: round2(avg_rate),
       peak_kw: round2(peak_kw), operating_hours: round1(op_hours),
       avg_te: round1(avg_Te), ti_start: round1(Ti_start),
       time_bin: timeBin, power_bin: powerBin,
@@ -181,9 +220,12 @@ export function energyMonitor(rows, modelConfig, inputs) {
     dailyStats.push(stat);
     totalActual += actual_kwh;
     totalPredicted += calibrated_kwh;
+    totalActualCost += actual_cost;
+    totalPredictedCost += predicted_cost;
   }
 
   const totalSavings = totalPredicted - totalActual;
+  const totalSavingsCost = totalPredictedCost - totalActualCost;
   const daysUnder = dailyStats.filter((d) => d.status === "under").length;
   const totalDays = dailyStats.length;
 
@@ -262,15 +304,20 @@ export function energyMonitor(rows, modelConfig, inputs) {
       actual_total_kWh: round2(totalActual),
       predicted_total_kWh: round2(totalPredicted),
       savings_total_kWh: round2(totalSavings),
-      actual_cost_thb: round2(totalActual * rate),
-      predicted_cost_thb: round2(totalPredicted * rate),
-      savings_cost_thb: round2(totalSavings * rate),
+      actual_cost_thb: round2(totalActualCost),
+      predicted_cost_thb: round2(totalPredictedCost),
+      savings_cost_thb: round2(totalSavingsCost),
+      demand_charge_thb: round2(monthlyPeak * demand_charge),
+      total_bill_thb: round2(totalActualCost + monthlyPeak * demand_charge),
       overall_status: totalSavings >= 0 ? "UNDER BUDGET" : "OVER BUDGET",
       current_streak: streak,
       max_streak: maxStreak,
       monthly_peak_kw: round2(monthlyPeak),
       demand_budget_kw,
       percentile,
+      tariff: useTOU
+        ? { mode: "TOU", onpeak: onpeak_rate, offpeak: offpeak_rate, demand: demand_charge }
+        : { mode: "flat", rate: rate || 4.0 },
     },
     daily_stats: dailyStats,
     power_bins: powerBins,
