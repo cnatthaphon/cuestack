@@ -1830,6 +1830,42 @@ function ComputeWidget({ config, controlState }) {
   const [error, setError] = useState(null);
   const prevInputsRef = useRef("");
 
+  // Training wizard state
+  const [training, setTraining] = useState(false);
+  const [trainResult, setTrainResult] = useState(null);
+  const [models, setModels] = useState([]);
+  const [showWizard, setShowWizard] = useState(false);
+  const [trainConfig, setTrainConfig] = useState({
+    model_types: ["linear_regression", "random_forest", "xgboost", "ensemble"],
+    training_interval: "hourly",
+  });
+
+  // Load trained models on mount
+  useEffect(() => {
+    fetch("/api/dashboards/train").then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
+  }, [trainResult]);
+
+  const runTraining = async () => {
+    setTraining(true); setTrainResult(null);
+    try {
+      const res = await fetch("/api/dashboards/train", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_table: config.source_table || "power_consumption",
+          target_column: "power_w",
+          feature_columns: ["hour", "dow", "temp_ext", "temp_int"],
+          model_types: trainConfig.model_types,
+          training_interval: trainConfig.training_interval,
+        }),
+      });
+      const d = await res.json();
+      setTrainResult(d.data || d);
+      if (d.error) setError(d.error);
+    } catch (e) { setError(e.message); }
+    setTraining(false);
+  };
+
   const inputs = {};
   const inputMap = config?.input_map || {};
   for (const [formulaKey, varName] of Object.entries(inputMap)) {
@@ -1884,9 +1920,129 @@ function ComputeWidget({ config, controlState }) {
     const tBins = result.time_bins || {};
     const demand = result.demand || {};
 
+    // Active model from ei_models
+    const activeModel = models.find((m) => m.is_active === true || m.is_active === "true");
+    const MODEL_TYPES = ["linear_regression", "random_forest", "xgboost", "ensemble"];
+
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {loading && <div style={{ fontSize: 10, color: "#3b82f6", textAlign: "right" }}>Updating...</div>}
+
+        {/* Model bar — active model info + train/retrain button */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "#f0f9ff", borderRadius: 6, border: "1px solid #bae6fd" }}>
+          <div style={{ fontSize: 12 }}>
+            {activeModel ? (
+              <span>
+                <span style={{ fontWeight: 600 }}>{activeModel.name}</span>
+                {activeModel.accuracy && (() => { try { const a = typeof activeModel.accuracy === "string" ? JSON.parse(activeModel.accuracy) : activeModel.accuracy; return <span style={{ color: "#64748b", marginLeft: 8 }}>R²={a.r2} · MAE={a.mae}</span>; } catch { return null; } })()}
+                <span style={{ color: "#94a3b8", marginLeft: 8, fontSize: 10 }}>{models.length} models trained</span>
+              </span>
+            ) : (
+              <span style={{ color: "#94a3b8" }}>No model trained yet — click Train to start</span>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={() => setShowWizard(!showWizard)} disabled={training}
+              style={{ padding: "4px 12px", fontSize: 11, background: showWizard ? "#dbeafe" : "#3b82f6", color: showWizard ? "#1e40af" : "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
+              {training ? "Training..." : showWizard ? "Close" : activeModel ? "Retrain" : "Train Model"}
+            </button>
+          </div>
+        </div>
+
+        {/* Training wizard */}
+        {showWizard && (
+          <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Training Wizard</div>
+
+            {/* Step 1: Source */}
+            <div style={{ fontSize: 12, marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, color: "#555", marginBottom: 4 }}>1. Data Source</div>
+              <div style={{ padding: "6px 10px", background: "#f8fafc", borderRadius: 4, fontSize: 11 }}>
+                Table: <b>{config.source_table || "power_consumption"}</b> · Target: <b>power_w</b> · Interval: {trainConfig.training_interval}
+              </div>
+            </div>
+
+            {/* Step 2: Model types */}
+            <div style={{ fontSize: 12, marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, color: "#555", marginBottom: 4 }}>2. Select Models</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {MODEL_TYPES.map((t) => (
+                  <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}>
+                    <input type="checkbox" checked={trainConfig.model_types.includes(t)}
+                      onChange={(e) => {
+                        const next = e.target.checked ? [...trainConfig.model_types, t] : trainConfig.model_types.filter((x) => x !== t);
+                        setTrainConfig({ ...trainConfig, model_types: next });
+                      }} />
+                    {{ linear_regression: "Linear Regression", random_forest: "Random Forest", xgboost: "XGBoost", ensemble: "Ensemble (Voting)" }[t]}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Step 3: Train button */}
+            <button onClick={runTraining} disabled={training || trainConfig.model_types.length === 0}
+              style={{ padding: "8px 20px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, width: "100%" }}>
+              {training ? "Training in progress..." : `Train ${trainConfig.model_types.length} Model${trainConfig.model_types.length > 1 ? "s" : ""}`}
+            </button>
+
+            {/* Step 4: Results */}
+            {trainResult?.models && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontWeight: 600, color: "#555", marginBottom: 4, fontSize: 12 }}>Results</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ background: "#f9fafb" }}>
+                      <th style={{ padding: 4, border: "1px solid #eee", textAlign: "left" }}>Model</th>
+                      <th style={{ padding: 4, border: "1px solid #eee" }}>MAE</th>
+                      <th style={{ padding: 4, border: "1px solid #eee" }}>RMSE</th>
+                      <th style={{ padding: 4, border: "1px solid #eee" }}>R²</th>
+                      <th style={{ padding: 4, border: "1px solid #eee" }}>Best</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trainResult.models.map((m) => (
+                      <tr key={m.model_type} style={{ background: m.model_type === trainResult.best?.model_type ? "#f0fde8" : "transparent" }}>
+                        <td style={{ padding: 4, border: "1px solid #eee" }}>{m.name}</td>
+                        <td style={{ padding: 4, border: "1px solid #eee", textAlign: "right" }}>{m.mae}</td>
+                        <td style={{ padding: 4, border: "1px solid #eee", textAlign: "right" }}>{m.rmse}</td>
+                        <td style={{ padding: 4, border: "1px solid #eee", textAlign: "right", fontWeight: 600 }}>{m.r2}</td>
+                        <td style={{ padding: 4, border: "1px solid #eee", textAlign: "center" }}>
+                          {m.model_type === trainResult.best?.model_type ? "\u2B50" : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
+                  Trained on {trainResult.training_rows} rows, tested on {trainResult.test_rows} rows.
+                  Best model activated automatically.
+                </div>
+              </div>
+            )}
+
+            {/* Trained models list */}
+            {models.length > 0 && !trainResult && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontWeight: 600, color: "#555", marginBottom: 4, fontSize: 12 }}>Trained Models ({models.length})</div>
+                <div style={{ maxHeight: 120, overflow: "auto" }}>
+                  {models.map((m, i) => {
+                    let acc = {};
+                    try { acc = typeof m.accuracy === "string" ? JSON.parse(m.accuracy) : (m.accuracy || {}); } catch {}
+                    return (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "1px solid #f0f0f0", fontSize: 11 }}>
+                        <span>
+                          {(m.is_active === true || m.is_active === "true") && "\u2B50 "}
+                          {m.name}
+                        </span>
+                        <span style={{ color: "#64748b" }}>R²={acc.r2 || "?"} MAE={acc.mae || "?"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Summary cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
