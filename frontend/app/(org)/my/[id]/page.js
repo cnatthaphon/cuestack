@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useUser } from "../../../../lib/user-context.js";
 import FlowCanvas from "../../../../lib/components/flow-canvas.js";
 import ChartWidget, { PALETTE, getColor } from "../../../../lib/components/chart-widget.js";
+import EnergyIntelligenceWidget from "../../../../lib/components/energy-widget.js";
 
 // ─── Icon Picker ─────────────────────────────────────────────────────────────
 const ICON_GROUPS = {
@@ -1794,6 +1795,9 @@ function WidgetView({ widget, data, controlState, onControlChange }) {
   }
 
   // ─── Compute widget ───────────────────────────────────────────────────────
+  if (type === "compute" && (config?.formula === "energy_monitor" || config?.formula === "energy_compare")) {
+    return <EnergyIntelligenceWidget config={config} />;
+  }
   if (type === "compute") return <ComputeWidget config={config} controlState={controlState} />;
 
   // ─── Live widget ─────────────────────────────────────────────────────────
