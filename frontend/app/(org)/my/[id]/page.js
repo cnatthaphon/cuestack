@@ -1415,6 +1415,20 @@ function WidgetConfig({ widget, tables, getTableCols, updateConfig, updateWidget
     );
   }
 
+  // ─── Energy Intelligence config (self-contained — settings are inside the widget) ──
+  if (type === "energy") {
+    return (
+      <div style={{ fontSize: 12, color: "#64748b", padding: 8, background: "#f0f9ff", borderRadius: 6 }}>
+        <div style={{ fontWeight: 600, color: "#1e40af", marginBottom: 4 }}>Energy Intelligence Widget</div>
+        <div>This widget is self-contained. Use the <b>Settings</b> and <b>Train</b> tabs inside the widget to configure data source, tariff, models, and alerts.</div>
+        <div style={{ marginTop: 8, fontSize: 11 }}>
+          <div><b>Source:</b> {config?.source_table || "not configured"}</div>
+          <div><b>Output:</b> {config?.output_table || "energy_predictions"}</div>
+        </div>
+      </div>
+    );
+  }
+
   // ─── Compute config ─────────────────────────────────────────────────────
   if (type === "compute") {
     const inputMap = config?.input_map || {};
