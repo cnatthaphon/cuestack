@@ -456,7 +456,8 @@ const WIDGET_TYPES = [
   { id: "stat", label: "Stat", icon: "\u{1F522}" },
   { id: "chart", label: "Chart", icon: "\u{1F4C8}" },
   { id: "gauge", label: "Gauge", icon: "\u{1F3AF}" },
-  { id: "compute", label: "Compute", icon: "\u26A1" },
+  { id: "energy", label: "Energy Intelligence", icon: "\u26A1" },
+  { id: "compute", label: "Compute", icon: "\u{2699}\uFE0F" },
   { id: "table", label: "Table", icon: "\u{1F4CB}" },
   { id: "slider", label: "Slider", icon: "\u{1F39A}\uFE0F" },
   { id: "select", label: "Select", icon: "\u{1F50D}" },
@@ -581,6 +582,7 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
     if (type === "table") { w.config = { max_rows: 10 }; w.colSpan = 2; w.rowSpan = 2; }
     if (type === "chart") { w.config = { chart_type: "line", series: [], show_legend: true }; w.colSpan = 2; w.rowSpan = 2; }
     if (type === "gauge") w.config = { label: "Value", min: 0, max: 100, aggregation: "avg", thresholds: [{ value: 70, color: "#f59e0b" }, { value: 90, color: "#ef4444" }] };
+    if (type === "energy") { w.config = { formula: "energy_monitor", source_table: "", model_config: {}, output_table: "energy_predictions", tariff: {}, schedule: {}, alerts: {}, gamification: {} }; w.colSpan = 4; w.rowSpan = 4; }
     if (type === "compute") { w.config = { formula: "energy_all", model_config: {}, output_table: "", display: "cards" }; w.colSpan = 2; w.rowSpan = 2; }
     if (type === "slider") w.config = { var_name: "", label: "Control", min: 0, max: 100, step: 1, default_value: 50, unit: "" };
     if (type === "select") w.config = { var_name: "", label: "Filter", options: [], source_table: "", source_column: "" };
@@ -708,7 +710,12 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
                   updateWidget={(updates) => setWidgets(widgets.map((ww, ii) => ii === i ? { ...ww, ...updates } : ww))}
                   widgets={widgets} />
               ) : (
-                <WidgetView widget={w} data={widgetData[i]?.data} controlState={controlState} onControlChange={onControlChange} />
+                <WidgetView widget={w} data={widgetData[i]?.data} controlState={controlState} onControlChange={onControlChange}
+                  onSaveWidgetConfig={(newCfg) => {
+                    const updated = widgets.map((ww, ii) => ii === i ? { ...ww, config: { ...ww.config, ...newCfg } } : ww);
+                    setWidgets(updated);
+                    saveConfig({ widgets: updated, layout });
+                  }} />
               )}
 
               {/* Resize handle — drag corner to resize */}
@@ -1710,7 +1717,7 @@ function FilterBindings({ filters, updateConfig, controlWidgets, columns }) {
   );
 }
 
-function WidgetView({ widget, data, controlState, onControlChange }) {
+function WidgetView({ widget, data, controlState, onControlChange, onSaveWidgetConfig }) {
   const { type, config } = widget;
 
   // ─── Slider control ──────────────────────────────────────────────────────
@@ -1794,10 +1801,12 @@ function WidgetView({ widget, data, controlState, onControlChange }) {
     );
   }
 
-  // ─── Compute widget ───────────────────────────────────────────────────────
-  if (type === "compute" && (config?.formula === "energy_monitor" || config?.formula === "energy_compare")) {
-    return <EnergyIntelligenceWidget config={config} />;
+  // ─── Energy Intelligence widget (self-contained) ───────────────────────────
+  if (type === "energy" || (type === "compute" && (config?.formula === "energy_monitor" || config?.formula === "energy_compare"))) {
+    return <EnergyIntelligenceWidget config={config} onSaveConfig={onSaveWidgetConfig} />;
   }
+
+  // ─── Compute widget ───────────────────────────────────────────────────────
   if (type === "compute") return <ComputeWidget config={config} controlState={controlState} />;
 
   // ─── Live widget ─────────────────────────────────────────────────────────

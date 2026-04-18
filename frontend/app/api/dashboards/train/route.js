@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, createToken } from "../../../../lib/auth.js";
 import { query } from "../../../../lib/db.js";
-import { queryData } from "../../../../lib/org-tables.js";
+import { queryData, createOrgTable, listOrgTables } from "../../../../lib/org-tables.js";
 
 /**
  * POST /api/dashboards/train
@@ -36,6 +36,29 @@ export async function POST(request) {
 
   // Validate
   if (!source_table) return NextResponse.json({ error: "source_table required" }, { status: 400 });
+
+  // Ensure EI tables exist (auto-create if needed)
+  try {
+    const existing = await listOrgTables(user.org_id);
+    const tableNames = existing.map((t) => t.name);
+    if (!tableNames.includes("ei_models")) {
+      await createOrgTable(user.org_id, { name: "ei_models", columns: [
+        { name: "model_id", type: "text" }, { name: "name", type: "text" }, { name: "model_type", type: "text" },
+        { name: "params", type: "json" }, { name: "accuracy", type: "json" }, { name: "is_active", type: "boolean" },
+        { name: "trained_at", type: "timestamp" }, { name: "training_days", type: "integer" },
+      ], description: "ML models for energy prediction" });
+    }
+    if (!tableNames.includes("ei_daily_stats")) {
+      await createOrgTable(user.org_id, { name: "ei_daily_stats", columns: [
+        { name: "date", type: "text" }, { name: "model_id", type: "text" },
+        { name: "actual_kwh", type: "float" }, { name: "predicted_kwh", type: "float" },
+        { name: "savings_kwh", type: "float" }, { name: "savings_pct", type: "float" },
+        { name: "peak_kw", type: "float" }, { name: "operating_hours", type: "float" },
+        { name: "avg_te", type: "float" }, { name: "time_bin", type: "text" },
+        { name: "power_bin", type: "text" }, { name: "badges", type: "json" }, { name: "status", type: "text" },
+      ], description: "Daily energy stats — actual vs predicted" });
+    }
+  } catch (e) { /* tables may already exist */ }
 
   // Generate a fresh token for SDK auth in Jupyter container
   const token = await createToken(user);
@@ -265,6 +288,42 @@ for r in results:
     except Exception as e:
         print(f"Error saving {r['name']}: {e}")
 
+# ─── Step 7: Generate daily predictions with best model → ei_daily_stats ──────
+if best and 'timestamp' in data.columns:
+    best_model = trained[best['model_type']]
+    daily_groups = data.groupby(data['timestamp'].dt.date)
+    daily_preds = []
+    for date, group in daily_groups:
+        X_day = group[[c for c in feature_cols if c in group.columns]].values
+        predicted = float(best_model.predict(X_day).sum())
+        actual = float(group['target'].sum())
+        savings = predicted - actual
+        savings_pct = (savings / predicted * 100) if predicted > 0 else 0
+        peak = float(group['target'].max()) / 1000 if '${training_interval}' != 'daily' else float(group['target'].max())
+        op_hours = len(group) * (0.25 if '${training_interval}' == '15min' else 1.0 if '${training_interval}' == 'hourly' else 24)
+        avg_te = float(group['temp_ext'].mean()) if 'temp_ext' in group.columns else 30.0
+
+        row = {
+            'date': str(date),
+            'model_id': best['model_type'],
+            'actual_kwh': round(actual / 1000, 2) if '${training_interval}' != 'daily' else round(actual, 2),
+            'predicted_kwh': round(predicted / 1000, 2) if '${training_interval}' != 'daily' else round(predicted, 2),
+            'savings_kwh': round(savings / 1000, 2) if '${training_interval}' != 'daily' else round(savings, 2),
+            'savings_pct': round(savings_pct, 1),
+            'peak_kw': round(peak, 2),
+            'operating_hours': round(op_hours, 1),
+            'avg_te': round(avg_te, 1),
+            'time_bin': 'operating',
+            'power_bin': 'Medium',
+            'badges': json.dumps([]),
+            'status': 'under' if savings >= 0 else 'over',
+        }
+        daily_preds.append(row)
+        try:
+            client.insert('ei_daily_stats', [row])
+        except: pass
+    print(f"Saved {len(daily_preds)} daily predictions to ei_daily_stats")
+
 # ─── Output JSON result (parsed by API) ──────────────────────────────────────
 output = {
     'status': 'success',
@@ -273,6 +332,7 @@ output = {
     'training_rows': len(X_train),
     'test_rows': len(X_test),
     'features': feature_cols,
+    'daily_predictions': len(daily_preds) if 'daily_preds' in dir() else 0,
 }
 print(json.dumps(output))
 `;

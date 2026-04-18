@@ -31,7 +31,14 @@ export async function POST(request) {
       const rows = await queryData(user.org_id, source_table || "power_consumption", {
         limit: 1000, order_by: "timestamp", order_dir: "ASC",
       });
-      result = energyMonitor(rows, model_config, inputs || {});
+      // Try to load pre-computed predictions from training
+      let precomputed = null;
+      try {
+        precomputed = await queryData(user.org_id, "ei_daily_stats", {
+          limit: 500, order_by: "created_at", order_dir: "DESC",
+        });
+      } catch {} // table may not exist yet
+      result = energyMonitor(rows, model_config, inputs || {}, precomputed);
     } else {
       return NextResponse.json({ error: `Unknown formula: ${formula}` }, { status: 400 });
     }

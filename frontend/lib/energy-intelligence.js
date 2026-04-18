@@ -10,7 +10,9 @@
 import { predictEnergy } from "./energy-formulas.js";
 
 // ─── Main: energy_monitor ────────────────────────────────────────────────────
-export function energyMonitor(rows, modelConfig, inputs) {
+// If precomputedStats provided (from ei_daily_stats), use trained model predictions.
+// Otherwise fall back to physics model (model_config).
+export function energyMonitor(rows, modelConfig, inputs, precomputedStats) {
   const {
     setpoint = 24, percentile = 50,
     operating_start = 8, operating_end = 22,
@@ -140,16 +142,25 @@ export function energyMonitor(rows, modelConfig, inputs) {
     const Ti_start = readings[0].temp_int;
     const op_hours = onReadings.length * 0.25;
 
-    // Model prediction
-    const pred = predictEnergy(modelConfig, {
-      Ti: Ti_start, Te: avg_Te, setpoint,
-      hours: Math.max(op_hours - 2, 0),
-    });
-    const predicted_kwh = pred.e_total_kWh;
+    // Model prediction — use trained model (from ei_daily_stats) if available
+    let predicted_kwh;
+    const precomp = precomputedStats?.find((s) => s.date === date);
+    if (precomp && parseFloat(precomp.predicted_kwh) > 0) {
+      // Trained ML model prediction (from training wizard)
+      predicted_kwh = parseFloat(precomp.predicted_kwh);
+    } else if (modelConfig && Object.keys(modelConfig).length > 0) {
+      // Fallback: physics model
+      const pred = predictEnergy(modelConfig, {
+        Ti: Ti_start, Te: avg_Te, setpoint,
+        hours: Math.max(op_hours - 2, 0),
+      });
+      predicted_kwh = pred.e_total_kWh;
+    } else {
+      predicted_kwh = actual_kwh; // no model available
+    }
 
-    // Percentile calibration: adjust prediction by target percentile
-    // Lower percentile = more aggressive target (use lower bound)
-    const pctFactor = 1 + (percentile - 50) / 100; // p50=1.0, p25=0.75, p75=1.25
+    // Percentile calibration
+    const pctFactor = 1 + (percentile - 50) / 100;
     const calibrated_kwh = predicted_kwh * pctFactor;
 
     const savings_kwh = calibrated_kwh - actual_kwh;

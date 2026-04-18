@@ -28,7 +28,7 @@ const BADGE_ICONS = {
   eveningWinner: "\uD83C\uDF19", demandDefender: "\uD83D\uDEE1\uFE0F",
 };
 
-export default function EnergyIntelligenceWidget({ config, onConfigChange }) {
+export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
   const [tab, setTab] = useState("monitor"); // monitor | settings | train
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -139,6 +139,8 @@ export default function EnergyIntelligenceWidget({ config, onConfigChange }) {
       setTrainResult(d.data || d);
       if (d.data?.status === "success") {
         fetch("/api/dashboards/train").then((r) => r.json()).then((d) => setModels(d.models || []));
+        // Persist training config to widget
+        if (onSaveConfig) onSaveConfig({ ...settings, last_trained: new Date().toISOString() });
       }
     } catch (e) { setError(e.message); }
     setTraining(false);
@@ -566,8 +568,12 @@ export default function EnergyIntelligenceWidget({ config, onConfigChange }) {
             <div style={{ fontSize: 9, color: "#94a3b8" }}>Results persist here for other widgets</div>
           </div>
 
-          <button onClick={runMonitor} style={{ padding: "8px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
-            Apply & Refresh
+          <button onClick={() => {
+            // Persist settings to widget config
+            if (onSaveConfig) onSaveConfig(settings);
+            runMonitor();
+          }} style={{ padding: "8px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+            Save & Apply
           </button>
         </div>
       )}
