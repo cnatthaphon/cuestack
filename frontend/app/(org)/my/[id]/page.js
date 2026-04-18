@@ -1835,10 +1835,31 @@ function ComputeWidget({ config, controlState }) {
   const [trainResult, setTrainResult] = useState(null);
   const [models, setModels] = useState([]);
   const [showWizard, setShowWizard] = useState(false);
+  const [availTables, setAvailTables] = useState([]);
+  const [availColumns, setAvailColumns] = useState([]);
   const [trainConfig, setTrainConfig] = useState({
+    source_table: config?.source_table || "",
+    target_column: "",
+    feature_columns: [],
     model_types: ["linear_regression", "random_forest", "xgboost", "ensemble"],
     training_interval: "hourly",
   });
+
+  // Load available tables for data source selection
+  useEffect(() => {
+    fetch("/api/tables").then((r) => r.ok ? r.json() : { tables: [] }).then((d) => setAvailTables(d.tables || [])).catch(() => {});
+  }, []);
+
+  // Load columns when source table changes
+  useEffect(() => {
+    const tbl = trainConfig.source_table;
+    if (!tbl) { setAvailColumns([]); return; }
+    const t = availTables.find((t) => t.name === tbl);
+    if (t) {
+      const cols = typeof t.columns === "string" ? JSON.parse(t.columns) : (t.columns || []);
+      setAvailColumns(cols.map((c) => c.name));
+    }
+  }, [trainConfig.source_table, availTables]);
 
   // Load trained models on mount
   useEffect(() => {
@@ -1852,9 +1873,9 @@ function ComputeWidget({ config, controlState }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          source_table: config.source_table || "power_consumption",
-          target_column: "power_w",
-          feature_columns: ["hour", "dow", "temp_ext", "temp_int"],
+          source_table: trainConfig.source_table || config.source_table || "power_consumption",
+          target_column: trainConfig.target_column || "power_w",
+          feature_columns: trainConfig.feature_columns.length > 0 ? trainConfig.feature_columns : ["hour", "dow", "temp_ext", "temp_int"],
           model_types: trainConfig.model_types,
           training_interval: trainConfig.training_interval,
         }),
@@ -1954,12 +1975,64 @@ function ComputeWidget({ config, controlState }) {
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Training Wizard</div>
 
-            {/* Step 1: Source */}
+            {/* Step 1: Data Source */}
             <div style={{ fontSize: 12, marginBottom: 8 }}>
               <div style={{ fontWeight: 600, color: "#555", marginBottom: 4 }}>1. Data Source</div>
-              <div style={{ padding: "6px 10px", background: "#f8fafc", borderRadius: 4, fontSize: 11 }}>
-                Table: <b>{config.source_table || "power_consumption"}</b> · Target: <b>power_w</b> · Interval: {trainConfig.training_interval}
+              <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+                <select value={trainConfig.source_table} onChange={(e) => setTrainConfig({ ...trainConfig, source_table: e.target.value, target_column: "", feature_columns: [] })}
+                  style={{ flex: 2, padding: "6px 8px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }}>
+                  <option value="">Select table...</option>
+                  {availTables.map((t) => <option key={t.id} value={t.name}>{t.name} ({t.row_count || 0} rows)</option>)}
+                </select>
+                <select value={trainConfig.training_interval} onChange={(e) => setTrainConfig({ ...trainConfig, training_interval: e.target.value })}
+                  style={{ flex: 1, padding: "6px 8px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }}>
+                  <option value="15min">15-min</option>
+                  <option value="hourly">Hourly</option>
+                  <option value="daily">Daily</option>
+                </select>
               </div>
+              {/* Target column */}
+              {availColumns.length > 0 && (
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Target (what to predict):</div>
+                  <select value={trainConfig.target_column} onChange={(e) => setTrainConfig({ ...trainConfig, target_column: e.target.value })}
+                    style={{ width: "100%", padding: "6px 8px", border: "1px solid #ddd", borderRadius: 4, fontSize: 12 }}>
+                    <option value="">Select column...</option>
+                    {availColumns.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
+              {/* Feature columns */}
+              {availColumns.length > 0 && trainConfig.target_column && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Features (inputs to model):</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {availColumns.filter((c) => c !== trainConfig.target_column).map((c) => (
+                      <label key={c} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, cursor: "pointer", padding: "2px 6px", background: trainConfig.feature_columns.includes(c) ? "#dbeafe" : "#f8fafc", borderRadius: 4, border: "1px solid #e2e8f0" }}>
+                        <input type="checkbox" checked={trainConfig.feature_columns.includes(c)}
+                          onChange={(e) => {
+                            const next = e.target.checked ? [...trainConfig.feature_columns, c] : trainConfig.feature_columns.filter((x) => x !== c);
+                            setTrainConfig({ ...trainConfig, feature_columns: next });
+                          }}
+                          style={{ width: 12, height: 12 }} />
+                        {c}
+                      </label>
+                    ))}
+                    {/* Auto-generated time features */}
+                    {["hour", "dow", "is_weekend", "delta_t"].map((c) => (
+                      <label key={c} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, cursor: "pointer", padding: "2px 6px", background: trainConfig.feature_columns.includes(c) ? "#dbeafe" : "#f0fdf4", borderRadius: 4, border: "1px solid #bbf7d0" }}>
+                        <input type="checkbox" checked={trainConfig.feature_columns.includes(c)}
+                          onChange={(e) => {
+                            const next = e.target.checked ? [...trainConfig.feature_columns, c] : trainConfig.feature_columns.filter((x) => x !== c);
+                            setTrainConfig({ ...trainConfig, feature_columns: next });
+                          }}
+                          style={{ width: 12, height: 12 }} />
+                        {c} <span style={{ fontSize: 9, color: "#16a34a" }}>auto</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Step 2: Model types */}
@@ -1980,9 +2053,10 @@ function ComputeWidget({ config, controlState }) {
             </div>
 
             {/* Step 3: Train button */}
-            <button onClick={runTraining} disabled={training || trainConfig.model_types.length === 0}
-              style={{ padding: "8px 20px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, width: "100%" }}>
-              {training ? "Training in progress..." : `Train ${trainConfig.model_types.length} Model${trainConfig.model_types.length > 1 ? "s" : ""}`}
+            <button onClick={runTraining}
+              disabled={training || trainConfig.model_types.length === 0 || !trainConfig.source_table || !trainConfig.target_column}
+              style={{ padding: "8px 20px", background: (!trainConfig.source_table || !trainConfig.target_column) ? "#94a3b8" : "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, width: "100%" }}>
+              {training ? "Training in progress..." : !trainConfig.source_table ? "Select a table first" : !trainConfig.target_column ? "Select target column" : `Train ${trainConfig.model_types.length} Model${trainConfig.model_types.length > 1 ? "s" : ""}`}
             </button>
 
             {/* Step 4: Results */}
