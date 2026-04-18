@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useUser } from "../../../../lib/user-context.js";
 import FlowCanvas from "../../../../lib/components/flow-canvas.js";
+import ChartWidget, { PALETTE, getColor } from "../../../../lib/components/chart-widget.js";
 
 // ─── Icon Picker ─────────────────────────────────────────────────────────────
 const ICON_GROUPS = {
@@ -452,12 +453,23 @@ function ScheduleDialog({ page, saveConfig, onReload, onClose }) {
 // ─── Dashboard renderer (widget grid) ─────────────────────────────────────────
 const WIDGET_TYPES = [
   { id: "stat", label: "Stat", icon: "\u{1F522}" },
-  { id: "line", label: "Line", icon: "\u{1F4C8}" },
-  { id: "bar", label: "Bar", icon: "\u{1F4CA}" },
+  { id: "chart", label: "Chart", icon: "\u{1F4C8}" },
+  { id: "gauge", label: "Gauge", icon: "\u{1F3AF}" },
+  { id: "compute", label: "Compute", icon: "\u26A1" },
   { id: "table", label: "Table", icon: "\u{1F4CB}" },
+  { id: "slider", label: "Slider", icon: "\u{1F39A}\uFE0F" },
+  { id: "select", label: "Select", icon: "\u{1F50D}" },
   { id: "text", label: "Text", icon: "\u{1F4DD}" },
-  { id: "pie", label: "Pie", icon: "\u{1F967}" },
   { id: "live", label: "Live", icon: "\u{1F4E1}" },
+];
+
+const CHART_TYPES = [
+  { id: "line", label: "Line" },
+  { id: "bar", label: "Bar" },
+  { id: "area", label: "Area" },
+  { id: "scatter", label: "Scatter" },
+  { id: "pie", label: "Pie" },
+  { id: "doughnut", label: "Doughnut" },
 ];
 
 function DashboardRenderer({ page, isOwner, saveConfig }) {
@@ -473,6 +485,59 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
   const [dropIdx, setDropIdx] = useState(null);
   const gridRef = useRef(null);
 
+  // ─── Event bus: control widgets publish state, data widgets consume it ────
+  // controlState = { "widget_key": value, ... } — keyed by control widget's var_name
+  const [controlState, setControlState] = useState({});
+  const controlStateRef = useRef(controlState);
+  controlStateRef.current = controlState;
+
+  // Initialize control defaults from widget configs
+  useEffect(() => {
+    const defaults = {};
+    for (const w of widgets) {
+      if (w.type === "slider" && w.config?.var_name) {
+        defaults[w.config.var_name] = w.config?.default_value ?? w.config?.min ?? 0;
+      }
+      if (w.type === "select" && w.config?.var_name) {
+        defaults[w.config.var_name] = w.config?.default_value ?? "";
+      }
+    }
+    if (Object.keys(defaults).length > 0) {
+      setControlState((prev) => ({ ...defaults, ...prev }));
+    }
+  }, [widgets.length]);
+
+  // When a control changes, re-fetch data widgets that depend on it
+  const onControlChange = useCallback((varName, value) => {
+    setControlState((prev) => {
+      const next = { ...prev, [varName]: value };
+      // Re-fetch data widgets (debounced below)
+      setTimeout(() => reloadDependentWidgets(next), 50);
+      return next;
+    });
+  }, [widgets]);
+
+  const reloadDependentWidgets = async (state) => {
+    const data = { ...widgetData };
+    for (let i = 0; i < widgets.length; i++) {
+      const w = widgets[i];
+      // Skip control + text + live widgets
+      if (["slider", "select", "text", "live"].includes(w.type)) continue;
+      // Check if this widget has any filter bindings
+      const filters = w.config?.filters || [];
+      const hasDeps = filters.some((f) => f.var_name && state[f.var_name] !== undefined);
+      if (!hasDeps && !w.config?.limit_var) continue;
+      try {
+        const res = await fetch("/api/dashboards/widget-data", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ widget: w, controlState: state }),
+        });
+        data[i] = await res.json();
+      } catch { data[i] = { data: { error: "Failed" } }; }
+    }
+    setWidgetData({ ...data });
+  };
+
   useEffect(() => {
     fetch("/api/tables").then((r) => r.ok ? r.json() : { tables: [] }).then((d) => setTables(d.tables || []));
   }, []);
@@ -485,13 +550,15 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
     loadWidgetData(w);
   }, [page.id]);
 
-  const loadWidgetData = async (w) => {
+  const loadWidgetData = async (w, state) => {
+    const s = state || controlStateRef.current;
     const data = {};
     for (let i = 0; i < w.length; i++) {
+      if (["slider", "select"].includes(w[i].type)) continue;
       try {
         const res = await fetch("/api/dashboards/widget-data", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ widget: w[i] }),
+          body: JSON.stringify({ widget: w[i], controlState: s }),
         });
         data[i] = await res.json();
       } catch { data[i] = { data: { error: "Failed" } }; }
@@ -511,7 +578,11 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
     if (type === "stat") w.config = { label: "Metric", aggregation: "count" };
     if (type === "text") w.config = { text: "Enter text" };
     if (type === "table") { w.config = { max_rows: 10 }; w.colSpan = 2; w.rowSpan = 2; }
-    if (type === "chart") w.colSpan = 2;
+    if (type === "chart") { w.config = { chart_type: "line", series: [], show_legend: true }; w.colSpan = 2; w.rowSpan = 2; }
+    if (type === "gauge") w.config = { label: "Value", min: 0, max: 100, aggregation: "avg", thresholds: [{ value: 70, color: "#f59e0b" }, { value: 90, color: "#ef4444" }] };
+    if (type === "compute") { w.config = { formula: "energy_all", model_config: {}, output_table: "", display: "cards" }; w.colSpan = 2; w.rowSpan = 2; }
+    if (type === "slider") w.config = { var_name: "", label: "Control", min: 0, max: 100, step: 1, default_value: 50, unit: "" };
+    if (type === "select") w.config = { var_name: "", label: "Filter", options: [], source_table: "", source_column: "" };
     if (type === "live") w.colSpan = 2;
     setWidgets([...widgets, w]);
     setEditIdx(widgets.length);
@@ -620,7 +691,8 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
               {editing && (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <span style={{ fontSize: 11, color: "#94a3b8", cursor: "grab" }}>
-                    {"\u2630"} {WIDGET_TYPES.find((t) => t.id === w.type)?.icon} {WIDGET_TYPES.find((t) => t.id === w.type)?.label}
+                    {"\u2630"} {(WIDGET_TYPES.find((t) => t.id === w.type) || WIDGET_TYPES.find((t) => t.id === "chart"))?.icon} {(WIDGET_TYPES.find((t) => t.id === w.type) || { label: "Chart" }).label}
+                    {w.type === "chart" && w.config?.chart_type && <span style={{ color: "#cbd5e1", marginLeft: 4 }}>({w.config.chart_type})</span>}
                     <span style={{ color: "#cbd5e1", marginLeft: 6, fontSize: 9 }}>{cs}x{rs}</span>
                   </span>
                   <button onClick={(e) => { e.stopPropagation(); removeWidget(i); }}
@@ -631,9 +703,11 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
 
               {/* Widget content or config */}
               {editing && editIdx === i ? (
-                <WidgetConfig widget={w} tables={tables} getTableCols={getTableCols} updateConfig={(k, v) => updateConfig(i, k, v)} />
+                <WidgetConfig widget={w} tables={tables} getTableCols={getTableCols} updateConfig={(k, v) => updateConfig(i, k, v)}
+                  updateWidget={(updates) => setWidgets(widgets.map((ww, ii) => ii === i ? { ...ww, ...updates } : ww))}
+                  widgets={widgets} />
               ) : (
-                <WidgetView widget={w} data={widgetData[i]?.data} />
+                <WidgetView widget={w} data={widgetData[i]?.data} controlState={controlState} onControlChange={onControlChange} />
               )}
 
               {/* Resize handle — drag corner to resize */}
@@ -1286,8 +1360,155 @@ function NotebookRenderer({ page, isOwner, saveConfig, onReload }) {
 }
 
 // ─── Widget components (for dashboard) ────────────────────────────────────────
-function WidgetConfig({ widget, tables, getTableCols, updateConfig }) {
+function WidgetConfig({ widget, tables, getTableCols, updateConfig, updateWidget, widgets }) {
   const { type, config } = widget;
+
+  // ─── Slider config ─────────────────────────────────────────────────────
+  if (type === "slider") return (
+    <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+      <input placeholder="Variable name (e.g. limit)" value={config?.var_name || ""} onChange={(e) => updateConfig("var_name", e.target.value.replace(/[^a-z0-9_]/g, ""))} style={cfgInput} />
+      <input placeholder="Label" value={config?.label || ""} onChange={(e) => updateConfig("label", e.target.value)} style={cfgInput} />
+      <div style={{ display: "flex", gap: 4 }}>
+        <input type="number" placeholder="Min" value={config?.min ?? 0} onChange={(e) => updateConfig("min", parseFloat(e.target.value) || 0)} style={{ ...cfgInput, flex: 1 }} />
+        <input type="number" placeholder="Max" value={config?.max ?? 100} onChange={(e) => updateConfig("max", parseFloat(e.target.value) || 100)} style={{ ...cfgInput, flex: 1 }} />
+        <input type="number" placeholder="Step" value={config?.step ?? 1} onChange={(e) => updateConfig("step", parseFloat(e.target.value) || 1)} style={{ ...cfgInput, flex: 1 }} />
+      </div>
+      <input type="number" placeholder="Default" value={config?.default_value ?? 50} onChange={(e) => updateConfig("default_value", parseFloat(e.target.value) || 0)} style={cfgInput} />
+      <input placeholder="Unit (e.g. °C, %, rows)" value={config?.unit || ""} onChange={(e) => updateConfig("unit", e.target.value)} style={cfgInput} />
+    </div>
+  );
+
+  // ─── Select config ─────────────────────────────────────────────────────
+  if (type === "select") {
+    const options = config?.options || [];
+    return (
+      <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+        <input placeholder="Variable name (e.g. channel)" value={config?.var_name || ""} onChange={(e) => updateConfig("var_name", e.target.value.replace(/[^a-z0-9_]/g, ""))} style={cfgInput} />
+        <input placeholder="Label" value={config?.label || ""} onChange={(e) => updateConfig("label", e.target.value)} style={cfgInput} />
+        <div style={{ borderTop: "1px solid #eee", paddingTop: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <span style={{ fontWeight: 600, color: "#555" }}>Options</span>
+            <button onClick={() => updateConfig("options", [...options, ""])} style={{ fontSize: 11, padding: "2px 8px", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", background: "#f9fafb" }}>+ Add</button>
+          </div>
+          {options.map((o, i) => (
+            <div key={i} style={{ display: "flex", gap: 4, marginBottom: 2 }}>
+              <input value={typeof o === "string" ? o : o.value || ""} placeholder="Value"
+                onChange={(e) => { const next = [...options]; next[i] = e.target.value; updateConfig("options", next); }}
+                style={{ ...cfgInput, flex: 1, marginBottom: 0 }} />
+              <button onClick={() => updateConfig("options", options.filter((_, j) => j !== i))}
+                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 14 }}>{"\u00D7"}</button>
+            </div>
+          ))}
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#666" }}>
+          <input type="checkbox" checked={config?.show_all !== false} onChange={(e) => updateConfig("show_all", e.target.checked)} /> Show "All" option
+        </label>
+      </div>
+    );
+  }
+
+  // ─── Compute config ─────────────────────────────────────────────────────
+  if (type === "compute") {
+    const inputMap = config?.input_map || {};
+    const controlWidgets = (widgets || []).filter((w) => (w.type === "slider" || w.type === "select") && w.config?.var_name);
+    const FORMULA_INPUTS = ["Ti", "Te", "setpoint", "hours", "rate", "hours_away"];
+
+    return (
+      <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+        <select value={config?.formula || "energy_all"} onChange={(e) => updateConfig("formula", e.target.value)} style={cfgInput}>
+          <option value="energy_all">What-If Predictor</option>
+          <option value="energy_compare">Energy Intelligence (actual vs predicted)</option>
+        </select>
+        {config?.formula === "energy_compare" && (
+          <input placeholder="Source table (e.g. power_consumption)" value={config?.source_table || ""}
+            onChange={(e) => updateConfig("source_table", e.target.value)} style={cfgInput} />
+        )}
+
+        {/* Model config — paste JSON or load from file */}
+        <div style={{ borderTop: "1px solid #eee", paddingTop: 4 }}>
+          <div style={{ fontWeight: 600, color: "#555", marginBottom: 4 }}>Model Parameters</div>
+          <textarea
+            value={JSON.stringify(config?.model_config || {}, null, 2)}
+            onChange={(e) => { try { updateConfig("model_config", JSON.parse(e.target.value)); } catch {} }}
+            placeholder='Paste ac_model_config.json here'
+            style={{ width: "100%", minHeight: 60, padding: 6, border: "1px solid #ddd", borderRadius: 4, fontSize: 10, fontFamily: "monospace", boxSizing: "border-box", resize: "vertical" }}
+          />
+          <div style={{ fontSize: 10, color: "#94a3b8" }}>
+            {Object.keys(config?.model_config || {}).length} params loaded
+          </div>
+        </div>
+
+        {/* Input mapping — bind formula inputs to control widgets */}
+        <div style={{ borderTop: "1px solid #eee", paddingTop: 4 }}>
+          <div style={{ fontWeight: 600, color: "#555", marginBottom: 4 }}>Input Bindings</div>
+          {FORMULA_INPUTS.map((key) => (
+            <div key={key} style={{ display: "flex", gap: 4, marginBottom: 3, alignItems: "center" }}>
+              <span style={{ minWidth: 70, fontSize: 11, color: "#555" }}>{key}</span>
+              <select value={inputMap[key] || ""} onChange={(e) => updateConfig("input_map", { ...inputMap, [key]: e.target.value })}
+                style={{ ...cfgInput, flex: 1, marginBottom: 0, fontSize: 11 }}>
+                <option value="">— default —</option>
+                {controlWidgets.map((cw) => <option key={cw.config.var_name} value={cw.config.var_name}>{cw.config.label || cw.config.var_name}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+
+        {/* Output table */}
+        <div style={{ borderTop: "1px solid #eee", paddingTop: 4 }}>
+          <input placeholder="Output table (optional, e.g. energy_predictions)" value={config?.output_table || ""}
+            onChange={(e) => updateConfig("output_table", e.target.value)} style={cfgInput} />
+          <div style={{ fontSize: 10, color: "#94a3b8" }}>Results persist in this table for other widgets</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Gauge config ──────────────────────────────────────────────────────
+  if (type === "gauge") {
+    const thresholds = config?.thresholds || [];
+    return (
+      <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+        <input placeholder="Label" value={config?.label || ""} onChange={(e) => updateConfig("label", e.target.value)} style={cfgInput} />
+        <select value={config?.table || ""} onChange={(e) => updateConfig("table", e.target.value)} style={cfgInput}>
+          <option value="">Select table...</option>
+          {tables.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+        </select>
+        {config?.table && (
+          <div style={{ display: "flex", gap: 4 }}>
+            <select value={config?.column || ""} onChange={(e) => updateConfig("column", e.target.value)} style={{ ...cfgInput, flex: 1 }}>
+              <option value="">(count)</option>
+              {getTableCols(config.table).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={config?.aggregation || "avg"} onChange={(e) => updateConfig("aggregation", e.target.value)} style={{ ...cfgInput, flex: 1 }}>
+              {["count", "avg", "sum", "min", "max"].map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 4 }}>
+          <input type="number" placeholder="Min" value={config?.min ?? 0} onChange={(e) => updateConfig("min", parseFloat(e.target.value) || 0)} style={{ ...cfgInput, flex: 1 }} />
+          <input type="number" placeholder="Max" value={config?.max ?? 100} onChange={(e) => updateConfig("max", parseFloat(e.target.value) || 100)} style={{ ...cfgInput, flex: 1 }} />
+        </div>
+        <input placeholder="Unit" value={config?.unit || ""} onChange={(e) => updateConfig("unit", e.target.value)} style={cfgInput} />
+        <div style={{ borderTop: "1px solid #eee", paddingTop: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <span style={{ fontWeight: 600, color: "#555" }}>Thresholds</span>
+            <button onClick={() => updateConfig("thresholds", [...thresholds, { value: 70, color: "#f59e0b" }])} style={{ fontSize: 11, padding: "2px 8px", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", background: "#f9fafb" }}>+</button>
+          </div>
+          {thresholds.map((t, i) => (
+            <div key={i} style={{ display: "flex", gap: 4, marginBottom: 2, alignItems: "center" }}>
+              <input type="color" value={t.color || "#f59e0b"} onChange={(e) => { const next = [...thresholds]; next[i] = { ...t, color: e.target.value }; updateConfig("thresholds", next); }}
+                style={{ width: 24, height: 24, padding: 0, border: "1px solid #ddd", borderRadius: 4, cursor: "pointer" }} />
+              <input type="number" value={t.value} placeholder="Value" onChange={(e) => { const next = [...thresholds]; next[i] = { ...t, value: parseFloat(e.target.value) || 0 }; updateConfig("thresholds", next); }}
+                style={{ ...cfgInput, flex: 1, marginBottom: 0 }} />
+              <button onClick={() => updateConfig("thresholds", thresholds.filter((_, j) => j !== i))}
+                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 14 }}>{"\u00D7"}</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (type === "text") return <textarea value={config?.text || ""} onChange={(e) => updateConfig("text", e.target.value)} style={{ width: "100%", padding: 6, border: "1px solid #ddd", borderRadius: 4, fontSize: 12, minHeight: 50, boxSizing: "border-box" }} />;
   if (type === "live") return (
     <div style={{ fontSize: 12 }}>
@@ -1300,6 +1521,129 @@ function WidgetConfig({ widget, tables, getTableCols, updateConfig }) {
       </select>
     </div>
   );
+
+  // ─── Chart config with series builder ──────────────────────────────────
+  if (type === "chart" || ["line", "bar", "pie", "doughnut", "area", "scatter"].includes(type)) {
+    const chartType = config?.chart_type || type || "line";
+    const series = config?.series || [];
+    const cols = config?.table ? getTableCols(config.table) : [];
+    const isPie = chartType === "pie" || chartType === "doughnut";
+
+    const addSeries = () => {
+      const newSeries = [...series, { y_column: "", label: "", color: getColor(series.length) }];
+      updateConfig("series", newSeries);
+    };
+    const removeSeries = (idx) => {
+      updateConfig("series", series.filter((_, i) => i !== idx));
+    };
+    const updateSeries = (idx, key, val) => {
+      updateConfig("series", series.map((s, i) => i === idx ? { ...s, [key]: val } : s));
+    };
+
+    return (
+      <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+        <input placeholder="Chart title" value={config?.title || ""} onChange={(e) => updateConfig("title", e.target.value)} style={cfgInput} />
+
+        {/* Chart type selector */}
+        <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          {CHART_TYPES.map((ct) => (
+            <button key={ct.id} onClick={() => updateConfig("chart_type", ct.id)}
+              style={{ padding: "3px 8px", fontSize: 11, border: "1px solid #ddd", borderRadius: 4, cursor: "pointer",
+                background: chartType === ct.id ? "#3b82f6" : "#fff", color: chartType === ct.id ? "#fff" : "#333" }}>
+              {ct.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Data source */}
+        <select value={config?.table || ""} onChange={(e) => updateConfig("table", e.target.value)} style={cfgInput}>
+          <option value="">Select table...</option>
+          {tables.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+        </select>
+
+        {config?.table && (
+          <>
+            {/* X axis */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span style={{ color: "#666", minWidth: 14 }}>X</span>
+              <select value={config?.x_column || "created_at"} onChange={(e) => updateConfig("x_column", e.target.value)} style={{ ...cfgInput, flex: 1 }}>
+                {cols.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            {/* Series list */}
+            <div style={{ borderTop: "1px solid #eee", paddingTop: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontWeight: 600, color: "#555" }}>{isPie ? "Value" : "Series"}</span>
+                <button onClick={addSeries} style={{ fontSize: 11, padding: "2px 8px", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", background: "#f9fafb" }}>+ Add</button>
+              </div>
+              {series.map((s, i) => (
+                <div key={i} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}>
+                  <input type="color" value={s.color || getColor(i)} onChange={(e) => updateSeries(i, "color", e.target.value)}
+                    style={{ width: 24, height: 24, padding: 0, border: "1px solid #ddd", borderRadius: 4, cursor: "pointer" }} />
+                  <select value={s.y_column || ""} onChange={(e) => updateSeries(i, "y_column", e.target.value)} style={{ ...cfgInput, flex: 1 }}>
+                    <option value="">column...</option>
+                    {cols.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <input placeholder="Label" value={s.label || ""} onChange={(e) => updateSeries(i, "label", e.target.value)}
+                    style={{ ...cfgInput, flex: 1 }} />
+                  <button onClick={() => removeSeries(i)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 14, padding: "0 2px" }}>{"\u00D7"}</button>
+                </div>
+              ))}
+              {series.length === 0 && <div style={{ color: "#ccc", fontSize: 11, padding: 4 }}>No series yet — click + Add</div>}
+            </div>
+
+            {/* Chart options */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", borderTop: "1px solid #eee", paddingTop: 6 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#666" }}>
+                <input type="checkbox" checked={config?.show_legend !== false} onChange={(e) => updateConfig("show_legend", e.target.checked)} /> Legend
+              </label>
+              {!isPie && (
+                <>
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#666" }}>
+                    <input type="checkbox" checked={!!config?.stacked} onChange={(e) => updateConfig("stacked", e.target.checked)} /> Stacked
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#666" }}>
+                    <input type="checkbox" checked={!!config?.fill} onChange={(e) => updateConfig("fill", e.target.checked)} /> Fill
+                  </label>
+                </>
+              )}
+            </div>
+
+            {/* Axis labels */}
+            {!isPie && (
+              <div style={{ display: "flex", gap: 4 }}>
+                <input placeholder="X axis label" value={config?.x_label || ""} onChange={(e) => updateConfig("x_label", e.target.value)} style={{ ...cfgInput, flex: 1 }} />
+                <input placeholder="Y axis label" value={config?.y_label || ""} onChange={(e) => updateConfig("y_label", e.target.value)} style={{ ...cfgInput, flex: 1 }} />
+              </div>
+            )}
+
+            {/* Limit */}
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span style={{ color: "#666", fontSize: 11 }}>Rows:</span>
+              <input type="number" min={10} max={1000} value={config?.limit || 200} onChange={(e) => updateConfig("limit", parseInt(e.target.value) || 200)}
+                style={{ ...cfgInput, width: 70 }} />
+            </div>
+
+            {/* Filter bindings */}
+            {(() => {
+              const cws = (widgets || []).filter((w) => (w.type === "slider" || w.type === "select") && w.config?.var_name);
+              return cws.length > 0 ? (
+                <FilterBindings filters={config?.filters || []} updateConfig={updateConfig}
+                  controlWidgets={cws} columns={cols} />
+              ) : null;
+            })()}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Stat / Table config ─────────────────────────────────────────────────
+  // Find available control widgets for filter binding
+  const controlWidgets = (widgets || []).filter((w) => (w.type === "slider" || w.type === "select") && w.config?.var_name);
+  const filters = config?.filters || [];
+
   return (
     <div style={{ fontSize: 12 }}>
       <input placeholder="Title/Label" value={config?.title || config?.label || ""} onChange={(e) => updateConfig(type === "stat" ? "label" : "title", e.target.value)} style={cfgInput} />
@@ -1318,28 +1662,147 @@ function WidgetConfig({ widget, tables, getTableCols, updateConfig }) {
           </select>
         </div>
       )}
-      {config?.table && ["line", "bar", "pie"].includes(type) && (
-        <div style={{ display: "flex", gap: 4 }}>
-          <select value={config?.x_column || ""} onChange={(e) => updateConfig("x_column", e.target.value)} style={cfgInput}>
-            <option value="created_at">x: created_at</option>
-            {getTableCols(config.table).map((c) => <option key={c} value={c}>x: {c}</option>)}
-          </select>
-          <select value={config?.y_column || ""} onChange={(e) => updateConfig("y_column", e.target.value)} style={cfgInput}>
-            <option value="">y: select...</option>
-            {getTableCols(config.table).map((c) => <option key={c} value={c}>y: {c}</option>)}
-          </select>
-        </div>
+      {/* Filter bindings — connect to control widgets */}
+      {config?.table && controlWidgets.length > 0 && (
+        <FilterBindings filters={filters} updateConfig={updateConfig}
+          controlWidgets={controlWidgets} columns={getTableCols(config.table)} />
       )}
     </div>
   );
 }
 
-function WidgetView({ widget, data }) {
+// ─── Shared: Filter binding UI (connects data widgets to control widgets) ────
+function FilterBindings({ filters, updateConfig, controlWidgets, columns }) {
+  const addFilter = () => updateConfig("filters", [...filters, { column: "", op: "eq", var_name: "" }]);
+  const removeFilter = (idx) => updateConfig("filters", filters.filter((_, i) => i !== idx));
+  const updateFilter = (idx, key, val) => updateConfig("filters", filters.map((f, i) => i === idx ? { ...f, [key]: val } : f));
+
+  return (
+    <div style={{ borderTop: "1px solid #eee", paddingTop: 6, marginTop: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <span style={{ fontWeight: 600, color: "#555", fontSize: 11 }}>Filter by controls</span>
+        <button onClick={addFilter} style={{ fontSize: 10, padding: "2px 6px", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer", background: "#f9fafb" }}>+ Bind</button>
+      </div>
+      {filters.map((f, i) => (
+        <div key={i} style={{ display: "flex", gap: 3, marginBottom: 3, alignItems: "center" }}>
+          <select value={f.column || ""} onChange={(e) => updateFilter(i, "column", e.target.value)} style={{ ...cfgInput, flex: 1, marginBottom: 0, fontSize: 11 }}>
+            <option value="">Column...</option>
+            {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={f.op || "eq"} onChange={(e) => updateFilter(i, "op", e.target.value)} style={{ ...cfgInput, width: 50, marginBottom: 0, fontSize: 11 }}>
+            <option value="eq">=</option>
+            <option value="gt">&gt;</option>
+            <option value="lt">&lt;</option>
+            <option value="gte">&ge;</option>
+            <option value="lte">&le;</option>
+            <option value="contains">contains</option>
+          </select>
+          <select value={f.var_name || ""} onChange={(e) => updateFilter(i, "var_name", e.target.value)} style={{ ...cfgInput, flex: 1, marginBottom: 0, fontSize: 11 }}>
+            <option value="">Control...</option>
+            {controlWidgets.map((cw) => <option key={cw.config.var_name} value={cw.config.var_name}>{cw.config.label || cw.config.var_name}</option>)}
+          </select>
+          <button onClick={() => removeFilter(i)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12, padding: 0 }}>{"\u00D7"}</button>
+        </div>
+      ))}
+      {filters.length === 0 && <div style={{ color: "#ccc", fontSize: 10 }}>No filters — add to bind controls to this widget</div>}
+    </div>
+  );
+}
+
+function WidgetView({ widget, data, controlState, onControlChange }) {
   const { type, config } = widget;
-  // Live widget — WebSocket subscription
+
+  // ─── Slider control ──────────────────────────────────────────────────────
+  if (type === "slider") {
+    const varName = config?.var_name;
+    const val = varName && controlState?.[varName] !== undefined ? controlState[varName] : (config?.default_value ?? config?.min ?? 0);
+    return (
+      <div style={{ padding: "4px 0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>{config?.label || "Control"}</span>
+          <span style={{ fontSize: 18, fontWeight: 700, color: "#0070f3" }}>{val}{config?.unit ? <span style={{ fontSize: 11, fontWeight: 400, color: "#94a3b8", marginLeft: 2 }}>{config.unit}</span> : null}</span>
+        </div>
+        <input type="range" min={config?.min ?? 0} max={config?.max ?? 100} step={config?.step ?? 1} value={val}
+          onChange={(e) => varName && onControlChange?.(varName, parseFloat(e.target.value))}
+          style={{ width: "100%", accentColor: "#0070f3", cursor: "pointer" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
+          <span>{config?.min ?? 0}</span>
+          <span>{config?.max ?? 100}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Select control ──────────────────────────────────────────────────────
+  if (type === "select") {
+    const varName = config?.var_name;
+    const val = varName && controlState?.[varName] !== undefined ? controlState[varName] : (config?.default_value ?? "");
+    const options = config?.options || [];
+    return (
+      <div style={{ padding: "4px 0" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 6 }}>{config?.label || "Filter"}</div>
+        <select value={val} onChange={(e) => varName && onControlChange?.(varName, e.target.value)}
+          style={{ width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, background: "#fff", cursor: "pointer" }}>
+          {config?.show_all !== false && <option value="">All</option>}
+          {options.map((o, i) => <option key={i} value={typeof o === "string" ? o : o.value}>{typeof o === "string" ? o : o.label}</option>)}
+        </select>
+      </div>
+    );
+  }
+
+  // ─── Gauge widget ────────────────────────────────────────────────────────
+  if (type === "gauge") {
+    if (!data) return <div style={{ color: "#ccc", fontSize: 13 }}>Loading...</div>;
+    if (data.error) return <div style={{ color: "#e53e3e", fontSize: 12 }}>{data.error}</div>;
+    const value = data.value ?? 0;
+    const min = config?.min ?? 0;
+    const max = config?.max ?? 100;
+    const pct = Math.max(0, Math.min(1, (value - min) / (max - min || 1)));
+    const thresholds = config?.thresholds || [];
+    // Determine color based on thresholds (sorted ascending)
+    let color = "#10b981"; // green by default
+    const sorted = [...thresholds].sort((a, b) => a.value - b.value);
+    for (const t of sorted) { if (value >= t.value) color = t.color; }
+    // SVG arc gauge (semicircle)
+    const cx = 100, cy = 90, r = 70;
+    const startAngle = Math.PI;
+    const endAngle = startAngle + pct * Math.PI;
+    const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
+    const largeArc = pct > 0.5 ? 1 : 0;
+    return (
+      <div style={{ textAlign: "center" }}>
+        <svg viewBox="0 0 200 110" style={{ width: "100%", maxWidth: 220 }}>
+          {/* Background arc */}
+          <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`} fill="none" stroke="#e5e7eb" strokeWidth={14} strokeLinecap="round" />
+          {/* Value arc */}
+          {pct > 0.005 && <path d={`M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`} fill="none" stroke={color} strokeWidth={14} strokeLinecap="round" />}
+          {/* Threshold markers */}
+          {sorted.map((t, i) => {
+            const tp = Math.max(0, Math.min(1, (t.value - min) / (max - min || 1)));
+            const ta = Math.PI + tp * Math.PI;
+            const tx = cx + (r + 12) * Math.cos(ta), ty = cy + (r + 12) * Math.sin(ta);
+            return <circle key={i} cx={tx} cy={ty} r={2} fill={t.color} />;
+          })}
+          {/* Value text */}
+          <text x={cx} y={cy - 8} textAnchor="middle" fontSize="28" fontWeight="700" fill="#1e293b">{typeof value === "number" ? (value % 1 === 0 ? value : value.toFixed(1)) : value}</text>
+          <text x={cx} y={cy + 10} textAnchor="middle" fontSize="10" fill="#94a3b8">{config?.unit || ""}</text>
+        </svg>
+        <div style={{ fontSize: 11, color: "#666", marginTop: -4, textTransform: "uppercase" }}>{config?.label || data.label || ""}</div>
+      </div>
+    );
+  }
+
+  // ─── Compute widget ───────────────────────────────────────────────────────
+  if (type === "compute") return <ComputeWidget config={config} controlState={controlState} />;
+
+  // ─── Live widget ─────────────────────────────────────────────────────────
   if (type === "live") return <LiveWidget config={config} />;
+
+  // ─── Data widgets ────────────────────────────────────────────────────────
   if (!data) return <div style={{ color: "#ccc", fontSize: 13 }}>Loading...</div>;
   if (data.error) return <div style={{ color: "#e53e3e", fontSize: 12 }}>{data.error}</div>;
+  if (data.message) return <div style={{ color: "#94a3b8", fontSize: 12 }}>{data.message}</div>;
   if (type === "stat") return <div style={{ textAlign: "center" }}><div style={{ fontSize: 11, color: "#666", textTransform: "uppercase" }}>{data.label}</div><div style={{ fontSize: 32, fontWeight: 700 }}>{data.value ?? "\u2014"}</div></div>;
   if (type === "text") return <div style={{ fontSize: 14, lineHeight: 1.6 }}>{config?.text || ""}</div>;
   if (type === "table") return (
@@ -1351,25 +1814,282 @@ function WidgetView({ widget, data }) {
       </table>
     </div>
   );
-  if (["bar", "line"].includes(type) && data.values) {
-    const max = Math.max(...data.values, 1); const h = 120;
-    return (
-      <div>
-        {config?.title && <h3 style={{ margin: "0 0 6px", fontSize: 13 }}>{config.title}</h3>}
-        <svg width="100%" height={h + 25} viewBox={`0 0 ${Math.max(data.values.length * 45, 180)} ${h + 25}`}>
-          {type === "line" ? (
-            <polyline points={data.values.map((v, i) => `${i * 45 + 22},${h - (v / max) * h}`).join(" ")} fill="none" stroke="#0070f3" strokeWidth={2} />
-          ) : (
-            data.values.map((v, i) => <g key={i}><rect x={i * 45 + 3} y={h - (v / max) * h} width={38} height={(v / max) * h} fill="#0070f3" rx={3} /><text x={i * 45 + 22} y={h + 12} textAnchor="middle" fontSize={8} fill="#666">{String(data.labels?.[i] || "").slice(0, 6)}</text></g>))
-          }
-        </svg>
-      </div>
-    );
+  // Chart types — rendered by Chart.js
+  if (type === "chart" || ["line", "bar", "pie", "doughnut", "area", "scatter"].includes(type)) {
+    const chartConfig = { ...config };
+    if (type !== "chart" && !chartConfig.chart_type) chartConfig.chart_type = type;
+    return <ChartWidget config={chartConfig} data={data} />;
   }
   return null;
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Compute widget (formula engine — reads controls, computes, persists) ─────
+function ComputeWidget({ config, controlState }) {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const prevInputsRef = useRef("");
+
+  const inputs = {};
+  const inputMap = config?.input_map || {};
+  for (const [formulaKey, varName] of Object.entries(inputMap)) {
+    if (controlState?.[varName] !== undefined) inputs[formulaKey] = controlState[varName];
+  }
+
+  useEffect(() => {
+    const key = JSON.stringify(inputs) + config?.formula;
+    if (key === prevInputsRef.current) return;
+    prevInputsRef.current = key;
+    if (!config?.model_config || Object.keys(config.model_config).length === 0) return;
+
+    setLoading(true);
+    fetch("/api/dashboards/compute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        formula: config.formula || "energy_all",
+        model_config: config.model_config,
+        inputs,
+        output_table: config.output_table || undefined,
+        source_table: config.source_table || undefined,
+      }),
+    })
+      .then((r) => r.json())
+      .then((d) => { setResult(d.data); setError(d.error || null); })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [JSON.stringify(inputs), config?.formula]);
+
+  if (!config?.model_config || Object.keys(config.model_config).length === 0) {
+    return <div style={{ color: "#94a3b8", fontSize: 12, padding: 8 }}>Configure model parameters in edit mode</div>;
+  }
+  if (loading && !result) return <div style={{ color: "#94a3b8", fontSize: 12 }}>Computing...</div>;
+  if (error) return <div style={{ color: "#e53e3e", fontSize: 12 }}>{error}</div>;
+  if (!result) return <div style={{ color: "#ccc", fontSize: 12 }}>No result yet</div>;
+
+  const cs = { background: "#f8fafc", borderRadius: 8, padding: "10px 14px", textAlign: "center" };
+  const ls = { fontSize: 10, color: "#64748b", textTransform: "uppercase", marginBottom: 2 };
+  const vs = { fontSize: 22, fontWeight: 700, color: "#1e293b" };
+  const us = { fontSize: 11, fontWeight: 400, color: "#94a3b8", marginLeft: 2 };
+  const rs = { fontSize: 10, color: "#94a3b8", marginTop: 2 };
+
+  // ─── energy_compare display: actual vs predicted + bins + savings ───────
+  if ((config?.formula === "energy_compare" || config?.formula === "energy_monitor") && result.summary) {
+    const s = result.summary;
+    const statusColor = s.overall_status === "UNDER BUDGET" ? "#15803d" : "#dc2626";
+    const bins = result.power_bins || [];
+    const daily = result.daily_stats || [];
+    const gam = result.gamification || {};
+    const alerts = result.alerts || [];
+    const tBins = result.time_bins || {};
+    const demand = result.demand || {};
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {loading && <div style={{ fontSize: 10, color: "#3b82f6", textAlign: "right" }}>Updating...</div>}
+
+        {/* Summary cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+          <div style={{ ...cs, borderLeft: `4px solid ${statusColor}` }}>
+            <div style={ls}>Status</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: statusColor }}>{s.overall_status}</div>
+            <div style={rs}>{s.total_days} days tracked</div>
+          </div>
+          <div style={cs}>
+            <div style={ls}>Savings</div>
+            <div style={{ ...vs, color: s.savings_total_kWh >= 0 ? "#15803d" : "#dc2626" }}>{s.savings_total_kWh}<span style={us}>kWh</span></div>
+            <div style={rs}>{s.savings_cost_thb} THB</div>
+          </div>
+          <div style={cs}>
+            <div style={ls}>Success Rate</div>
+            <div style={vs}>{s.success_rate}<span style={us}>%</span></div>
+            <div style={rs}>{s.days_under} under / {s.days_over} over</div>
+          </div>
+          <div style={cs}>
+            <div style={ls}>Total Cost</div>
+            <div style={vs}>{s.actual_cost_thb}<span style={us}>THB</span></div>
+            <div style={rs}>predicted: {s.predicted_cost_thb} THB</div>
+          </div>
+        </div>
+
+        {/* Actual vs Predicted chart */}
+        {result.chart && (
+          <div style={{ background: "#fff", borderRadius: 8, padding: 12, border: "1px solid #e5e7eb" }}>
+            <ChartWidget config={{ chart_type: "bar", title: "Daily: Actual vs Predicted", show_legend: true, y_label: "kWh" }} data={result.chart} />
+          </div>
+        )}
+
+        {/* Power bins */}
+        {bins.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${bins.length}, 1fr)`, gap: 8 }}>
+            {bins.map((b, i) => (
+              <div key={i} style={{ ...cs, padding: "8px 10px" }}>
+                <div style={{ ...ls, fontSize: 9 }}>{b.label} ({b.range})</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{b.total_kwh}<span style={{ ...us, fontSize: 10 }}>kWh</span></div>
+                <div style={rs}>{b.readings} readings · avg {b.avg_power}W</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Daily stats table */}
+        {daily.length > 0 && (
+          <div style={{ overflow: "auto", maxHeight: 200 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <thead>
+                <tr style={{ background: "#f9fafb" }}>
+                  <th style={{ padding: 4, border: "1px solid #eee", textAlign: "left" }}>Date</th>
+                  <th style={{ padding: 4, border: "1px solid #eee" }}>Actual</th>
+                  <th style={{ padding: 4, border: "1px solid #eee" }}>Predicted</th>
+                  <th style={{ padding: 4, border: "1px solid #eee" }}>Savings</th>
+                  <th style={{ padding: 4, border: "1px solid #eee" }}>Te</th>
+                  <th style={{ padding: 4, border: "1px solid #eee" }}>Hours</th>
+                  <th style={{ padding: 4, border: "1px solid #eee" }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {daily.map((d) => (
+                  <tr key={d.date}>
+                    <td style={{ padding: 4, border: "1px solid #eee" }}>{d.date}</td>
+                    <td style={{ padding: 4, border: "1px solid #eee", textAlign: "right" }}>{d.actual_kwh}</td>
+                    <td style={{ padding: 4, border: "1px solid #eee", textAlign: "right" }}>{d.predicted_kwh}</td>
+                    <td style={{ padding: 4, border: "1px solid #eee", textAlign: "right", color: d.savings_kwh >= 0 ? "#15803d" : "#dc2626" }}>
+                      {d.savings_kwh > 0 ? "+" : ""}{d.savings_kwh} ({d.savings_pct}%)
+                    </td>
+                    <td style={{ padding: 4, border: "1px solid #eee", textAlign: "right" }}>{d.avg_Te}°C</td>
+                    <td style={{ padding: 4, border: "1px solid #eee", textAlign: "right" }}>{d.operating_hours}h</td>
+                    <td style={{ padding: 4, border: "1px solid #eee", textAlign: "center" }}>
+                      <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: d.status === "under" ? "#f0fde8" : "#fef2f2", color: d.status === "under" ? "#15803d" : "#dc2626" }}>
+                        {d.status === "under" ? "UNDER" : "OVER"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Gamification panel */}
+        {gam.total_badges > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ ...cs, textAlign: "left" }}>
+              <div style={{ ...ls, marginBottom: 6 }}>Badges Earned</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {Object.entries(gam.badge_counts || {}).map(([badge, count]) => {
+                  const icons = { perfectDay: "\u2B50", streak3: "\uD83D\uDD25", streak7: "\uD83C\uDF1F", morningWinner: "\u2600\uFE0F", afternoonWinner: "\uD83C\uDF24\uFE0F", eveningWinner: "\uD83C\uDF19", demandDefender: "\uD83D\uDEE1\uFE0F" };
+                  return (
+                    <span key={badge} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+                      {icons[badge] || "\uD83C\uDFC5"} {badge} x{count}
+                    </span>
+                  );
+                })}
+              </div>
+              <div style={{ ...rs, marginTop: 6 }}>
+                Streak: {gam.current_streak} days (best: {gam.max_streak})
+              </div>
+            </div>
+            <div style={{ ...cs, textAlign: "left" }}>
+              <div style={{ ...ls, marginBottom: 6 }}>Leaderboard (Top Days)</div>
+              {(gam.leaderboard || []).map((d, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0", borderBottom: "1px solid #f0f0f0" }}>
+                  <span>{i + 1}. {d.date}</span>
+                  <span style={{ color: "#15803d", fontWeight: 600 }}>+{d.savings_pct}% ({d.savings_kwh} kWh)</span>
+                </div>
+              ))}
+              {(gam.leaderboard || []).length === 0 && <div style={{ color: "#ccc", fontSize: 11 }}>No days under target yet</div>}
+            </div>
+          </div>
+        )}
+
+        {/* Calendar heatmap */}
+        {(gam.calendar || []).length > 0 && (
+          <div style={cs}>
+            <div style={{ ...ls, marginBottom: 6, textAlign: "left" }}>Daily Performance</div>
+            <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+              {(gam.calendar || []).map((d) => (
+                <div key={d.date} title={`${d.date}: ${d.value > 0 ? "+" : ""}${d.value}% ${d.badges > 0 ? `(${d.badges} badges)` : ""}`}
+                  style={{
+                    width: 28, height: 28, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 8, fontWeight: 600, cursor: "default",
+                    background: d.status === "under" ? (d.value > 10 ? "#bbf7d0" : "#dcfce7") : (d.value < -10 ? "#fecaca" : "#fef2f2"),
+                    color: d.status === "under" ? "#15803d" : "#dc2626",
+                  }}>
+                  {d.date.slice(8)}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Time bins + Demand */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          {Object.values(tBins).map((b) => (
+            <div key={b.label} style={{ ...cs, padding: "8px 10px" }}>
+              <div style={{ ...ls, fontSize: 9 }}>{b.label}</div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>{b.kwh}<span style={{ ...us, fontSize: 10 }}>kWh</span></div>
+              <div style={rs}>{b.count} readings, avg {b.avg_w}W</div>
+            </div>
+          ))}
+          <div style={{ ...cs, padding: "8px 10px", borderLeft: `3px solid ${demand.status === "OK" ? "#10b981" : "#ef4444"}` }}>
+            <div style={{ ...ls, fontSize: 9 }}>Demand Peak</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{demand.peak_kw}<span style={{ ...us, fontSize: 10 }}>kW</span></div>
+            <div style={rs}>Budget: {demand.budget_kw} kW ({demand.usage_pct}%)</div>
+          </div>
+        </div>
+
+        {/* Alerts */}
+        {alerts.length > 0 && (
+          <div style={{ ...cs, textAlign: "left", padding: "8px 12px" }}>
+            <div style={{ ...ls, marginBottom: 4 }}>Alerts</div>
+            {alerts.map((a, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "4px 0",
+                borderBottom: i < alerts.length - 1 ? "1px solid #f0f0f0" : "none",
+              }}>
+                <span style={{
+                  fontSize: 9, padding: "1px 6px", borderRadius: 4, fontWeight: 600,
+                  background: a.severity === "critical" ? "#fef2f2" : "#fffbeb",
+                  color: a.severity === "critical" ? "#dc2626" : "#d97706",
+                }}>{a.severity.toUpperCase()}</span>
+                <span style={{ fontSize: 11, color: "#334155" }}>{a.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {result._persisted && <div style={{ fontSize: 9, color: "#10b981", textAlign: "right" }}>Saved to {config.output_table}</div>}
+      </div>
+    );
+  }
+
+  // ─── energy_all display: what-if prediction cards ──────────────────────
+  const rec = result.recommendation;
+  const recColor = rec?.recommendation === "KEEP ON" ? "#15803d" : "#dc2626";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {loading && <div style={{ fontSize: 10, color: "#3b82f6", textAlign: "right" }}>Updating...</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+        <div style={cs}><div style={ls}>Energy</div><div style={vs}>{result.energy?.total_kWh}<span style={us}>kWh</span></div><div style={rs}>{result.energy?.total_lower_kWh} — {result.energy?.total_upper_kWh}</div></div>
+        <div style={cs}><div style={ls}>Cost</div><div style={vs}>{result.cost?.total_thb}<span style={us}>THB</span></div><div style={rs}>{result.cost?.lower_thb} — {result.cost?.upper_thb}</div></div>
+        <div style={cs}><div style={ls}>Cooldown</div><div style={vs}>{result.time?.pulldown_min}<span style={us}>min</span></div><div style={rs}>{result.time?.pulldown_lower_min} — {result.time?.pulldown_upper_min}</div></div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+        <div style={{ ...cs, padding: "6px 8px" }}><div style={{ ...ls, fontSize: 9 }}>Z1 Pulldown</div><div style={{ fontSize: 14, fontWeight: 600 }}>{result.energy?.zone1_Wh}<span style={{ ...us, fontSize: 10 }}>Wh</span></div></div>
+        <div style={{ ...cs, padding: "6px 8px" }}><div style={{ ...ls, fontSize: 9 }}>Z2 Transition</div><div style={{ fontSize: 14, fontWeight: 600 }}>{result.energy?.zone2_Wh}<span style={{ ...us, fontSize: 10 }}>Wh</span></div></div>
+        <div style={{ ...cs, padding: "6px 8px" }}><div style={{ ...ls, fontSize: 9 }}>Z3 Settling</div><div style={{ fontSize: 14, fontWeight: 600 }}>{result.energy?.zone3_Wh}<span style={{ ...us, fontSize: 10 }}>Wh</span></div></div>
+        <div style={{ ...cs, padding: "6px 8px" }}><div style={{ ...ls, fontSize: 9 }}>Cycling</div><div style={{ fontSize: 14, fontWeight: 600 }}>{result.energy?.cycling_power_W}<span style={{ ...us, fontSize: 10 }}>W</span></div></div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <div style={{ ...cs, borderLeft: `4px solid ${recColor}` }}><div style={ls}>{result.inputs?.hours_away || 3}h away?</div><div style={{ fontSize: 16, fontWeight: 700, color: recColor }}>{rec?.recommendation}</div><div style={rs}>Keep: {Math.round(rec?.keep_on_Wh)}Wh vs Restart: {Math.round(rec?.restart_Wh)}Wh</div></div>
+        <div style={cs}><div style={ls}>Warmup if off</div><div style={{ fontSize: 13 }}><b>2h:</b> {result.warmup?.temp_after_2h}°C <b>4h:</b> {result.warmup?.temp_after_4h}°C</div></div>
+      </div>
+      {result._persisted && <div style={{ fontSize: 9, color: "#10b981", textAlign: "right" }}>Saved to {config.output_table}</div>}
+    </div>
+  );
+}
+
 // ─── Live widget (WebSocket subscription) ─────────────────────────────────────
 function LiveWidget({ config }) {
   const [value, setValue] = useState(null);

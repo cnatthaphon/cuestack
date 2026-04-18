@@ -22,9 +22,9 @@ async def execute_in_container(org_id: str, page_id: str, code: str, timeout: in
     script = f"/tmp/_run_{page_id[:8]}.py"
 
     def _run():
-        # Write script to container
+        # Write script to container (-i enables stdin forwarding)
         write_result = subprocess.run(
-            ["docker", "exec", container, "sh", "-c", f"cat > {script}"],
+            ["docker", "exec", "-i", container, "sh", "-c", f"cat > {script}"],
             input=code.encode(), capture_output=True, timeout=10,
         )
         if write_result.returncode != 0:

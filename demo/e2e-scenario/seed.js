@@ -231,6 +231,61 @@ async function seed() {
     { name: "metric", type: "text" },
     { name: "value", type: "float" },
   ], "FFT frequencies and smoothed values");
+
+  await createTable("energy_predictions", [
+    { name: "formula", type: "text" },
+    { name: "inputs", type: "json" },
+    { name: "energy_kwh", type: "float" },
+    { name: "cost_thb", type: "float" },
+    { name: "pulldown_min", type: "float" },
+    { name: "recommendation", type: "text" },
+    { name: "computed_at", type: "timestamp" },
+  ], "Energy model predictions — persisted for other widgets and pipelines");
+
+  await createTable("power_consumption", [
+    { name: "timestamp", type: "timestamp" },
+    { name: "power_w", type: "float" },
+    { name: "temp_int", type: "float" },
+    { name: "temp_ext", type: "float" },
+    { name: "state", type: "text" },
+  ], "AC power consumption — simulated by notebook, consumed by EI widget");
+
+  await createTable("ei_models", [
+    { name: "model_id", type: "text" },
+    { name: "name", type: "text" },
+    { name: "model_type", type: "text" },
+    { name: "params", type: "json" },
+    { name: "accuracy", type: "json" },
+    { name: "is_active", type: "boolean" },
+    { name: "trained_at", type: "timestamp" },
+    { name: "training_days", type: "integer" },
+  ], "ML models for energy prediction — trained by notebook");
+
+  await createTable("ei_daily_stats", [
+    { name: "date", type: "text" },
+    { name: "model_id", type: "text" },
+    { name: "actual_kwh", type: "float" },
+    { name: "predicted_kwh", type: "float" },
+    { name: "savings_kwh", type: "float" },
+    { name: "savings_pct", type: "float" },
+    { name: "peak_kw", type: "float" },
+    { name: "operating_hours", type: "float" },
+    { name: "avg_te", type: "float" },
+    { name: "time_bin", type: "text" },
+    { name: "power_bin", type: "text" },
+    { name: "badges", type: "json" },
+    { name: "status", type: "text" },
+  ], "Daily energy stats — actual vs predicted with badges");
+
+  await createTable("ei_alerts", [
+    { name: "alert_type", type: "text" },
+    { name: "severity", type: "text" },
+    { name: "message", type: "text" },
+    { name: "value", type: "float" },
+    { name: "threshold", type: "float" },
+    { name: "acknowledged", type: "boolean" },
+    { name: "fired_at", type: "timestamp" },
+  ], "Energy alerts — threshold violations, peak warnings");
   console.log();
 
   // Step 8: Create demo folder
@@ -264,10 +319,12 @@ async function seed() {
     await createPage(raw.name, raw.icon, raw.page_type, raw.config, folderId);
   }
 
-  // Step 10: Seed sample sensor data into ClickHouse
+  // Step 10: Seed sample sensor data into ClickHouse + Postgres table
   console.log("\nStep 10: Seed sample sensor data...");
   const now = Date.now();
   let inserted = 0;
+  const tableRows = []; // batch for Postgres table
+
   for (let i = 0; i < 200; i++) {
     const ts = new Date(now - (200 - i) * 15000); // every 15s going back ~50min
     const baseTemp = 24 + Math.sin(i * 0.05) * 3;
@@ -275,19 +332,126 @@ async function seed() {
 
     for (const channel of ["sensor-room-a", "sensor-room-b"]) {
       const offset = channel === "sensor-room-b" ? 2 : 0;
+      const temp = +(baseTemp + offset + (Math.random() - 0.5) * 1.5).toFixed(2);
+      const humid = +(baseHumid - offset + (Math.random() - 0.5) * 3).toFixed(2);
+
       const res = await post("/api/v1/data/events", {
         channel,
         source: "seed",
-        payload: {
-          temperature: +(baseTemp + offset + (Math.random() - 0.5) * 1.5).toFixed(2),
-          humidity: +(baseHumid - offset + (Math.random() - 0.5) * 3).toFixed(2),
-          timestamp: ts.toISOString(),
-        },
+        payload: { temperature: temp, humidity: humid, timestamp: ts.toISOString() },
       });
       if (res.status === 200) inserted++;
+
+      tableRows.push({ timestamp: ts.toISOString(), channel, temperature: temp, humidity: humid });
     }
   }
-  console.log(`✅ Inserted ${inserted} sensor events (200 per room, ~50 min span)`);
+  console.log(`✅ Inserted ${inserted} sensor events into ClickHouse`);
+
+  // Also seed into Postgres org table for dashboard chart widgets
+  console.log("  Seeding raw_sensor_data table for chart widgets...");
+  // Look up table ID by name
+  const tablesRes = await get("/api/tables");
+  const allTables = tablesRes.data?.tables || tablesRes.data || [];
+  const rawTable = allTables.find(t => t.name === "raw_sensor_data");
+  let tableInserted = 0;
+  if (rawTable) {
+    // Check if already has data (skip if re-seeding)
+    const checkRes = await get(`/api/tables/${rawTable.id}/data?limit=1`);
+    const existingRows = checkRes.data?.total || checkRes.data?.rows?.length || 0;
+    if (existingRows > 0) {
+      console.log(`⏭️  raw_sensor_data already has ${existingRows} rows — skipping`);
+    } else {
+      // Insert in batches of 20
+      for (let i = 0; i < tableRows.length; i += 20) {
+        const batch = tableRows.slice(i, i + 20);
+        const res = await post(`/api/tables/${rawTable.id}/data`, { rows: batch });
+        if (res.status === 200 || res.status === 201) tableInserted += batch.length;
+      }
+      console.log(`✅ Inserted ${tableInserted} rows into raw_sensor_data table`);
+    }
+  } else {
+    console.log("⚠️  raw_sensor_data table not found — skipping table seed");
+  }
+
+  // Step 11: Seed simulated AC power consumption data (7 days)
+  console.log("\nStep 11: Seed AC power consumption data...");
+  const powerTable = allTables.find(t => t.name === "power_consumption");
+  if (powerTable) {
+    const checkPower = await get(`/api/tables/${powerTable.id}/data?limit=1`);
+    const existingPower = checkPower.data?.total || checkPower.data?.rows?.length || 0;
+    if (existingPower > 0) {
+      console.log(`⏭️  power_consumption already has ${existingPower} rows — skipping`);
+    } else {
+      // Simulate 7 days of AC operation: 15-min intervals
+      // Daily pattern: OFF overnight (0-8), pulldown (8-10), cycling (10-21), ramp-down (21-22), OFF (22-24)
+      const powerRows = [];
+      const DAYS = 7;
+      const baseDate = new Date(now - DAYS * 24 * 3600 * 1000);
+
+      for (let day = 0; day < DAYS; day++) {
+        const dayStart = new Date(baseDate.getTime() + day * 24 * 3600 * 1000);
+        const dayNoise = (Math.random() - 0.5) * 0.2; // ±10% daily variation
+        const Te_day = 29 + Math.sin(day * 0.9) * 3 + (Math.random() - 0.5) * 2; // outdoor temp varies
+
+        for (let h = 0; h < 24; h++) {
+          for (let m = 0; m < 60; m += 15) {
+            const ts = new Date(dayStart.getTime() + h * 3600000 + m * 60000);
+            const hourFrac = h + m / 60;
+            let power_w, temp_int, state;
+            const Te = Te_day + Math.sin(hourFrac / 24 * Math.PI * 2 - 1) * 2; // diurnal outdoor cycle
+
+            if (hourFrac < 8 || hourFrac >= 22) {
+              // OFF — room warms toward outdoor
+              state = "OFF";
+              power_w = 5 + Math.random() * 10; // standby
+              const offHours = hourFrac < 8 ? (hourFrac + 2) : (hourFrac - 22); // hours since shutdown
+              temp_int = Te - (Te - 24) * Math.exp(-0.3 * offHours); // warmup toward Te
+            } else if (hourFrac < 10) {
+              // PULLDOWN — high power, temp dropping
+              state = "PULLDOWN";
+              const pullProgress = (hourFrac - 8) / 2; // 0→1 over 2 hours
+              power_w = 800 + (1 - pullProgress) * 600 + Math.random() * 100; // starts ~1400W, drops to ~800W
+              temp_int = 30 - pullProgress * 6; // 30→24°C
+            } else if (hourFrac < 21) {
+              // CYCLING — steady power, maintaining setpoint
+              state = "CYCLING";
+              const cycleBase = 400 + (Te - 24) * 48 + 98; // k_leak*(Te-setpoint) + k_base
+              power_w = cycleBase * (1 + dayNoise) + (Math.random() - 0.5) * 80;
+              temp_int = 24 + (Math.random() - 0.5) * 0.8; // ±0.4°C around setpoint
+            } else {
+              // RAMP DOWN (21-22)
+              state = "CYCLING";
+              const rampProgress = (hourFrac - 21);
+              power_w = (400 + (Te - 24) * 48 + 98) * (1 - rampProgress * 0.5) + Math.random() * 50;
+              temp_int = 24 + rampProgress * 1.5;
+            }
+
+            power_w = Math.max(0, +(power_w).toFixed(1));
+            temp_int = +(temp_int + (Math.random() - 0.5) * 0.3).toFixed(2);
+
+            powerRows.push({
+              timestamp: ts.toISOString(),
+              power_w,
+              temp_int,
+              temp_ext: +(Te + (Math.random() - 0.5) * 0.5).toFixed(2),
+              state,
+            });
+          }
+        }
+      }
+
+      // Insert in batches
+      let powerInserted = 0;
+      for (let i = 0; i < powerRows.length; i += 20) {
+        const batch = powerRows.slice(i, i + 20);
+        const res = await post(`/api/tables/${powerTable.id}/data`, { rows: batch });
+        if (res.status === 200 || res.status === 201) powerInserted += batch.length;
+      }
+      console.log(`✅ Inserted ${powerInserted} rows into power_consumption (${DAYS} days, 15-min intervals)`);
+    }
+  } else {
+    console.log("⚠️  power_consumption table not found — skipping");
+  }
 
   console.log("\n" + "=".repeat(50));
   console.log("✅ Demo scenario seeded successfully!");
@@ -299,6 +463,8 @@ async function seed() {
   console.log("  ⚙️ Sensor ETL Pipeline  — visual flow, runs as service");
   console.log("  🔌 Sensor API Service   — REST API querying ClickHouse, runs as service");
   console.log("  📊 Sensor Dashboard     — live data from 4 sources (WS, MQTT, ClickHouse, API)");
+  console.log("  📈 Sensor Charts        — Chart.js dashboard: line, bar, area, scatter, multi-series");
+  console.log("  ⚡ Energy Intelligence   — AC model: predict energy, cost, warmup, break-even");
   console.log("  📓 Sensor Analysis      — Jupyter notebook, Python SDK, charts from ClickHouse");
 }
 

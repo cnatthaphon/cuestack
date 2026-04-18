@@ -1,0 +1,133 @@
+{
+  "name": "Sensor Charts",
+  "icon": "\ud83d\udcc8",
+  "page_type": "dashboard",
+  "config": {
+    "layout": { "columns": 4 },
+    "widgets": [
+      {
+        "type": "select",
+        "config": { "var_name": "room", "label": "Room", "options": ["sensor-room-a", "sensor-room-b"], "default_value": "", "show_all": true },
+        "colSpan": 1, "rowSpan": 1
+      },
+      {
+        "type": "gauge",
+        "config": {
+          "label": "Avg Temperature", "table": "raw_sensor_data", "column": "temperature", "aggregation": "avg",
+          "min": 15, "max": 40, "unit": "\u00b0C",
+          "thresholds": [{ "value": 28, "color": "#f59e0b" }, { "value": 32, "color": "#ef4444" }],
+          "filters": [{ "column": "channel", "op": "eq", "var_name": "room" }]
+        },
+        "colSpan": 1, "rowSpan": 1
+      },
+      {
+        "type": "stat",
+        "config": {
+          "label": "Total Readings", "table": "raw_sensor_data", "aggregation": "count",
+          "filters": [{ "column": "channel", "op": "eq", "var_name": "room" }]
+        },
+        "colSpan": 1, "rowSpan": 1
+      },
+      {
+        "type": "gauge",
+        "config": {
+          "label": "Avg Humidity", "table": "raw_sensor_data", "column": "humidity", "aggregation": "avg",
+          "min": 20, "max": 90, "unit": "%",
+          "thresholds": [{ "value": 60, "color": "#f59e0b" }, { "value": 75, "color": "#ef4444" }],
+          "filters": [{ "column": "channel", "op": "eq", "var_name": "room" }]
+        },
+        "colSpan": 1, "rowSpan": 1
+      },
+      {
+        "type": "chart",
+        "config": {
+          "chart_type": "line",
+          "title": "Temperature & Humidity",
+          "table": "raw_sensor_data",
+          "x_column": "timestamp",
+          "x_label": "Time",
+          "y_label": "Value",
+          "series": [
+            { "y_column": "temperature", "label": "Temperature (\u00b0C)", "color": "#ef4444" },
+            { "y_column": "humidity", "label": "Humidity (%)", "color": "#3b82f6" }
+          ],
+          "show_legend": true,
+          "limit": 200,
+          "filters": [{ "column": "channel", "op": "eq", "var_name": "room" }]
+        },
+        "colSpan": 4, "rowSpan": 2
+      },
+      {
+        "type": "chart",
+        "config": {
+          "chart_type": "bar",
+          "title": "Humidity",
+          "table": "raw_sensor_data",
+          "x_column": "timestamp",
+          "y_label": "%",
+          "series": [
+            { "y_column": "humidity", "label": "Humidity", "color": "#3b82f6" }
+          ],
+          "show_legend": false,
+          "limit": 30,
+          "filters": [{ "column": "channel", "op": "eq", "var_name": "room" }]
+        },
+        "colSpan": 2, "rowSpan": 2
+      },
+      {
+        "type": "chart",
+        "config": {
+          "chart_type": "scatter",
+          "title": "Temp vs Humidity",
+          "table": "raw_sensor_data",
+          "x_column": "temperature",
+          "x_label": "Temperature (\u00b0C)",
+          "y_label": "Humidity (%)",
+          "series": [
+            { "y_column": "humidity", "label": "Readings", "color": "#8b5cf6" }
+          ],
+          "show_legend": false,
+          "limit": 200,
+          "filters": [{ "column": "channel", "op": "eq", "var_name": "room" }]
+        },
+        "colSpan": 2, "rowSpan": 2
+      },
+      {
+        "type": "chart",
+        "config": {
+          "chart_type": "area",
+          "title": "Temperature Trend",
+          "table": "raw_sensor_data",
+          "x_column": "timestamp",
+          "x_label": "Time",
+          "y_label": "\u00b0C",
+          "series": [
+            { "y_column": "temperature", "label": "Temperature", "color": "#10b981" }
+          ],
+          "show_legend": false,
+          "limit": 100,
+          "filters": [{ "column": "channel", "op": "eq", "var_name": "room" }]
+        },
+        "colSpan": 2, "rowSpan": 2
+      },
+      {
+        "type": "table",
+        "config": {
+          "title": "Recent Readings", "table": "raw_sensor_data", "max_rows": 10,
+          "filters": [{ "column": "channel", "op": "eq", "var_name": "room" }]
+        },
+        "colSpan": 2, "rowSpan": 2
+      },
+      {
+        "type": "live",
+        "config": { "channel": "sensor-room-a", "field": "temperature", "display": "chart" },
+        "colSpan": 2, "rowSpan": 1
+      },
+      {
+        "type": "text",
+        "config": { "text": "Interactive dashboard: select a room to filter all charts, gauges, and stats.\n\nControl widgets (Slider, Select) publish state. Data widgets (Chart, Stat, Gauge, Table) bind to controls via filters.\n\nAll configured through the UI \u2014 no code needed." },
+        "colSpan": 2, "rowSpan": 1
+      }
+    ]
+  }
+}

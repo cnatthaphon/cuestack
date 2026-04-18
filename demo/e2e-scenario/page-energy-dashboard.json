@@ -1,0 +1,90 @@
+{
+  "name": "Energy Intelligence",
+  "icon": "\u26a1",
+  "page_type": "dashboard",
+  "config": {
+    "layout": { "columns": 4 },
+    "widgets": [
+      {
+        "type": "text",
+        "config": { "text": "ENERGY MONITORING\nActual consumption vs model prediction. Data from power_consumption table (simulated by notebook/pipeline)." },
+        "colSpan": 4, "rowSpan": 1
+      },
+      {
+        "type": "compute",
+        "config": {
+          "formula": "energy_monitor",
+          "model_config": {
+            "WhC_z1": 1047.504, "WhC_z1_std": 1565.58, "Teq_z1": 26.607,
+            "minC_z1": 70.671, "minC_z1_std": 119.271,
+            "E_z2": 652.19, "E_z2_std": 127.478, "D_z2": 45.5,
+            "E_z3": 2376.603, "E_z3_std": 1312.884, "D_z3": 170.972, "D_z3_std": 66.618,
+            "k_leak": 48.06, "k_base": 98.088,
+            "w_warmup": 0.317, "k_fast": 11.019, "k_slow": 1.063,
+            "Te_ref": 31.238, "te_coeff": 226.962, "te_time_coeff": 2.459
+          },
+          "input_map": { "rate": "rate", "setpoint": "setpoint" },
+          "source_table": "power_consumption",
+          "output_table": "energy_predictions"
+        },
+        "colSpan": 4, "rowSpan": 4
+      },
+      {
+        "type": "text",
+        "config": { "text": "WHAT-IF PREDICTOR\nAdjust sliders to predict energy, cost, and cooldown for different conditions." },
+        "colSpan": 4, "rowSpan": 1
+      },
+      {
+        "type": "slider",
+        "config": { "var_name": "ti", "label": "Room Temp (Ti)", "min": 26, "max": 38, "step": 0.5, "default_value": 32, "unit": "\u00b0C" },
+        "colSpan": 1, "rowSpan": 1
+      },
+      {
+        "type": "slider",
+        "config": { "var_name": "te", "label": "Outdoor Temp (Te)", "min": 24, "max": 40, "step": 0.5, "default_value": 30, "unit": "\u00b0C" },
+        "colSpan": 1, "rowSpan": 1
+      },
+      {
+        "type": "slider",
+        "config": { "var_name": "setpoint", "label": "Setpoint", "min": 18, "max": 28, "step": 0.5, "default_value": 24, "unit": "\u00b0C" },
+        "colSpan": 1, "rowSpan": 1
+      },
+      {
+        "type": "slider",
+        "config": { "var_name": "hours", "label": "Runtime", "min": 1, "max": 12, "step": 0.5, "default_value": 8, "unit": "hr" },
+        "colSpan": 1, "rowSpan": 1
+      },
+      {
+        "type": "compute",
+        "config": {
+          "formula": "energy_all",
+          "model_config": {
+            "WhC_z1": 1047.504, "WhC_z1_std": 1565.58, "Teq_z1": 26.607,
+            "minC_z1": 70.671, "minC_z1_std": 119.271,
+            "E_z2": 652.19, "E_z2_std": 127.478, "D_z2": 45.5,
+            "E_z3": 2376.603, "E_z3_std": 1312.884, "D_z3": 170.972, "D_z3_std": 66.618,
+            "k_leak": 48.06, "k_base": 98.088,
+            "w_warmup": 0.317, "k_fast": 11.019, "k_slow": 1.063,
+            "Te_ref": 31.238, "te_coeff": 226.962, "te_time_coeff": 2.459
+          },
+          "input_map": {
+            "Ti": "ti", "Te": "te", "setpoint": "setpoint",
+            "hours": "hours", "rate": "rate", "hours_away": "away"
+          },
+          "output_table": "energy_predictions"
+        },
+        "colSpan": 4, "rowSpan": 2
+      },
+      {
+        "type": "slider",
+        "config": { "var_name": "rate", "label": "Electricity Rate", "min": 2, "max": 8, "step": 0.1, "default_value": 4.0, "unit": "THB/kWh" },
+        "colSpan": 2, "rowSpan": 1
+      },
+      {
+        "type": "slider",
+        "config": { "var_name": "away", "label": "Hours Away", "min": 0.5, "max": 8, "step": 0.5, "default_value": 3, "unit": "hr" },
+        "colSpan": 2, "rowSpan": 1
+      }
+    ]
+  }
+}
