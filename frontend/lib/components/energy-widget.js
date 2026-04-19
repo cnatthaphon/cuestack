@@ -33,6 +33,8 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [chartMode, setChartMode] = useState("bar"); // bar | line (24h)
+  const [selectedDay, setSelectedDay] = useState(null); // date string for 24h drill-down
 
   // Settings (stored in config, editable inline)
   const [settings, setSettings] = useState({
@@ -246,12 +248,68 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
               </div>
             </div>
 
-            {/* Chart: actual vs predicted */}
-            {result.chart && (
+            {/* Today's gauge + chart toggle */}
+            <div style={{ display: "grid", gridTemplateColumns: result.today ? "140px 1fr" : "1fr", gap: 6 }}>
+              {/* Today's gauge */}
+              {result.today && (
+                <div style={{ ...cs, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ ...ls, marginBottom: 4 }}>Today</div>
+                  {(() => {
+                    const t = result.today;
+                    const pct = Math.min(t.progress_pct, 150);
+                    const gaugeColor = pct <= 80 ? "#10b981" : pct <= 100 ? "#f59e0b" : "#ef4444";
+                    const r = 40, cx = 50, cy = 48;
+                    const angle = Math.PI + (Math.min(pct, 150) / 150) * Math.PI;
+                    const x2 = cx + r * Math.cos(angle), y2 = cy + r * Math.sin(angle);
+                    return (
+                      <>
+                        <svg viewBox="0 0 100 55" style={{ width: 100 }}>
+                          <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`} fill="none" stroke="#e5e7eb" strokeWidth={8} strokeLinecap="round" />
+                          {pct > 0.5 && <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 ${pct > 75 ? 1 : 0} 1 ${x2} ${y2}`} fill="none" stroke={gaugeColor} strokeWidth={8} strokeLinecap="round" />}
+                          <text x={cx} y={cy - 6} textAnchor="middle" fontSize="16" fontWeight="700" fill="#1e293b">{Math.round(pct)}%</text>
+                          <text x={cx} y={cy + 6} textAnchor="middle" fontSize="7" fill="#94a3b8">of budget</text>
+                        </svg>
+                        <div style={{ fontSize: 9, color: "#64748b", textAlign: "center" }}>
+                          {t.actual_kwh} / {t.predicted_kwh} kWh
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Chart: actual vs predicted (bar) or 24h line */}
               <div style={{ background: "#fff", borderRadius: 6, padding: 8, border: "1px solid #e5e7eb", minHeight: 140 }}>
-                <ChartWidget config={{ chart_type: "bar", title: "Actual vs Predicted (kWh)", show_legend: true }} data={result.chart} />
+                {/* Toggle bar/line + selected day */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <div style={{ display: "flex", gap: 2 }}>
+                    <button onClick={() => { setChartMode("bar"); setSelectedDay(null); }}
+                      style={{ padding: "2px 8px", fontSize: 10, border: "1px solid #ddd", borderRadius: 3, cursor: "pointer",
+                        background: chartMode === "bar" ? "#3b82f6" : "#fff", color: chartMode === "bar" ? "#fff" : "#666" }}>Daily</button>
+                    <button onClick={() => setChartMode("line")}
+                      style={{ padding: "2px 8px", fontSize: 10, border: "1px solid #ddd", borderRadius: 3, cursor: "pointer",
+                        background: chartMode === "line" ? "#3b82f6" : "#fff", color: chartMode === "line" ? "#fff" : "#666" }}>24h</button>
+                  </div>
+                  {chartMode === "line" && (
+                    <select value={selectedDay || ""} onChange={(e) => setSelectedDay(e.target.value || null)}
+                      style={{ fontSize: 10, padding: "2px 6px", border: "1px solid #ddd", borderRadius: 3 }}>
+                      {daily.map((d) => <option key={d.date} value={d.date}>{d.date}</option>)}
+                    </select>
+                  )}
+                </div>
+
+                {chartMode === "bar" && result.chart && (
+                  <ChartWidget config={{ chart_type: "bar", show_legend: true, y_label: "kWh" }} data={result.chart} />
+                )}
+                {chartMode === "line" && (() => {
+                  const dayKey = selectedDay || daily[daily.length - 1]?.date;
+                  const hourly = result.hourly_by_day?.[dayKey];
+                  if (!hourly) return <div style={{ color: "#94a3b8", fontSize: 11 }}>No hourly data</div>;
+                  return <ChartWidget config={{ chart_type: "line", show_legend: false, x_label: "Hour", y_label: "kWh", title: dayKey }}
+                    data={{ labels: hourly.labels, series: [{ label: "Power (kWh)", values: hourly.values, color: "#3b82f6" }] }} />;
+                })()}
               </div>
-            )}
+            </div>
 
             {/* Bins + Demand */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>

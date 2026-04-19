@@ -305,6 +305,37 @@ export function energyMonitor(rows, modelConfig, inputs, precomputedStats) {
     ],
   };
 
+  // ─── Hourly breakdown per day (for 24h line view) ──────────────────────
+  const hourlyByDay = {};
+  for (const [date, day] of sortedDays) {
+    const hours = {};
+    for (const r of day.readings) {
+      const h = Math.floor(r.hour);
+      if (!hours[h]) hours[h] = { wh: 0, count: 0 };
+      hours[h].wh += r.power * 0.25;
+      hours[h].count++;
+    }
+    const labels24 = [];
+    const values24 = [];
+    for (let h = 0; h < 24; h++) {
+      labels24.push(`${h}:00`);
+      values24.push(hours[h] ? round2(hours[h].wh / 1000) : 0);
+    }
+    hourlyByDay[date] = { labels: labels24, values: values24 };
+  }
+
+  // ─── Today's gauge data ────────────────────────────────────────────────
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayStat = dailyStats.find((d) => d.date === todayKey);
+  const today = todayStat ? {
+    actual_kwh: todayStat.actual_kwh,
+    predicted_kwh: todayStat.predicted_kwh,
+    progress_pct: todayStat.predicted_kwh > 0 ? round1((todayStat.actual_kwh / todayStat.predicted_kwh) * 100) : 0,
+    status: todayStat.status,
+    operating_hours: todayStat.operating_hours,
+    peak_kw: todayStat.peak_kw,
+  } : null;
+
   // ─── Summary ───────────────────────────────────────────────────────────
   return {
     summary: {
@@ -331,6 +362,8 @@ export function energyMonitor(rows, modelConfig, inputs, precomputedStats) {
         : { mode: "flat", rate: rate || 4.0 },
     },
     daily_stats: dailyStats,
+    hourly_by_day: hourlyByDay,
+    today,
     power_bins: powerBins,
     time_bins: timeBins,
     gamification: {
