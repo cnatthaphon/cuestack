@@ -232,6 +232,12 @@ async function seed() {
     { name: "value", type: "float" },
   ], "FFT frequencies and smoothed values");
 
+  await createTable("highfreq_sensor", [
+    { name: "timestamp", type: "timestamp" },
+    { name: "value", type: "float" },
+    { name: "signal_b", type: "float" },
+  ], "High-frequency sensor data (1s intervals) — LTTB demo");
+
   await createTable("energy_predictions", [
     { name: "formula", type: "text" },
     { name: "inputs", type: "json" },
@@ -451,6 +457,42 @@ async function seed() {
     }
   } else {
     console.log("⚠️  power_consumption table not found — skipping");
+  }
+
+  // Step 12: Seed high-frequency data for LTTB demo (10,000 points)
+  console.log("\nStep 12: Seed high-frequency sensor data (LTTB demo)...");
+  const hfTable = allTables.find(t => t.name === "highfreq_sensor") ||
+    (await get("/api/tables")).data?.tables?.find(t => t.name === "highfreq_sensor");
+  if (hfTable) {
+    const checkHf = await get(`/api/tables/${hfTable.id}/data?limit=1`);
+    const existingHf = checkHf.data?.total || checkHf.data?.rows?.length || 0;
+    if (existingHf > 0) {
+      console.log(`⏭️  highfreq_sensor already has ${existingHf} rows — skipping`);
+    } else {
+      const HF_POINTS = 10000;
+      const hfRows = [];
+      const hfStart = now - HF_POINTS * 1000; // 1-second intervals going back ~2.7 hours
+      for (let i = 0; i < HF_POINTS; i++) {
+        const t = hfStart + i * 1000;
+        const ts = new Date(t);
+        // Complex signal: sine + noise + occasional spikes
+        const base = 50 + 20 * Math.sin(i * 0.01) + 10 * Math.sin(i * 0.073);
+        const spike = Math.random() > 0.98 ? (Math.random() * 40 - 20) : 0;
+        const noise = (Math.random() - 0.5) * 5;
+        const value = +(base + noise + spike).toFixed(2);
+        const signal_b = +(30 + 15 * Math.cos(i * 0.015) + (Math.random() - 0.5) * 3).toFixed(2);
+        hfRows.push({ timestamp: ts.toISOString(), value, signal_b });
+      }
+      let hfInserted = 0;
+      for (let i = 0; i < hfRows.length; i += 50) {
+        const batch = hfRows.slice(i, i + 50);
+        const res = await post(`/api/tables/${hfTable.id}/data`, { rows: batch });
+        if (res.status === 200 || res.status === 201) hfInserted += batch.length;
+      }
+      console.log(`✅ Inserted ${hfInserted} rows into highfreq_sensor (1s intervals, ${(HF_POINTS/3600).toFixed(1)}h span)`);
+    }
+  } else {
+    console.log("⚠️  highfreq_sensor table not found — skipping");
   }
 
   console.log("\n" + "=".repeat(50));

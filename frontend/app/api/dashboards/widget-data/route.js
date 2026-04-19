@@ -47,7 +47,7 @@ function resolveFilters(config, controlState) {
 async function resolveWidgetData(orgId, widget, controlState) {
   const { type, config } = widget;
 
-  if (type === "text" || type === "slider" || type === "select") {
+  if (type === "text" || type === "slider" || type === "select" || type === "energy") {
     return {};
   }
 
@@ -58,11 +58,17 @@ async function resolveWidgetData(orgId, widget, controlState) {
   // Resolve control-driven filters
   const filters = resolveFilters(config, controlState);
 
+  // Chart types can request more data (LTTB handles rendering performance)
+  const isChart = type === "chart" || ["line", "bar", "pie", "doughnut", "area", "scatter"].includes(type);
+  const defaultLimit = isChart ? 2000 : 200;
+  const maxLimit = isChart ? 10000 : 1000;
+  const limit = Math.min(config.limit || defaultLimit, maxLimit);
+
   // Use advanced query if filters exist, basic otherwise
   let rows;
   if (filters.length > 0) {
     const result = await queryDataAdvanced(orgId, config.table, {
-      limit: config.limit || 200,
+      limit,
       order_by: config.order_by || config.x_column || "created_at",
       order_dir: config.order_dir || "ASC",
       filters,
@@ -70,7 +76,7 @@ async function resolveWidgetData(orgId, widget, controlState) {
     rows = result.rows;
   } else {
     rows = await queryData(orgId, config.table, {
-      limit: config.limit || 200,
+      limit,
       order_by: config.order_by || config.x_column || "created_at",
       order_dir: config.order_dir || "ASC",
     });

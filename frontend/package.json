@@ -13,6 +13,7 @@
     "react-dom": "^19.0.0",
     "bcryptjs": "^2.4.3",
     "chart.js": "^4.4.0",
+    "chartjs-plugin-zoom": "^2.0.0",
     "react-chartjs-2": "^5.2.0",
     "jose": "^6.0.8",
     "pg": "^8.13.1"

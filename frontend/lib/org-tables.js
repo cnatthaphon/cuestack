@@ -197,7 +197,7 @@ export async function queryData(orgId, tableName, { limit = 100, offset = 0, ord
     }
   }
 
-  const safeLimit = Math.min(Math.max(1, parseInt(limit) || 100), 1000);
+  const safeLimit = Math.min(Math.max(1, parseInt(limit) || 100), 10000);
   const safeOffset = Math.max(0, parseInt(offset) || 0);
 
   const result = await query(
@@ -255,7 +255,7 @@ export async function queryDataAdvanced(orgId, tableName, { limit = 50, offset =
     orderSQL = `"${order_by}" ${order_dir === "ASC" ? "ASC" : "DESC"} NULLS LAST`;
   }
 
-  const safeLimit = Math.min(Math.max(1, parseInt(limit) || 50), 1000);
+  const safeLimit = Math.min(Math.max(1, parseInt(limit) || 50), 10000);
   const safeOffset = Math.max(0, parseInt(offset) || 0);
 
   // Count total (for pagination)

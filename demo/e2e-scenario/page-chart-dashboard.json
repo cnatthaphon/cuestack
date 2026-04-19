@@ -127,6 +127,24 @@
         "type": "text",
         "config": { "text": "Interactive dashboard: select a room to filter all charts, gauges, and stats.\n\nControl widgets (Slider, Select) publish state. Data widgets (Chart, Stat, Gauge, Table) bind to controls via filters.\n\nAll configured through the UI \u2014 no code needed." },
         "colSpan": 2, "rowSpan": 1
+      },
+      {
+        "type": "chart",
+        "config": {
+          "chart_type": "line",
+          "title": "High-Frequency Signal (10,000 pts \u2014 LTTB downsampled)",
+          "table": "highfreq_sensor",
+          "x_column": "timestamp",
+          "x_label": "Time",
+          "y_label": "Value",
+          "series": [
+            { "y_column": "value", "label": "Signal A", "color": "#3b82f6" },
+            { "y_column": "signal_b", "label": "Signal B", "color": "#f59e0b" }
+          ],
+          "show_legend": true,
+          "limit": 10000
+        },
+        "colSpan": 4, "rowSpan": 2
       }
     ]
   }
