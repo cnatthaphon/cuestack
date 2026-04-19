@@ -37,7 +37,14 @@ function resolveFilters(config, controlState) {
     if (!f.column || !f.var_name) continue;
     const value = controlState[f.var_name];
     if (value === undefined || value === null || value === "") continue;
-    filters.push({ column: f.column, op: f.op || "eq", value: String(value) });
+    const strVal = String(value);
+    // Multi-select: comma-separated → multiple OR filters (handled by queryDataAdvanced as IN)
+    if (strVal.includes(",")) {
+      // Split into individual values, create an "in" filter
+      filters.push({ column: f.column, op: "in", value: strVal });
+    } else {
+      filters.push({ column: f.column, op: f.op || "eq", value: strVal });
+    }
   }
   return filters;
 }

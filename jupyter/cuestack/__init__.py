@@ -28,5 +28,6 @@ Usage:
 """
 
 from cuestack.client import CueStackClient, connect
+from cuestack import weather
 
-__all__ = ["CueStackClient", "connect"]
+__all__ = ["CueStackClient", "connect", "weather"]

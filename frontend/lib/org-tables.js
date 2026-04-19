@@ -241,6 +241,14 @@ export async function queryDataAdvanced(orgId, tableName, { limit = 50, offset =
     if (f.op === "contains") { whereParts.push(`${col}::text ILIKE $${pi}`); params.push(`%${f.value}%`); pi++; continue; }
     if (f.op === "starts") { whereParts.push(`${col}::text ILIKE $${pi}`); params.push(`${f.value}%`); pi++; continue; }
     if (f.op === "ends") { whereParts.push(`${col}::text ILIKE $${pi}`); params.push(`%${f.value}`); pi++; continue; }
+    // Multi-select: comma-separated values → ANY(array)
+    if (f.op === "in") {
+      const vals = String(f.value).split(",").map((v) => v.trim()).filter(Boolean);
+      whereParts.push(`${col}::text = ANY($${pi}::text[])`);
+      params.push(vals);
+      pi++;
+      continue;
+    }
 
     whereParts.push(`${col} ${op} $${pi}`);
     params.push(f.value);

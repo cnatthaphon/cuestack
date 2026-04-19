@@ -60,6 +60,20 @@ export async function POST(request) {
       } catch (e) {
         result._persist_error = e.message;
       }
+
+      // Push critical alerts to user notifications (shows in bell)
+      if (result.alerts?.length > 0) {
+        for (const alert of result.alerts.filter((a) => a.severity === "critical")) {
+          try {
+            await query(
+              `INSERT INTO notifications (org_id, user_id, title, message, type, source)
+               SELECT $1, id, $2, $3, 'warning', 'energy_monitor' FROM users WHERE org_id = $1 AND role_id = 1
+               ON CONFLICT DO NOTHING`,
+              [user.org_id, `Energy Alert: ${alert.type}`, alert.message]
+            );
+          } catch {}
+        }
+      }
     }
 
     return NextResponse.json({ data: result });

@@ -638,6 +638,7 @@ function DashboardRenderer({ page, isOwner, saveConfig }) {
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
         {!editing && <button onClick={() => loadWidgetData(widgets)} style={btnGray}>Refresh</button>}
+        {!editing && <button onClick={() => window.print()} style={btnGray}>Export PDF</button>}
         {isOwner && (
           editing
             ? <>
@@ -1408,9 +1409,14 @@ function WidgetConfig({ widget, tables, getTableCols, updateConfig, updateWidget
             </div>
           ))}
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#666" }}>
-          <input type="checkbox" checked={config?.show_all !== false} onChange={(e) => updateConfig("show_all", e.target.checked)} /> Show "All" option
-        </label>
+        <div style={{ display: "flex", gap: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#666" }}>
+            <input type="checkbox" checked={config?.show_all !== false} onChange={(e) => updateConfig("show_all", e.target.checked)} /> Show "All" option
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#666" }}>
+            <input type="checkbox" checked={!!config?.multi} onChange={(e) => updateConfig("multi", e.target.checked)} /> Multi-select (compare)
+          </label>
+        </div>
       </div>
     );
   }
@@ -1755,11 +1761,42 @@ function WidgetView({ widget, data, controlState, onControlChange, onSaveWidgetC
     );
   }
 
-  // ─── Select control ──────────────────────────────────────────────────────
+  // ─── Select control (single or multi) ──────────────────────────────────
   if (type === "select") {
     const varName = config?.var_name;
-    const val = varName && controlState?.[varName] !== undefined ? controlState[varName] : (config?.default_value ?? "");
     const options = config?.options || [];
+
+    // Multi-select mode: checkboxes, publishes comma-separated string
+    if (config?.multi) {
+      const selected = (varName && controlState?.[varName]) ? String(controlState[varName]).split(",").filter(Boolean) : [];
+      const toggle = (v) => {
+        const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v];
+        varName && onControlChange?.(varName, next.join(","));
+      };
+      return (
+        <div style={{ padding: "4px 0" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 6 }}>{config?.label || "Compare"}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {options.map((o, i) => {
+              const v = typeof o === "string" ? o : o.value;
+              const l = typeof o === "string" ? o : o.label;
+              const on = selected.includes(v);
+              return (
+                <button key={i} onClick={() => toggle(v)}
+                  style={{ padding: "4px 10px", fontSize: 11, border: "1px solid", borderRadius: 4, cursor: "pointer",
+                    borderColor: on ? "#3b82f6" : "#ddd", background: on ? "#dbeafe" : "#fff", color: on ? "#1e40af" : "#666" }}>
+                  {l}
+                </button>
+              );
+            })}
+          </div>
+          {selected.length > 0 && <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>{selected.length} selected</div>}
+        </div>
+      );
+    }
+
+    // Single select (dropdown)
+    const val = varName && controlState?.[varName] !== undefined ? controlState[varName] : (config?.default_value ?? "");
     return (
       <div style={{ padding: "4px 0" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 6 }}>{config?.label || "Filter"}</div>

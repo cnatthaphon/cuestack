@@ -21,3 +21,13 @@ nav {
   scrollbar-width: thin;
   scrollbar-color: #334155 transparent;
 }
+
+/* Print / PDF export — clean dashboard output */
+@media print {
+  nav, [data-topbar], button, .sidebar-dots { display: none !important; }
+  body { margin: 0; color: #000; }
+  [data-widget-grid] { gap: 8px !important; }
+  [data-widget-grid] > div { break-inside: avoid; border: 1px solid #ddd !important; box-shadow: none !important; }
+  canvas { max-width: 100% !important; }
+  @page { margin: 1cm; size: landscape; }
+}
