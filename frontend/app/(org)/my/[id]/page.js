@@ -1841,13 +1841,42 @@ function WidgetView({ widget, data, controlState, onControlChange, onSaveWidgetC
       </table>
     </div>
   );
-  // Chart types — rendered by Chart.js
+  // Chart types — rendered by Chart.js with dynamic zoom fetch
   if (type === "chart" || ["line", "bar", "pie", "doughnut", "area", "scatter"].includes(type)) {
     const chartConfig = { ...config };
     if (type !== "chart" && !chartConfig.chart_type) chartConfig.chart_type = type;
-    return <ChartWidget config={chartConfig} data={data} />;
+    return <ZoomableChart widget={widget} config={chartConfig} data={data} controlState={controlState} />;
   }
   return null;
+}
+
+// ─── Zoomable chart wrapper — dynamic zoom fetch from server ──────────────────
+function ZoomableChart({ widget, config, data, controlState }) {
+  const [zoomData, setZoomData] = useState(null);
+  const fetchingRef = useRef(false);
+
+  const onZoomFetch = useCallback(async (startIdx, endIdx) => {
+    if (fetchingRef.current) return;
+    if (startIdx === null) { setZoomData(null); return; } // reset
+
+    fetchingRef.current = true;
+    try {
+      const res = await fetch("/api/dashboards/widget-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          widget,
+          controlState: controlState || {},
+          zoom_range: { start_idx: startIdx, end_idx: endIdx },
+        }),
+      });
+      const d = await res.json();
+      if (d.data) setZoomData(d.data);
+    } catch {}
+    fetchingRef.current = false;
+  }, [widget, controlState]);
+
+  return <ChartWidget config={config} data={zoomData || data} onZoomFetch={onZoomFetch} />;
 }
 
 // ─── Compute widget (formula engine — reads controls, computes, persists) ─────

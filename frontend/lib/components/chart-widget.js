@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useMemo, useCallback } from "react";
+import { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, PointElement, LineElement, BarElement,
@@ -8,7 +8,6 @@ import {
   LineController, BarController, PieController, DoughnutController, ScatterController,
 } from "chart.js";
 import zoomPlugin from "chartjs-plugin-zoom";
-import { lttbSeries } from "../lttb.js";
 
 ChartJS.register(
   CategoryScale, LinearScale, PointElement, LineElement, BarElement,
@@ -22,55 +21,44 @@ const PALETTE = [
   "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899",
   "#06b6d4", "#84cc16", "#f97316", "#6366f1", "#14b8a6", "#e11d48",
 ];
-
-export function getColor(index) {
-  return PALETTE[index % PALETTE.length];
-}
-
+export function getColor(index) { return PALETTE[index % PALETTE.length]; }
 export { PALETTE };
 
-// Max points to render (above this, LTTB kicks in)
-const DOWNSAMPLE_THRESHOLD = 300;
+// ─── Chart wrapper — server-side LTTB + dynamic zoom fetch ───────────────────
+//
+// Flow:
+// 1. Parent loads initial data from API (already LTTB downsampled server-side)
+// 2. Chart renders 300 points (smooth)
+// 3. User zooms → chart calls onZoomFetch(start_idx, end_idx)
+// 4. Parent re-fetches from API with zoom_range → server returns higher-res LTTB for that range
+// 5. Chart updates with new data
+// 6. Reset → back to initial overview
+//
+// If no onZoomFetch provided (standalone use), zoom/pan still works on client data.
 
-// ─── Chart wrapper with LTTB downsampling + zoom-resample ────────────────────
-export default function ChartWidget({ config, data, style }) {
+export default function ChartWidget({ config, data, style, widgetConfig, onZoomFetch }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
   const wrapperRef = useRef(null);
-  const fullDataRef = useRef(null); // stores original full-resolution data
+  const zoomTimerRef = useRef(null);
 
   const chartType = config?.chart_type || "line";
   const isPie = chartType === "pie" || chartType === "doughnut";
   const isZoomable = !isPie && (chartType === "line" || chartType === "area" || chartType === "scatter");
 
-  // Downsample data with LTTB if needed
-  const downsample = useCallback((labels, series, threshold) => {
-    if (!labels || labels.length <= threshold) return { labels, series, downsampled: false };
-    return lttbSeries(labels, series, threshold);
-  }, []);
+  const meta = data?._meta || {};
+  const totalRows = meta.total_rows || data?.labels?.length || 0;
+  const rendered = meta.rendered || data?.labels?.length || 0;
+  const downsampled = meta.downsampled || false;
 
   // Build Chart.js data + options
-  const { chartData, chartOptions, meta } = useMemo(() => {
-    if (!data) return { chartData: null, chartOptions: {}, meta: {} };
+  const { chartData, chartOptions } = useMemo(() => {
+    if (!data) return { chartData: null, chartOptions: {} };
 
-    let labels = data.labels || [];
+    const labels = data.labels || [];
     let seriesData = data.series ? [...data.series] : [];
     if (seriesData.length === 0 && data.values) {
       seriesData.push({ label: config?.y_label || "Value", values: data.values });
-    }
-
-    // Store full-resolution data for zoom-resample
-    fullDataRef.current = { labels: [...labels], series: seriesData.map((s) => ({ ...s, values: [...(s.values || [])] })) };
-
-    const original = labels.length;
-    let downsampled = false;
-
-    // LTTB downsample if above threshold (skip for pie/bar)
-    if (!isPie && chartType !== "bar" && labels.length > DOWNSAMPLE_THRESHOLD) {
-      const ds = downsample(labels, seriesData, DOWNSAMPLE_THRESHOLD);
-      labels = ds.labels;
-      seriesData = ds.series;
-      downsampled = ds.downsampled;
     }
 
     let datasets;
@@ -79,8 +67,7 @@ export default function ChartWidget({ config, data, style }) {
       datasets = [{
         data: values,
         backgroundColor: labels.map((_, i) => getColor(i)),
-        borderWidth: 1,
-        borderColor: "#fff",
+        borderWidth: 1, borderColor: "#fff",
       }];
     } else {
       datasets = seriesData.map((s, i) => {
@@ -91,19 +78,22 @@ export default function ChartWidget({ config, data, style }) {
           data: s.values || [],
           borderColor: color,
           backgroundColor: fill ? color + "33" : color,
-          pointRadius: chartType === "scatter" ? 4 : (labels.length > 50 ? 0 : 3),
-          pointHoverRadius: 5,
-          borderWidth: 2,
+          pointRadius: chartType === "scatter" ? 4 : (labels.length > 80 ? 0 : 2),
+          pointHoverRadius: 4,
+          borderWidth: 1.5,
           fill: fill ? "origin" : false,
-          tension: chartType === "line" || chartType === "area" ? 0.3 : 0,
+          tension: chartType === "line" || chartType === "area" ? 0.2 : 0,
         };
       });
     }
 
+    const titleText = config?.title || "";
+    const titleSuffix = downsampled ? ` (${totalRows.toLocaleString()} pts)` : "";
+
     const options = {
       responsive: false,
       maintainAspectRatio: false,
-      animation: { duration: 300 },
+      animation: { duration: 200 },
       interaction: { mode: "index", intersect: false },
       plugins: {
         legend: {
@@ -112,50 +102,38 @@ export default function ChartWidget({ config, data, style }) {
           labels: { boxWidth: 12, padding: 8, font: { size: 11 } },
         },
         title: {
-          display: !!config?.title,
-          text: config?.title + (downsampled ? ` (${original.toLocaleString()} pts)` : "") || "",
+          display: !!titleText,
+          text: titleText + titleSuffix,
           font: { size: 13, weight: "600" },
           padding: { bottom: 8 },
         },
         tooltip: {
           backgroundColor: "rgba(15,23,42,0.9)",
-          titleFont: { size: 11 },
-          bodyFont: { size: 11 },
-          padding: 8,
-          cornerRadius: 6,
+          titleFont: { size: 11 }, bodyFont: { size: 11 },
+          padding: 8, cornerRadius: 6,
         },
-        // Zoom plugin config
         zoom: isZoomable ? {
           pan: { enabled: true, mode: "x" },
           zoom: {
             wheel: { enabled: true },
             pinch: { enabled: true },
-            drag: { enabled: true, backgroundColor: "rgba(59,130,246,0.1)", borderColor: "#3b82f6", borderWidth: 1 },
+            drag: { enabled: true, backgroundColor: "rgba(59,130,246,0.08)", borderColor: "#3b82f6", borderWidth: 1 },
             mode: "x",
-            onZoom: ({ chart }) => {
-              // On zoom: resample at higher resolution for visible range
-              if (!fullDataRef.current) return;
-              const { min, max } = chart.scales.x;
-              const minIdx = Math.max(0, Math.floor(min));
-              const maxIdx = Math.min(fullDataRef.current.labels.length - 1, Math.ceil(max));
-              const rangeLen = maxIdx - minIdx + 1;
-
-              if (rangeLen < fullDataRef.current.labels.length * 0.8) {
-                // Zoomed in — show more detail for this range
-                const slicedLabels = fullDataRef.current.labels.slice(minIdx, maxIdx + 1);
-                const slicedSeries = fullDataRef.current.series.map((s) => ({
-                  ...s, values: (s.values || []).slice(minIdx, maxIdx + 1),
-                }));
-                const ds = rangeLen > DOWNSAMPLE_THRESHOLD
-                  ? lttbSeries(slicedLabels, slicedSeries, DOWNSAMPLE_THRESHOLD)
-                  : { labels: slicedLabels, series: slicedSeries };
-
-                chart.data.labels = ds.labels;
-                ds.series.forEach((s, i) => {
-                  if (chart.data.datasets[i]) chart.data.datasets[i].data = s.values;
-                });
-                chart.update("none");
-              }
+            onZoomComplete: ({ chart }) => {
+              // Debounced zoom fetch — wait 300ms after zoom stops
+              if (zoomTimerRef.current) clearTimeout(zoomTimerRef.current);
+              zoomTimerRef.current = setTimeout(() => {
+                const { min, max } = chart.scales.x;
+                const startIdx = Math.max(0, Math.floor(min));
+                const endIdx = Math.min(totalRows - 1, Math.ceil(max));
+                // Map rendered indices back to original data indices
+                const ratio = totalRows / rendered;
+                const origStart = Math.floor(startIdx * ratio);
+                const origEnd = Math.ceil(endIdx * ratio);
+                if (onZoomFetch && totalRows > rendered) {
+                  onZoomFetch(origStart, origEnd);
+                }
+              }, 300);
             },
           },
         } : undefined,
@@ -165,15 +143,13 @@ export default function ChartWidget({ config, data, style }) {
     if (!isPie) {
       options.scales = {
         x: {
-          display: true,
-          stacked: !!config?.stacked,
+          display: true, stacked: !!config?.stacked,
           title: { display: !!config?.x_label, text: config?.x_label || "", font: { size: 11 } },
           ticks: { font: { size: 10 }, maxRotation: 45, maxTicksLimit: 12 },
           grid: { display: false },
         },
         y: {
-          display: true,
-          stacked: !!config?.stacked,
+          display: true, stacked: !!config?.stacked,
           title: { display: !!config?.y_label, text: config?.y_label || "", font: { size: 11 } },
           ticks: { font: { size: 10 } },
           grid: { color: "rgba(0,0,0,0.06)" },
@@ -182,21 +158,13 @@ export default function ChartWidget({ config, data, style }) {
       };
     }
 
-    return {
-      chartData: { labels, datasets },
-      chartOptions: options,
-      meta: { downsampled, original, rendered: labels.length },
-    };
-  }, [data, config, chartType, isPie, isZoomable, downsample]);
+    return { chartData: { labels, datasets }, chartOptions: options };
+  }, [data, config, chartType, isPie, isZoomable, totalRows, rendered, downsampled, onZoomFetch]);
 
   // Create / update chart
   useEffect(() => {
     if (!canvasRef.current || !wrapperRef.current || !chartData) return;
-
-    if (chartRef.current) {
-      chartRef.current.destroy();
-      chartRef.current = null;
-    }
+    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
 
     const w = wrapperRef.current.clientWidth;
     const h = wrapperRef.current.clientHeight;
@@ -204,10 +172,8 @@ export default function ChartWidget({ config, data, style }) {
     canvasRef.current.height = h;
 
     const ctx = canvasRef.current.getContext("2d");
-    const type = chartType === "area" ? "line" : chartType;
-
     chartRef.current = new ChartJS(ctx, {
-      type,
+      type: chartType === "area" ? "line" : chartType,
       data: chartData,
       options: chartOptions,
     });
@@ -217,26 +183,16 @@ export default function ChartWidget({ config, data, style }) {
       chartRef.current.resize(wrapperRef.current.clientWidth, wrapperRef.current.clientHeight);
     };
     window.addEventListener("resize", onResize);
-
     return () => {
       window.removeEventListener("resize", onResize);
       if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
     };
   }, [chartData, chartOptions, chartType]);
 
-  // Reset zoom handler
+  // Reset zoom → re-fetch overview
   const resetZoom = () => {
-    if (!chartRef.current || !fullDataRef.current) return;
-    chartRef.current.resetZoom();
-    // Restore downsampled full dataset
-    const ds = fullDataRef.current.labels.length > DOWNSAMPLE_THRESHOLD
-      ? lttbSeries(fullDataRef.current.labels, fullDataRef.current.series, DOWNSAMPLE_THRESHOLD)
-      : fullDataRef.current;
-    chartRef.current.data.labels = ds.labels;
-    (ds.series || fullDataRef.current.series).forEach((s, i) => {
-      if (chartRef.current.data.datasets[i]) chartRef.current.data.datasets[i].data = s.values;
-    });
-    chartRef.current.update("none");
+    if (chartRef.current) chartRef.current.resetZoom();
+    if (onZoomFetch) onZoomFetch(null, null); // null = reset to overview
   };
 
   if (!data) return <div style={{ color: "#ccc", fontSize: 13, padding: 12 }}>Loading...</div>;
@@ -246,16 +202,15 @@ export default function ChartWidget({ config, data, style }) {
   return (
     <div ref={wrapperRef} style={{ position: "relative", width: "100%", height: "100%", minHeight: 120, overflow: "hidden", ...style }}>
       <canvas ref={canvasRef} style={{ display: "block" }} />
-      {/* LTTB indicator + zoom reset */}
-      {(meta.downsampled || isZoomable) && (
+      {(downsampled || isZoomable) && (
         <div style={{ position: "absolute", top: 4, right: 4, display: "flex", gap: 4, alignItems: "center" }}>
-          {meta.downsampled && (
+          {downsampled && (
             <span style={{ fontSize: 9, color: "#94a3b8", background: "rgba(255,255,255,0.9)", padding: "1px 6px", borderRadius: 3 }}>
-              LTTB {meta.rendered}/{meta.original}
+              LTTB {rendered}/{totalRows.toLocaleString()}
             </span>
           )}
           {isZoomable && (
-            <button onClick={resetZoom} title="Reset zoom"
+            <button onClick={resetZoom} title="Reset zoom (double-click also works)"
               style={{ fontSize: 9, color: "#64748b", background: "rgba(255,255,255,0.9)", border: "1px solid #e2e8f0", borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>
               Reset
             </button>
