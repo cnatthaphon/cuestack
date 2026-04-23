@@ -283,6 +283,13 @@ async function seed() {
     { name: "status", type: "text" },
   ], "Daily energy stats — actual vs predicted with badges");
 
+  await createTable("ei_cache", [
+    { name: "cache_key", type: "text" },
+    { name: "result", type: "json" },
+    { name: "computed_at", type: "timestamp" },
+    { name: "ttl_seconds", type: "integer" },
+  ], "Analysis cache — precomputed results for fast page loads");
+
   await createTable("ei_alerts", [
     { name: "alert_type", type: "text" },
     { name: "severity", type: "text" },

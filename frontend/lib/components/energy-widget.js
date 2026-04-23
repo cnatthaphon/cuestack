@@ -91,8 +91,9 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
   }, [settings.source_table, tables]);
 
   // Run monitoring analysis
-  const runMonitor = useCallback(async () => {
-    if (!settings.source_table || Object.keys(settings.model_config).length === 0) return;
+  const runMonitor = useCallback(async (forceRefresh = false) => {
+    if (!settings.source_table) return;
+    // Allow running even without model_config — uses trained model predictions from ei_daily_stats
     setLoading(true);
     try {
       const res = await fetch("/api/dashboards/compute", {
@@ -104,12 +105,15 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
           inputs: {
             setpoint: 24,
             percentile: settings.percentile,
+            percentile_onpeak: settings.percentile_onpeak,
+            percentile_offpeak: settings.percentile_offpeak,
             ...settings.tariff,
             ...settings.schedule,
             ...settings.alerts,
           },
           source_table: settings.source_table,
           output_table: settings.output_table,
+          force_refresh: forceRefresh,
         }),
       });
       const d = await res.json();
@@ -215,13 +219,30 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
 
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, overflow: "auto" }}>
-            {/* Percentile calibration */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-              <span style={{ fontSize: 10, color: "#64748b", minWidth: 80 }}>Target p{settings.percentile}</span>
-              <input type="range" min={10} max={90} value={settings.percentile}
-                onChange={(e) => updateSetting("percentile", parseInt(e.target.value))}
-                style={{ flex: 1, accentColor: "#3b82f6" }} />
-              <button onClick={runMonitor} style={{ padding: "3px 10px", fontSize: 10, background: "#f0f0f0", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer" }}>Refresh</button>
+            {/* Percentile calibration — global + per-bin */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "4px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 10, color: "#64748b", minWidth: 60 }}>Global p{settings.percentile}</span>
+                <input type="range" min={10} max={90} value={settings.percentile}
+                  onChange={(e) => updateSetting("percentile", parseInt(e.target.value))}
+                  style={{ flex: 1, accentColor: "#3b82f6" }} />
+                {result?._cached && <span style={{ fontSize: 9, color: "#10b981" }}>cached {result._cache_age}s ago</span>}
+                <button onClick={() => runMonitor(true)} style={{ padding: "3px 10px", fontSize: 10, background: "#f0f0f0", border: "1px solid #ddd", borderRadius: 4, cursor: "pointer" }}>Refresh</button>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
+                  <span style={{ fontSize: 9, color: "#d97706", minWidth: 55 }}>On-peak p{settings.percentile_onpeak ?? settings.percentile}</span>
+                  <input type="range" min={10} max={90} value={settings.percentile_onpeak ?? settings.percentile}
+                    onChange={(e) => updateSetting("percentile_onpeak", parseInt(e.target.value))}
+                    style={{ flex: 1, accentColor: "#d97706", height: 4 }} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
+                  <span style={{ fontSize: 9, color: "#6366f1", minWidth: 55 }}>Off-peak p{settings.percentile_offpeak ?? settings.percentile}</span>
+                  <input type="range" min={10} max={90} value={settings.percentile_offpeak ?? settings.percentile}
+                    onChange={(e) => updateSetting("percentile_offpeak", parseInt(e.target.value))}
+                    style={{ flex: 1, accentColor: "#6366f1", height: 4 }} />
+                </div>
+              </div>
             </div>
 
             {/* Summary cards */}
@@ -374,6 +395,27 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
                         color: d.status === "under" ? "#15803d" : "#dc2626",
                       }}>{d.date.slice(8)}</div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recommendation */}
+            {result.recommendation && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                <div style={{ ...cs, borderLeft: `3px solid ${result.recommendation.recommendation === "KEEP ON" ? "#15803d" : "#dc2626"}`, textAlign: "left" }}>
+                  <div style={ls}>Recommendation</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: result.recommendation.recommendation === "KEEP ON" ? "#15803d" : "#dc2626" }}>
+                    {result.recommendation.recommendation}
+                  </div>
+                  <div style={{ fontSize: 9, color: "#94a3b8" }}>
+                    Keep: {Math.round(result.recommendation.keep_on_Wh)}Wh vs Restart: {Math.round(result.recommendation.restart_Wh)}Wh
+                    · Save {Math.round(result.recommendation.savings_Wh)}Wh
+                  </div>
+                </div>
+                <div style={cs}>
+                  <div style={ls}>If AC Off</div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{result.recommendation.Ti_after_off}°C</div>
+                  <div style={{ fontSize: 9, color: "#94a3b8" }}>Room temp after {s.current_streak > 0 ? "current streak" : "3h"} away</div>
                 </div>
               </div>
             )}

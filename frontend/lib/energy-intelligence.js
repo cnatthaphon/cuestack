@@ -15,6 +15,7 @@ import { predictEnergy } from "./energy-formulas.js";
 export function energyMonitor(rows, modelConfig, inputs, precomputedStats) {
   const {
     setpoint = 24, percentile = 50,
+    percentile_onpeak, percentile_offpeak, // per-bin override (if set, overrides global)
     operating_start = 8, operating_end = 22,
     operating_days = [1, 2, 3, 4, 5], // 1=Mon..7=Sun
     demand_budget_kw = 5.0,
@@ -159,19 +160,24 @@ export function energyMonitor(rows, modelConfig, inputs, precomputedStats) {
       predicted_kwh = actual_kwh; // no model available
     }
 
-    // Percentile calibration
-    const pctFactor = 1 + (percentile - 50) / 100;
+    // Time bin for the day (determined first, used for per-bin percentile)
+    const peakCount = readings.filter((r) => {
+      const dateStr = r.ts.toISOString().slice(0, 10);
+      return !holidaySet.has(dateStr) && onpeak_days.includes(r.dow) && r.hour >= onpeak_start && r.hour < onpeak_end;
+    }).length;
+    const timeBin = peakCount > readings.length / 2 ? "onpeak" : "offpeak";
+
+    // Per-bin percentile calibration
+    // If per-bin overrides set: use onpeak/offpeak percentile. Otherwise global.
+    const binPct = timeBin === "onpeak"
+      ? (percentile_onpeak ?? percentile)
+      : (percentile_offpeak ?? percentile);
+    const pctFactor = 1 + (binPct - 50) / 100;
     const calibrated_kwh = predicted_kwh * pctFactor;
 
     const savings_kwh = calibrated_kwh - actual_kwh;
     const savings_pct = calibrated_kwh > 0 ? (savings_kwh / calibrated_kwh) * 100 : 0;
     const isUnder = savings_kwh >= 0;
-
-    // Time bin for the day
-    const opCount = readings.filter((r) =>
-      r.hour >= operating_start && r.hour < operating_end && operating_days.includes(r.dow)
-    ).length;
-    const timeBin = opCount > readings.length / 2 ? "operating" : "off_hours";
 
     // Power bin for the day
     const avgPower = actual_wh / (readings.length * 0.25);
