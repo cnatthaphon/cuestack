@@ -72,6 +72,8 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
     model_types: ["linear_regression", "random_forest", "xgboost", "ensemble"],
     feature_columns: [],
     training_interval: "hourly",
+    start_date: "",
+    end_date: "",
   });
 
   // Load tables + models on mount
@@ -139,6 +141,8 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
           feature_columns: trainConfig.feature_columns,
           model_types: trainConfig.model_types,
           training_interval: trainConfig.training_interval,
+          start_date: trainConfig.start_date || undefined,
+          end_date: trainConfig.end_date || undefined,
         }),
       });
       const d = await res.json();
@@ -495,6 +499,28 @@ export default function EnergyIntelligenceWidget({ config, onSaveConfig }) {
                 <option value="hourly">Hourly</option>
                 <option value="daily">Daily</option>
               </select>
+            </div>
+            {/* Date range */}
+            <div style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "#666", minWidth: 60 }}>From:</span>
+              <input type="date" value={trainConfig.start_date}
+                onChange={(e) => setTrainConfig({ ...trainConfig, start_date: e.target.value })}
+                style={{ ...inp, flex: 1 }} />
+              <span style={{ fontSize: 11, color: "#666" }}>to</span>
+              <input type="date" value={trainConfig.end_date}
+                onChange={(e) => setTrainConfig({ ...trainConfig, end_date: e.target.value })}
+                style={{ ...inp, flex: 1 }} />
+              {(trainConfig.start_date || trainConfig.end_date) && (
+                <button onClick={() => setTrainConfig({ ...trainConfig, start_date: "", end_date: "" })}
+                  style={{ padding: "3px 8px", fontSize: 10, border: "1px solid #ddd", borderRadius: 3, cursor: "pointer", background: "#fff" }}>
+                  Clear
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>
+              {trainConfig.start_date || trainConfig.end_date
+                ? `Train on data from ${trainConfig.start_date || "earliest"} to ${trainConfig.end_date || "now"}`
+                : "Train on all available data (last 5000 rows)"}
             </div>
           </div>
 

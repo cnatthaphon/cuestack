@@ -32,6 +32,8 @@ export async function POST(request) {
     model_types = ["linear_regression", "random_forest", "xgboost", "ensemble"],
     training_interval = "hourly",
     test_split = 0.2,
+    start_date,
+    end_date,
   } = await request.json();
 
   // Validate
@@ -67,6 +69,7 @@ export async function POST(request) {
   const code = generateTrainingCode({
     source_table, target_column, feature_columns,
     model_types, training_interval, test_split, token,
+    start_date, end_date,
   });
 
   // Execute in Jupyter container via backend
@@ -135,7 +138,7 @@ export async function GET(request) {
 }
 
 // ─── Generate training Python code ───────────────────────────────────────────
-function generateTrainingCode({ source_table, target_column, feature_columns, model_types, training_interval, test_split, token }) {
+function generateTrainingCode({ source_table, target_column, feature_columns, model_types, training_interval, test_split, token, start_date, end_date }) {
   const features = JSON.stringify(feature_columns);
   const types = JSON.stringify(model_types);
 
@@ -149,13 +152,17 @@ client = connect()
 
 # ─── Step 1: Load data ───────────────────────────────────────────────────────
 print("Loading data from ${source_table}...")
-df = client.query('${source_table}', limit=5000)
+df = client.query('${source_table}', limit=10000)
 print(f"Loaded {len(df)} rows")
 
 import pandas as pd
 import numpy as np
 
 df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+# Filter by date range if specified
+${start_date ? `df = df[df['timestamp'] >= '${start_date}']\nprint(f"After start_date filter (${start_date}): {len(df)} rows")` : ""}
+${end_date ? `df = df[df['timestamp'] <= '${end_date} 23:59:59']\nprint(f"After end_date filter (${end_date}): {len(df)} rows")` : ""}
 df['${target_column}'] = pd.to_numeric(df['${target_column}'], errors='coerce')
 df['temp_ext'] = pd.to_numeric(df.get('temp_ext', 30), errors='coerce').fillna(30)
 df['temp_int'] = pd.to_numeric(df.get('temp_int', 24), errors='coerce').fillna(24)

@@ -67,7 +67,7 @@ async function resolveWidgetData(orgId, widget, controlState, zoomRange) {
 
   // For zoom requests: fetch the full range then LTTB downsample server-side
   // For initial load: fetch all data, LTTB downsample, send total_rows for zoom context
-  const fetchLimit = isChart ? Math.min(config.limit || 10000, 50000) : Math.min(config.limit || 200, 10000);
+  const fetchLimit = isChart ? Math.min(config.limit || 10000, 100000) : Math.min(config.limit || 200, 10000);
 
   let rows;
   if (filters.length > 0) {
