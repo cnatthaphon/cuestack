@@ -11,7 +11,7 @@ async function loginOrgAdmin() {
   const res = await post('/api/auth/login', {
     username: 'cue',
     password: 'admin123',
-    org_slug: 'aimagin',
+    org_slug: 'acme',
   });
   assert.strictEqual(res.status, 200);
   orgCookie = res.setCookie.split(';')[0];

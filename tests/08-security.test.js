@@ -8,7 +8,7 @@ module.exports = {
     const res = await post('/api/auth/login', {
       username: 'cue',
       password: 'admin123',
-      org_slug: 'demo',
+      org_slug: 'globex',
     });
     assert.strictEqual(res.status, 200);
     orgACookie = res.setCookie.split(';')[0];

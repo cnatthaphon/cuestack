@@ -10,7 +10,7 @@
  *
  * Usage: node demo/e2e-scenario/seed.js
  *
- * Login after: org = aimagin, username = cue, password = admin123
+ * Login after: org = acme, username = cue, password = admin123
  */
 
 const fs = require("fs");
@@ -171,24 +171,24 @@ async function seed() {
   if (!superLogin) process.exit(1);
   console.log();
 
-  // Step 3: Get aimagin org ID
-  console.log("Step 3: Find aimagin org...");
+  // Step 3: Get acme org ID
+  console.log("Step 3: Find acme org...");
   const orgs = await getOrgs();
-  const aimagin = orgs.find((o) => o.slug === "aimagin");
-  if (!aimagin) {
+  const acme = orgs.find((o) => o.slug === "acme");
+  if (!acme) {
     console.error("❌ Aimagin org not found. Check init.");
     process.exit(1);
   }
-  console.log(`✅ Found org: ${aimagin.name} (${aimagin.id})\n`);
+  console.log(`✅ Found org: ${acme.name} (${acme.id})\n`);
 
   // Step 4: Create org user
   console.log("Step 4: Create org user...");
-  await createUserInOrg(aimagin.id, "cue", "admin123", "Admin");
+  await createUserInOrg(acme.id, "cue", "admin123", "Admin");
   console.log();
 
   // Step 5: Login as org user
   console.log("Step 5: Login as org user...");
-  const orgLogin = await login("cue", "admin123", "aimagin");
+  const orgLogin = await login("cue", "admin123", "acme");
   if (!orgLogin) process.exit(1);
   console.log();
 
@@ -207,7 +207,7 @@ async function seed() {
   });
   if (tokenRes.status === 201) {
     deviceToken = tokenRes.data.token;
-    const orgShort = aimagin.id.replace(/-/g, "").slice(0, 8);
+    const orgShort = acme.id.replace(/-/g, "").slice(0, 8);
     console.log(`✅ Device token: ${deviceToken}`);
     console.log(`   Topics: org/${orgShort}/sensor-room-a, org/${orgShort}/sensor-room-b`);
   } else {
@@ -505,7 +505,7 @@ async function seed() {
   console.log("\n" + "=".repeat(50));
   console.log("✅ Demo scenario seeded successfully!");
   console.log("=".repeat(50));
-  console.log("\nLogin:  org = aimagin, username = cue, password = admin123");
+  console.log("\nLogin:  org = acme, username = cue, password = admin123");
   console.log("Then:   Workspace → E2E Demo folder");
   console.log("\nPages:");
   console.log("  🌡️ Sensor Simulator     — adjust temp/humidity, publish via MQTT");

@@ -14,13 +14,13 @@
  *   - Org A cannot read Org B's resources by direct ID
  *   - Org A cannot enumerate Org B's user IDs (cross-org targeting)
  *
- * Setup: Acme Corp (slug: aimagin) + Globex Inc (slug: demo)
+ * Setup: Acme Corp (slug: acme) + Globex Inc (slug: globex)
  */
 const assert = require('assert');
 const { post, get, patch, setCookie } = require('./helpers');
 
-const ACME = { user: 'cue', pass: 'admin123', slug: 'aimagin' };
-const GLOBEX = { user: 'demo', pass: 'demo1234', slug: 'demo' };
+const ACME = { user: 'cue', pass: 'admin123', slug: 'acme' };
+const GLOBEX = { user: 'demo', pass: 'demo1234', slug: 'globex' };
 
 let acmeCookie = '';
 let globexCookie = '';

@@ -96,7 +96,7 @@ module.exports = {
 
   'org user: GET /api/super/orgs returns 403': async () => {
     // Login as org user
-    const loginRes = await post('/api/auth/login', { username: 'cue', password: 'admin123', org_slug: 'demo' });
+    const loginRes = await post('/api/auth/login', { username: 'cue', password: 'admin123', org_slug: 'globex' });
     assert.strictEqual(loginRes.status, 200);
     setCookie(loginRes.setCookie.split(';')[0]);
 

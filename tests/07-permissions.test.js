@@ -19,7 +19,7 @@ module.exports = {
   'setup: get demo org id and roles': async () => {
     await loginSuperAdmin();
     const orgsRes = await get('/api/super/orgs');
-    const demo = orgsRes.data.orgs.find(o => o.slug === 'demo');
+    const demo = orgsRes.data.orgs.find(o => o.slug === 'globex');
     assert(demo, 'demo org should exist');
     demo_org_id = demo.id;
   },
@@ -40,7 +40,7 @@ module.exports = {
     const res = await post('/api/auth/login', {
       username: 'e2e-viewer',
       password: 'viewerpass123',
-      org_slug: 'demo',
+      org_slug: 'globex',
     });
     assert.strictEqual(res.status, 200);
     viewerCookie = res.setCookie.split(';')[0];
@@ -84,7 +84,7 @@ module.exports = {
     const loginRes = await post('/api/auth/login', {
       username: 'cue',
       password: 'admin123',
-      org_slug: 'demo',
+      org_slug: 'globex',
     });
     setCookie(loginRes.setCookie.split(';')[0]);
 
@@ -112,7 +112,7 @@ module.exports = {
     const res = await post('/api/auth/login', {
       username: 'e2e-viewer',
       password: 'viewerpass123',
-      org_slug: 'demo',
+      org_slug: 'globex',
     });
     assert.strictEqual(res.status, 200);
     viewerCookie = res.setCookie.split(';')[0];

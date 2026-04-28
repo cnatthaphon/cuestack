@@ -197,13 +197,17 @@ export async function seedData() {
   // Seed all permissions
   await seedPermissions();
 
+  // Migrate legacy slugs (one-time, safe to re-run)
+  await query("UPDATE organizations SET slug = 'acme' WHERE slug = 'aimagin'").catch(() => {});
+  await query("UPDATE organizations SET slug = 'globex' WHERE slug = 'demo'").catch(() => {});
+
   // Seed primary org (enterprise = all features)
   const orgResult = await query(
     `INSERT INTO organizations (name, slug, plan)
      VALUES ($1, $2, $3)
      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
      RETURNING id, plan`,
-    ["Acme Corp", "aimagin", "enterprise"]
+    ["Acme Corp", "acme", "enterprise"]
   );
   const aimaginOrgId = orgResult.rows[0].id;
   await createDefaultRoles(aimaginOrgId);
@@ -215,7 +219,7 @@ export async function seedData() {
      VALUES ($1, $2)
      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
      RETURNING id, plan`,
-    ["Globex Inc", "demo"]
+    ["Globex Inc", "globex"]
   );
   const demoOrgId = demoResult.rows[0].id;
   await createDefaultRoles(demoOrgId);
