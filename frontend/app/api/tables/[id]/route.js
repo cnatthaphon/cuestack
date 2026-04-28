@@ -29,9 +29,12 @@ export async function PATCH(request, { params }) {
   const { id } = await params;
   const { description } = await request.json();
 
-  await query(
+  const result = await query(
     "UPDATE org_tables SET description = $1 WHERE id = $2 AND org_id = $3",
     [description, id, user.org_id]
   );
+  if (result.rowCount === 0) {
+    return NextResponse.json({ error: "Table not found" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }

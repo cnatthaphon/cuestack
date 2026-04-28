@@ -2,7 +2,7 @@
 
 CueStack follows security-first development. Every feature addresses relevant security standards from the start — unlike retrofitting, which is expensive and error-prone.
 
-Reference: [Security Standards Overview (Issue #39770)](https://support.aimagin.com/issues/39770)
+Reference: [Security Standards Overview (Issue #39770)](https://support.demo.com/issues/39770)
 
 ## Standards
 

@@ -6,7 +6,7 @@
 
 ## What
 
-Platform-wide admin panel for Aimagin staff. Manage organizations, view storage usage, create org admins. Accessible only to super_admin users at `/super`.
+Platform-wide admin panel for Demo staff. Manage organizations, view storage usage, create org admins. Accessible only to super_admin users at `/super`.
 
 Completely separate from org dashboards — different route, different UI, different data scope.
 

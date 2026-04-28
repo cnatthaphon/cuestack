@@ -1,7 +1,7 @@
 const assert = require('assert');
 const { post, get, patch, del, setCookie, useSuperAdmin, setSuperCookie } = require('./helpers');
 
-let aimagin_org_id = null;
+let demo_org_id = null;
 let viewerUserId = null;
 let viewerCookie = '';
 let viewerRoleId = null;
@@ -16,17 +16,17 @@ async function loginSuperAdmin() {
 }
 
 module.exports = {
-  'setup: get aimagin org id and roles': async () => {
+  'setup: get demo org id and roles': async () => {
     await loginSuperAdmin();
     const orgsRes = await get('/api/super/orgs');
-    const aimagin = orgsRes.data.orgs.find(o => o.slug === 'aimagin');
-    assert(aimagin, 'aimagin org should exist');
-    aimagin_org_id = aimagin.id;
+    const demo = orgsRes.data.orgs.find(o => o.slug === 'demo');
+    assert(demo, 'demo org should exist');
+    demo_org_id = demo.id;
   },
 
   'create viewer user': async () => {
     useSuperAdmin();
-    const res = await post(`/api/super/orgs/${aimagin_org_id}/users`, {
+    const res = await post(`/api/super/orgs/${demo_org_id}/users`, {
       username: 'e2e-viewer',
       password: 'viewerpass123',
       role: 'viewer',
@@ -40,7 +40,7 @@ module.exports = {
     const res = await post('/api/auth/login', {
       username: 'e2e-viewer',
       password: 'viewerpass123',
-      org_slug: 'aimagin',
+      org_slug: 'demo',
     });
     assert.strictEqual(res.status, 200);
     viewerCookie = res.setCookie.split(';')[0];
@@ -84,7 +84,7 @@ module.exports = {
     const loginRes = await post('/api/auth/login', {
       username: 'cue',
       password: 'admin123',
-      org_slug: 'aimagin',
+      org_slug: 'demo',
     });
     setCookie(loginRes.setCookie.split(';')[0]);
 
@@ -112,7 +112,7 @@ module.exports = {
     const res = await post('/api/auth/login', {
       username: 'e2e-viewer',
       password: 'viewerpass123',
-      org_slug: 'aimagin',
+      org_slug: 'demo',
     });
     assert.strictEqual(res.status, 200);
     viewerCookie = res.setCookie.split(';')[0];

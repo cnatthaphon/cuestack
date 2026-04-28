@@ -1,6 +1,6 @@
 import { query } from "./db.js";
 
-// --- System Permissions (Aimagin-defined, platform-wide) ---
+// --- System Permissions (platform-defined, platform-wide) ---
 
 export const SYSTEM_PERMISSIONS = [
   { id: "users.view", category: "users", label: "View Users", description: "View user list" },

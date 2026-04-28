@@ -6,7 +6,7 @@
 
 ## What
 
-Multi-tenancy foundation. Add `organizations` table and `org_id` to `users` table. Two-level admin: super_admin (Aimagin) manages orgs, org_admin manages users within their org.
+Multi-tenancy foundation. Add `organizations` table and `org_id` to `users` table. Two-level admin: super_admin (Demo) manages orgs, org_admin manages users within their org.
 
 This is the #1 lesson from AA2's Gen6 audit: data isolation must be built into the schema from day one. Every query, every API call filters by `org_id`. No exceptions.
 
@@ -63,7 +63,7 @@ org_viewer (role='viewer', org_id='xxx')
 ### Seed Data (dev)
 
 ```
-Org: "Aimagin" (slug: "aimagin")
+Org: "Demo" (slug: "demo")
   Super admin: admin/admin (is_super_admin=true)
 
 Org: "Demo" (slug: "demo")

@@ -1,7 +1,7 @@
 const assert = require('assert');
 const { post, get, patch, del, setCookie, useSuperAdmin, setSuperCookie } = require('./helpers');
 
-let aimagin_org_id = null;
+let demo_org_id = null;
 let testUserId = null;
 let testUserCookie = null;
 
@@ -14,18 +14,18 @@ async function loginSuperAdmin() {
 }
 
 module.exports = {
-  'setup: get aimagin org id': async () => {
+  'setup: get demo org id': async () => {
     await loginSuperAdmin();
     const res = await get('/api/super/orgs');
     assert.strictEqual(res.status, 200);
-    const aimagin = res.data.orgs.find(o => o.slug === 'aimagin');
-    assert(aimagin, 'aimagin org should exist');
-    aimagin_org_id = aimagin.id;
+    const demo = res.data.orgs.find(o => o.slug === 'demo');
+    assert(demo, 'demo org should exist');
+    demo_org_id = demo.id;
   },
 
-  'super admin: create user in aimagin org': async () => {
+  'super admin: create user in demo org': async () => {
     useSuperAdmin();
-    const res = await post(`/api/super/orgs/${aimagin_org_id}/users`, {
+    const res = await post(`/api/super/orgs/${demo_org_id}/users`, {
       username: 'e2e-testuser',
       password: 'testpass123',
       role: 'admin',
@@ -40,7 +40,7 @@ module.exports = {
     const res = await post('/api/auth/login', {
       username: 'e2e-testuser',
       password: 'testpass123',
-      org_slug: 'aimagin',
+      org_slug: 'demo',
     });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.data.user.username, 'e2e-testuser');
@@ -59,7 +59,7 @@ module.exports = {
 
   'super admin: list users in org shows new user': async () => {
     useSuperAdmin();
-    const res = await get(`/api/super/orgs/${aimagin_org_id}/users`);
+    const res = await get(`/api/super/orgs/${demo_org_id}/users`);
     assert.strictEqual(res.status, 200);
     assert(Array.isArray(res.data.users), 'should return users array');
     const found = res.data.users.find(u => u.username === 'e2e-testuser');
@@ -81,7 +81,7 @@ module.exports = {
   'org user (non-admin): GET /api/super/orgs returns 403': async () => {
     // Create a limited user to test
     useSuperAdmin();
-    const res = await post(`/api/super/orgs/${aimagin_org_id}/users`, {
+    const res = await post(`/api/super/orgs/${demo_org_id}/users`, {
       username: 'e2e-limited',
       password: 'limitpass123',
       role: 'viewer',
@@ -92,7 +92,7 @@ module.exports = {
     const loginRes = await post('/api/auth/login', {
       username: 'e2e-limited',
       password: 'limitpass123',
-      org_slug: 'aimagin',
+      org_slug: 'demo',
     });
     assert.strictEqual(loginRes.status, 200);
     setCookie(loginRes.setCookie.split(';')[0]);

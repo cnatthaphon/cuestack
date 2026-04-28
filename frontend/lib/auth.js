@@ -197,25 +197,25 @@ export async function seedData() {
   // Seed all permissions
   await seedPermissions();
 
-  // Seed Aimagin org (enterprise = all features)
+  // Seed primary org (enterprise = all features)
   const orgResult = await query(
     `INSERT INTO organizations (name, slug, plan)
      VALUES ($1, $2, $3)
      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
      RETURNING id, plan`,
-    ["Aimagin", "aimagin", "enterprise"]
+    ["Acme Corp", "aimagin", "enterprise"]
   );
   const aimaginOrgId = orgResult.rows[0].id;
   await createDefaultRoles(aimaginOrgId);
   await assignPlanFeatures(aimaginOrgId, "enterprise");
 
-  // Seed Demo org (free = basic features)
+  // Seed second org (free = basic features) — used for cross-org isolation tests
   const demoResult = await query(
     `INSERT INTO organizations (name, slug)
      VALUES ($1, $2)
      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
      RETURNING id, plan`,
-    ["Demo", "demo"]
+    ["Globex Inc", "demo"]
   );
   const demoOrgId = demoResult.rows[0].id;
   await createDefaultRoles(demoOrgId);

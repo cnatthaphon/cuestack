@@ -4,11 +4,11 @@ const { post, get, setCookie, clearCookie, rawGet, BASE } = require('./helpers')
 let orgACookie = '';
 
 module.exports = {
-  'setup: login as org user A (aimagin)': async () => {
+  'setup: login as org user A (demo)': async () => {
     const res = await post('/api/auth/login', {
       username: 'cue',
       password: 'admin123',
-      org_slug: 'aimagin',
+      org_slug: 'demo',
     });
     assert.strictEqual(res.status, 200);
     orgACookie = res.setCookie.split(';')[0];

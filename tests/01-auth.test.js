@@ -26,12 +26,12 @@ module.exports = {
     setCookie(superCookieVal);
   },
 
-  'org user login (cue/admin123, org=aimagin)': async () => {
-    const res = await post('/api/auth/login', { username: 'cue', password: 'admin123', org_slug: 'aimagin' });
+  'org user login (cue/admin123, org=demo)': async () => {
+    const res = await post('/api/auth/login', { username: 'cue', password: 'admin123', org_slug: 'demo' });
     assert.strictEqual(res.status, 200);
     assert(res.data.user, 'response should have user object');
     assert.strictEqual(res.data.user.username, 'cue');
-    assert.strictEqual(res.data.user.org_slug, 'aimagin');
+    assert.strictEqual(res.data.user.org_slug, 'demo');
     assert.strictEqual(res.data.user.is_super_admin, false);
     orgCookieVal = res.setCookie.split(';')[0];
     setCookie(orgCookieVal);
@@ -75,7 +75,7 @@ module.exports = {
 
   'POST /api/auth/logout clears cookie': async () => {
     // Login first
-    const loginRes = await post('/api/auth/login', { username: 'cue', password: 'admin123', org_slug: 'aimagin' });
+    const loginRes = await post('/api/auth/login', { username: 'cue', password: 'admin123', org_slug: 'demo' });
     assert.strictEqual(loginRes.status, 200);
     setCookie(loginRes.setCookie.split(';')[0]);
 
