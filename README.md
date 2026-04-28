@@ -4,6 +4,12 @@
 
 Multi-tenant platform for data, dashboards, notebooks, and automation — built with Next.js, FastAPI, PostgreSQL, ClickHouse, MQTT, and Docker.
 
+## Walkthrough
+
+![CueStack Energy Intelligence Walkthrough](docs/screenshots/walkthrough-compact.gif)
+
+*Login → Energy Intelligence dashboard → Monitor (charts, bins, gamification) → Train (4 ML models, date range) → Settings (TOU tariff) → Sensor Charts (LTTB downsampling for 10K+ data points)*
+
 ## What It Does
 
 CueStack is a self-hosted platform where organizations ingest data from any source, build dashboards, run notebooks, and automate pipelines — all isolated per tenant.
@@ -58,10 +64,29 @@ Any Source (MQTT, API, webhook, service, upload)
 - Per-org user limits and feature flags
 
 **Workspace Pages**
-- Drag-and-drop dashboard widgets (charts, tables, gauges)
+- Drag-and-drop dashboard widgets (charts, tables, gauges, controls, compute)
+- Chart.js with LTTB downsampling + dynamic zoom-fetch (handles 100K+ points)
 - HTML/CSS/JS editor with live preview
 - Jupyter notebooks (DB-backed, Google Colab model)
+- Visual flow editor (drag-drop ETL pipelines)
 - Markdown pages
+
+**Energy Intelligence Widget** (flagship)
+- Self-contained widget: Monitor / Train / Settings tabs
+- ML training wizard: 4 model types (Linear, Random Forest, XGBoost, Ensemble)
+- Train wizard auto-generates Python code → executes in Jupyter container
+- Date range selection for training (e.g. "train on March 1-31")
+- Actual vs predicted comparison with bin calibration (power + time bins)
+- TOU tariff: on-peak/off-peak/holiday rates + demand charge
+- Per-bin percentile calibration (separate sliders for on-peak/off-peak)
+- Gamification: badges (perfectDay, streaks, demandDefender), calendar heatmap, leaderboard
+- Alerts: energy-over thresholds, peak-approaching warnings (push to notifications)
+- Today's gauge (real-time progress vs prediction)
+- 24h hourly view (toggle from daily bars)
+- Recommendation: keep-on vs turn-off decision based on current conditions
+- Analysis caching (5-min TTL) for instant page loads on large datasets
+
+![Energy Intelligence Widget](docs/screenshots/energy-intelligence.gif)
 
 **Data Pipeline**
 - Ingest from any source: MQTT, REST API, webhook, scheduled jobs, manual upload
@@ -192,6 +217,28 @@ cuestack/
 ├── nginx/                # Reverse proxy config
 └── docker-compose.yml    # 7 services
 ```
+
+## Screenshots
+
+### Energy Intelligence Widget — Monitor Tab
+Active model accuracy, percentile sliders (global + per-bin), summary cards, actual vs predicted chart, TOU bins, demand tracking, badges, leaderboard.
+
+![EI Monitor](docs/screenshots/ei-monitor.png)
+
+### Energy Intelligence Widget — Train Tab
+No-code ML training wizard: select data source, columns, model types, date range. Trains in Jupyter container, auto-activates best model.
+
+![EI Train](docs/screenshots/ei-train.png)
+
+### Energy Intelligence Widget — Settings Tab
+TOU tariff configuration, operating schedule, alert thresholds, model parameters JSON editor.
+
+![EI Settings](docs/screenshots/ei-settings.png)
+
+### Sensor Charts Dashboard — LTTB Big Data Visualization
+Multi-series charts with control widgets, gauges, and high-frequency data with LTTB downsampling (10K+ points → 300 rendered, dynamic zoom for full resolution).
+
+![Sensor Charts](docs/screenshots/sensor-charts.png)
 
 ## License
 
